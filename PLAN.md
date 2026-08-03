@@ -11,7 +11,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.1** | **Motor-szonda.** 1600 animált egység, áramlási mező, ütközés-kerülés, fix-tickes determinisztikus sim, determinizmus-szonda, réteg-bontó FPS-mérés. **GO/NO-GO döntés.** | **kész — GO** (`qa/V0.1_EREDMENY.md`) |
 | **v0.2** | Irányítás: keret-kijelölés, Ctrl-csoportok, attack-move, alakzatok, állás-parancsok — mind a parancs-soron át | **kész** (`qa/V0.2_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
-| v0.4 | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | |
+| **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **részben kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
@@ -19,6 +19,31 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
 | v0.10 | Térkép-presetek, hang, kampány | |
 | v1.0 | Kiadási kapu, i18n (hu/en/de), PWA, deploy | |
+
+## A v0.4 állása
+
+A verzió szakaszokra van bontva, és a kész szakaszok külön-külön is megállnak:
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.4/1 | életerő, páncéltípusok, fegyvernem-ellensúlyok, halál | **kész** |
+| v0.4/2 | repülési idejű lövedékek | **kész** |
+| v0.4/3 | ostrom-egység | hátravan |
+| v0.4/4 | fal és kapu | hátravan |
+| v0.4/5 | beszállásolás | hátravan |
+
+Az ellensúly-tábla `TÁMADÁSTÍPUS × PÁNCÉLTÍPUS` (nem típus × típus), és van benne
+`OSTROM` sor és `EPULET` oszlop — az ostrom-szakasznak tehát nem kell új
+mechanizmus, csak egy új egységtípus és a hozzá tartozó adatsor. A fal/kapu a
+`epuletek.js`-re épülhet (az már zárja a celláit és érvényteleníti a mezőket),
+a beszállásolás pedig az `elo` jelzőre: a beszállásolt egység ugyanúgy kiesik a
+hasítótáblából, mint a halott, csak visszahozhatóan.
+
+**Ismert adósság a v0.5 felé:** a halott slot nem szabadul fel. Amint egységet
+képezni is lehet, kell a slot-újrahasznosítás, ahhoz pedig **generációs
+számláló** — az egység-index a sim legelterjedtebb hivatkozása (`celEgyseg`,
+munkás-célok, kijelölés, Ctrl-csoportok), és az elavult hivatkozásnak
+elkaphatónak kell lennie, nem csak elromlania.
 
 ## Miért ebben a sorrendben
 
