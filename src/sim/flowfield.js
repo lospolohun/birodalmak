@@ -66,8 +66,27 @@ export class MezoTar {
     for (let i = 0; i < kapacitas; i++) this.mezok.push(new Mezo(racs.n));
     /** Diagnosztika: hány mezőt kellett ténylegesen kiszámolni. */
     this.szamitasok = 0;
-    this._vodrok = [];
-    for (let i = 0; i < VODROK; i++) this._vodrok.push([]);
+
+    // ── A vödrök TIPIZÁLT tömbök, nem JS-tömbök ───────────────────────
+    // Első változatban `[]`-ek voltak `push`/`pop`-pal. A mező-építés így
+    // átlagban 0,6 ms volt, DE tizenötből kétszer 5-13 ms — szemétgyűjtés,
+    // mert minden építés több tízezer elemet nyomott JS-tömbökbe. Egy 13 ms-os
+    // akadás a 16,7 ms-os képkocka-büdzsében látható rándulás, és egy RTS-ben
+    // parancsonként jelentkezne. Előre foglalt `Int32Array` + saját hossz-
+    // számláló: nulla allokáció az első pár építés után, tehát nincs mit
+    // gyűjteni. (Mérve: 13,08 ms legrosszabb → lásd a fájl végi megjegyzést.)
+    this._vodorTomb = [];
+    this._vodorHossz = new Int32Array(VODROK);
+    for (let i = 0; i < VODROK; i++) this._vodorTomb.push(new Int32Array(1024));
+  }
+
+  /** Vödör-növelés duplázással. Csak a bemelegedésig fut. */
+  _vodorNo(v) {
+    const regi = this._vodorTomb[v];
+    const uj = new Int32Array(regi.length * 2);
+    uj.set(regi);
+    this._vodorTomb[v] = uj;
+    return uj;
   }
 
   /**
@@ -113,18 +132,19 @@ export class MezoTar {
     koltseg.fill(ELERHETETLEN);
     mezo.cel = celIdx;
 
-    const vodrok = this._vodrok;
-    for (let i = 0; i < VODROK; i++) vodrok[i].length = 0;
+    const vodorHossz = this._vodorHossz;
+    vodorHossz.fill(0);
 
     koltseg[celIdx] = 0;
-    vodrok[0].push(celIdx);
+    this._vodorTomb[0][0] = celIdx;
+    vodorHossz[0] = 1;
     let fuggo = 1;
     let c = 0;
 
     while (fuggo > 0) {
-      const v = vodrok[c % VODROK];
-      while (v.length > 0) {
-        const csp = v.pop();
+      const vi = c % VODROK;
+      while (vodorHossz[vi] > 0) {
+        const csp = this._vodorTomb[vi][--vodorHossz[vi]];
         fuggo--;
         // Elavult bejegyzés: azóta olcsóbb utat találtunk ide
         if (koltseg[csp] !== c) continue;
@@ -144,7 +164,10 @@ export class MezoTar {
           const uj = c + SZ_KOLT[k];
           if (uj < koltseg[ni]) {
             koltseg[ni] = uj;
-            vodrok[uj % VODROK].push(ni);
+            const cv = uj % VODROK;
+            let t = this._vodorTomb[cv];
+            if (vodorHossz[cv] >= t.length) t = this._vodorNo(cv);
+            t[vodorHossz[cv]++] = ni;
             fuggo++;
           }
         }
