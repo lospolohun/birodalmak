@@ -17,7 +17,10 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
-| v0.10 | Térkép-presetek, hang, kampány | |
+| v0.10 | Térkép-presetek, kampány | |
+| v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
+| v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
+| v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
 | v1.0 | Kiadási kapu, i18n (hu/en/de), PWA, deploy | |
 
 ## A v0.4 állása
@@ -61,6 +64,28 @@ képezni is lehet, kell a slot-újrahasznosítás, ahhoz pedig **generációs
 számláló** — az egység-index a sim legelterjedtebb hivatkozása (`celEgyseg`,
 munkás-célok, kijelölés, Ctrl-csoportok), és az elavult hivatkozásnak
 elkaphatónak kell lennie, nem csak elromlania.
+
+## A záró lépcsők (v0.11–v0.13)
+
+**v0.11 — főmenü.** A minta a TELEPESEK főmenüje. Amíg nincs menü, a játék
+minden indításnál ugyanabba az állapotba esik, és a seed, a pályaméret meg a
+civ-választás kódban ül. A menü nem kozmetika: ez teszi a buildet olyanná, amit
+oda lehet adni valakinek.
+
+**v0.12 — hang.** ⚠️ **A hang SOHA nem szólhat bele a simbe.** A lejátszás
+render-oldali, és a sim ESEMÉNYEIRE ül rá (csapás, halál, lerakás, korszakváltás,
+kimerülés). Ha a hang bármit visszaírna — akár csak egy „mikor szólt utoljára"
+időbélyeget a sim állapotába —, az azonnal desync a v0.8-ban. A `Date.now()`
+ugyanígy tilos marad a sim felől nézve; a hangnak saját órája van.
+A gyakorlati következmény: a simnek esemény-naplót kell adnia (mi történt ebben
+a tickben), amit a render kiolvas és eldob. Ez a napló a v0.7-es mentés/betöltés
+és a v0.8-as visszajátszás szempontjából is hasznos lesz.
+
+**v0.13 — QA-kör.** Nem „még egy funkció", hanem az egyetlen lépcső, ami
+kizárólag azzal foglalkozik, hogy a meglévő tényleg működik-e: teljes
+determinizmus-kör, FPS-mérés minden lépcsőn, balansz-átnézés (a v0.9 nyolc
+civje), UX-végigjátszás és hibalista. A `qa/` mappa eddigi jelentései ennek az
+előfutárai.
 
 ## Miért ebben a sorrendben
 
