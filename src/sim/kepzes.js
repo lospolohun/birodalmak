@@ -144,6 +144,23 @@ export class Kepzes {
   }
 
   /**
+   * Hány ADOTT TÍPUSÚ egység áll egy épület sorában.
+   *
+   * A gépi ellenfélnek (v0.6) kell: a munkás-célszámba a MÁR MEGRENDELT
+   * munkásokat is bele kell számolni, különben a gép minden döntési körben
+   * újra sorba állítana. Az ár a sorbaálláskor megy le, tehát a fölösleges
+   * rendelés valódi nyersanyag-veszteség, nem csak zaj.
+   */
+  sorbanTipus(ep, egysegTipus) {
+    if (ep < 0 || ep >= this.maxEpulet) return 0;
+    let n = 0;
+    for (let k = 0; k < this.sorDb[ep]; k++) {
+      if (this.sor[ep * SOR_HOSSZ + k] === egysegTipus) n++;
+    }
+    return n;
+  }
+
+  /**
    * EGY tick — a sorok elején álló egységek készülnek.
    *
    * Az épületek RÖGZÍTETT index-sorrendben járnak, tehát ha két épület

@@ -13,7 +13,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
-| v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | |
+| v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **folyamatban** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
@@ -91,6 +91,35 @@ végén: a törlés-visszatérítés nyersanyagot TEREMTENE, a gazdaság pedig a
 A népességet tickenként ÚJRASZÁMOLJUK, nem tároljuk. A tárolt számlálót minden
 halál, születés, épület-pusztulás és beszállásolás karban kellene tartani, és
 egyetlen kimaradó ág olyan hibát ad, ami hónapokig lappang.
+
+## A v0.6 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.6/1 | AI-váz, nehézségi szintek, gazdasági kör | **kész** |
+| v0.6/2 | build order: katonai épületek, katona-képzés, technológia | hátravan |
+| v0.6/3 | felderítés és támadási döntés | hátravan |
+
+Az AI a **sim része**, nem a kliensé. A v0.8 lockstepjében minden gép futtatja a
+szimulációt; ha az AI a kliensben lakna, a két gép mást döntene, és az azonnali
+desync lenne — nem „kicsit más gépi ellenfél".
+
+A nehézség **döntési minőség, nem csalás.** A nehéz gép nem kap több
+nyersanyagot. Két oka van: a csaló gazdaság MÁSODIK gazdasági kódutat
+jelentene (a v0.3 óta minden mennyiség munkából származik), és a csaló AI-ból a
+játékos nem tanul semmit — ha a gép azért nyer, mert dupla ütemben termel,
+akkor a vereségre nincs válasz.
+
+A szonda 9. vizsgálatában **a forgatókönyv maga az AI**: nincs kézi parancs-
+lista, a két csapatot könnyű és nehéz szinten a gép viszi. A két szint
+szándékosan KÜLÖNBÖZIK — azonos szinten egy elrontott nehézség-indexelés
+semmit nem változtatna a hash-en, és a hiba a kapun belül maradna.
+
+⚠️ **Egy szám, ami új fajta hibát fog.** A 9. vizsgálat nem csak azt nézi, hogy
+a gép csinált-e valamit, hanem hogy a KIADOTT SZÁNDÉK és az EREDMÉNY összeér-e:
+hány házat rendelt, és hány épült meg. Ez a v0.6/1 legdrágább hibáját őrzi — a
+gép a bal-felső cellát adta át az `epit` parancsnak, ami a középpontot várja, és
+100 építési parancsból EGY ház lett. Minden addigi kapu zöld volt.
 
 ## A záró lépcsők (v0.11–v0.13)
 

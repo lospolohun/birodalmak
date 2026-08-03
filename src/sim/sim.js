@@ -38,6 +38,7 @@ import { Lovedekek } from './lovedek.js';
 import { Beszallas } from './beszallas.js';
 import { Kepzes } from './kepzes.js';
 import { Technologia, TECH, TECH_DB, techEpulete } from './technologia.js';
+import { Ai, NEHEZSEG } from './ai.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -97,6 +98,11 @@ export class Sim {
     this.technologia = new Technologia(2, this);
     this.epuletek.tech = this.technologia;
 
+    // ── v0.6: a gépi ellenfél ───────────────────────────────────────────
+    // A sim RÉSZE, nem a kliensé — különben a v0.8 lockstepjében a két gép
+    // AI-ja külön döntene, és az azonnali desync (lásd `ai.js` fejléc).
+    this.ai = new Ai(2, this);
+
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -139,6 +145,11 @@ export class Sim {
       for (let i = 0; i < lista.length; i++) this._vegrehajt(lista[i]);
       this._sor.delete(this.tick);
     }
+    // AZ AI A LEGELSŐ a tick-lépések közül, és ez szándékos: a döntései a
+    // parancs-soron mennek be, tehát `KESLELTETES` tick múlva hatnak. Ha a
+    // sor kiürítése UTÁN gondolkodna, minden döntése egy körrel később érne
+    // célba — a gép mérhetően lomhább lenne ugyanannál a beállításnál.
+    this.ai.lep(this.tick);
     this.epuletek.lep();
     this.gazdasag.lep();
     this.technologia.lep();
@@ -204,6 +215,7 @@ export class Sim {
     // születnének meg. Egy friss `Sim`-nél ez sosem látszana; az újrafelállásnál
     // viszont csendes desync-forrás lenne.
     this.technologia.nullaz();
+    this.ai.nullaz();
     this.epuletek.nullaz();
     this.eroforrasok.nullaz();
     this.gazdasag.nullaz();
@@ -907,6 +919,26 @@ export class Sim {
     const kx = (this.n * 0.5) | 0;
     return { x: kx + (cs === 0 ? -6 : 6), y: (this.n * 0.5) | 0 };
   }
+  /**
+   * v0.6 SZONDA-FORGATÓKÖNYV — A GÉP JÁTSZIK MINDKÉT OLDALON.
+   *
+   * Itt nincs kézi parancs-lista: a `szondaFelallasV06` átadja mindkét csapatot
+   * az AI-nak, és onnantól a forgatókönyv MAGA az AI. Ez a lényege — a
+   * determinizmus-kapunak pont azt kell őriznie, hogy a gép döntései bitre
+   * reprodukálhatók.
+   *
+   * A két csapat KÜLÖNBÖZŐ nehézségen fut. Nem kényelem: ha mindkettő ugyanazon
+   * a szinten menne, a döntési ütem és minden célszám azonos lenne, és egy
+   * elrontott nehézség-index (rossz tömbindexelés) SEMMIT nem változtatna a
+   * hash-en — a hiba a kapun belül maradna.
+   */
+  szondaFelallasV06(osszDb) {
+    const db = this.szondaFelallas(osszDb, { munkasMinden: 2 });
+    this.ai.beallit(0, NEHEZSEG.KONNYU);
+    this.ai.beallit(1, NEHEZSEG.NEHEZ);
+    return db;
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -1013,6 +1045,17 @@ export class Sim {
       h = fnvSzam(h, tech.allapot[i]);
       h = fnvSzam(h, tech.hatra[i]);
       h = fnvSzam(h, tech.hol[i]);
+    }
+    // v0.6 — a gépi ellenfél BEÁLLÍTÁSA és döntés-számlálója. A beállítás azért
+    // van benne, mert ha két gép eltérő nehézségen futtatná ugyanazt a csapatot,
+    // MINDEN további döntés elcsúszna; a döntés-számláló pedig azt kapja el, ha
+    // a gépek eltérő TICKEN gondolkodnak — ezt a világ állapota csak jóval
+    // később mutatná meg.
+    const ai = this.ai;
+    for (let cs = 0; cs < ai.csapatDb; cs++) {
+      h = fnvSzam(h, ai.aktiv[cs]);
+      h = fnvSzam(h, ai.nehezseg[cs]);
+      h = fnvSzam(h, ai.dontesDb[cs]);
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);

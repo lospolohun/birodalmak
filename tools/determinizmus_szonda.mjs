@@ -11,11 +11,21 @@
 // ez a lényege: ha a `src/sim/` node-ban fejen állva is lefut, akkor tényleg
 // nem szivárgott bele render-függőség.
 //
-// ── NÉGY VIZSGÁLAT ────────────────────────────────────────────────────────
+// ── KILENC VIZSGÁLAT ──────────────────────────────────────────────────────
 //   1. STATIKUS  — tiltott hívások keresése a `src/sim/` forrásában
 //   2. FUTÁSI    — két friss `Sim`, azonos seed, 10 000 tick, hash-egyezés
 //   3. KEVERT    — ugyanaz, de a tickek közé IDEGEN munkát ékelünk
 //   4. KÖLTSÉG   — a sim tiszta tick-ideje 1600 egységnél (ms/tick)
+//   5–9. VERZIÓ-KÖRÖK — v0.2 irányítás, v0.3 gazdaság, v0.4 harc,
+//        v0.5 építkezés+technológia, v0.6 gépi ellenfél
+//
+// ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
+// reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
+// egyaránt ZÖLD kapu mellett volt halott. Ezért az 5–9. kör mindegyike
+// tartalmaz MŰKÖDÉS-SZÁMOKAT is, amik nullánál buktatnak. A v0.6-ban ez már
+// nem is elég: ott a KIADOTT SZÁNDÉK és az EREDMÉNY is össze van vetve (100
+// építési parancs → 1 ház), mert a csendben elvesző parancsot a puszta
+// „csinált-e valamit" kérdés sem fogja meg.
 //
 // A 3. a legalattomosabb hiba ellen véd: ha a sim bármit a GLOBÁLIS állapotból
 // olvasna (megosztott gyorsítótár, `Math.random` sorozat-állása, GC-időzítés),
@@ -53,6 +63,7 @@ const STAT_DIR = ervSzoveg('simdir') || SIM_DIR;   // amit a statikus ellenőrz�
 const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
 const { SEED, CEL_EGYSEG } = await import(
   pathToFileURL(join(GYOKER, 'src', 'core', 'config.js')).href);
+const { NEHEZSEG_NEV } = await import(pathToFileURL(join(SIM_DIR, 'ai.js')).href);
 
 /**
  * A futás beállításai. Az ALAPÉRTELMEZÉS a teljes szerződés (10 000 tick),
@@ -268,6 +279,15 @@ const FORGATOKONYVEK = {
     felallas: { munkasMinden: 2 },
     fut: (sim, kor) => sim.szondaParancsV05(kor),
   },
+  // A v0.6 köre KÜLÖNBÖZIK a többitől: nincs kézi parancs-lista, mert a
+  // FORGATÓKÖNYV MAGA AZ AI. Pont ezt kell a kapunak őriznie — hogy a gép
+  // döntései bitre reprodukálhatók. A `fut` ezért üres.
+  v06: {
+    nev: 'v0.6 gépi ellenfél (könnyű vs nehéz)', tickek: ervSzam('v06tick', 12000),
+    egysegSzam: 60,
+    felallit: (sim, db) => sim.szondaFelallasV06(db),
+    fut: () => {},
+  },
   v04: {
     nev: 'v0.4 harc', tickek: V04_TICKEK,
     // Csapatonként 30 ostromgép — enélkül a v0.4/6 ága ki sem futna.
@@ -284,7 +304,12 @@ function ujSim(fk) {
   // A forgatókönyv felülírhatja az egységszámot. A v0.5-nek KIS sereg kell:
   // 1600 egység önmagában 800 népesség csapatonként, és ott a képzés MINDIG
   // elutasításba futna — vagyis a legfrissebb kód maradna a kapun kívül.
-  const db = s.szondaFelallas((fk && fk.egysegSzam) || EGYSEG, fk && fk.felallas);
+  // A v0.6 köre SAJÁT felállítót hoz: ott mindkét csapatot a GÉP veszi át, és
+  // az átadás a felállás UTÁN kell történjen (a `szondaFelallas` nullázza az
+  // AI-t). Ezért kaphat a forgatókönyv `felallit` horgot a szokásos helyett.
+  const db = (fk && fk.felallit)
+    ? fk.felallit(s, (fk.egysegSzam) || EGYSEG)
+    : s.szondaFelallas((fk && fk.egysegSzam) || EGYSEG, fk && fk.felallas);
   return { sim: s, db };
 }
 
@@ -854,6 +879,130 @@ if (ketV05.ok) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 9) v0.6 — A GÉPI ELLENFÉL
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Ez a kör KÜLÖNBÖZIK az összes eddigitől: nincs benne kézzel írt parancs-
+// sorozat. A forgatókönyv MAGA AZ AI — mindkét csapatot a gép viszi, könnyű
+// a nehéz ellen. A determinizmus-kapunak pont ezt kell őriznie: a gép döntései
+// ugyanabból az állapotból ugyanazok, tehát a v0.8 lockstepjében a két kliens
+// AI-ja nem tarthat szét.
+//
+// ⚠️ A KÉT CSAPAT KÜLÖNBÖZŐ NEHÉZSÉGEN FUT. Ha mindkettő ugyanazon a szinten
+// menne, minden nehézség-függő szám azonos lenne, és egy elrontott
+// nehézség-indexelés SEMMIT nem változtatna a hash-en — a hiba a kapun belül
+// maradna. Az aszimmetria itt vizsgálati eszköz, nem ízlés.
+cim('9) v0.6 GÉPI ELLENFÉL — a forgatókönyv maga az AI');
+const t9 = Date.now();
+const ketV06 = ketFutas(FORGATOKONYVEK.v06);
+let kevertV06 = { ok: false, tick: 0, a: 0, b: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v06.nev);
+sor('lefutott tick', ketV06.tick, '(' + ((Date.now() - t9) / 1000).toFixed(1) + ' mp)');
+if (ketV06.ok) {
+  sor('két futás', 'AZONOS', (FORGATOKONYVEK.v06.tickek / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV06.hashek.get(FORGATOKONYVEK.v06.tickek).toString(16).padStart(8, '0'));
+  kevertV06 = kevertFutas(ketV06.hashek, FORGATOKONYVEK.v06);
+  if (kevertV06.ok) {
+    sor('kevert futás', 'AZONOS', 'a tiszta futás sorozatával');
+    console.log('\n  \u2713 A gépi ellenfél determinisztikus: a döntési ütem, a');
+    console.log('    munkás-beosztás és az építési döntések bitre reprodukálhatók.');
+  } else {
+    console.log('\n  \u26d4 ELTÉRÉS a(z) ' + kevertV06.tick + '. ticken a KEVERT futásban.');
+    bukas++;
+  }
+} else {
+  console.log('\n  \u26d4 DESYNC a(z) ' + ketV06.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV06.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV06.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     ELSŐNEK NÉZD MEG az `ai.js`-t: van-e benne `Math.random`,');
+  console.log('     objektum-bejárás, vagy olyan döntetlen, aminek nincs szabálya.');
+  bukas++;
+}
+
+// CSINÁL-E EGYÁLTALÁN VALAMIT A GÉP? A determinizmus-kapu erre sem felel: az az
+// AI, ami minden körben úgy dönt, hogy nem csinál semmit, tökéletesen
+// reprodukálható. Ez a projekt HÁROMSZOR égett meg zöld kapu melletti halott
+// rendszeren — itt a nyersanyag és a munkás-szám az, ami elárulja.
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  const kezdo = s.szondaFelallasV06(FORGATOKONYVEK.v06.egysegSzam);
+  for (let t = 1; t <= FORGATOKONYVEK.v06.tickek; t++) s.lep();
+
+  const a0 = s.ai.osszesites(0), a1 = s.ai.osszesites(1);
+  const g0 = s.gazdasag.allapot(0), g1 = s.gazdasag.allapot(1);
+  let mnk = [0, 0];
+  for (let i = 0; i < s.egysegek.db; i++) {
+    if (s.harc.elo[i] && s.egysegek.tipus[i] === 0) mnk[s.egysegek.csapat[i] & 1]++;
+  }
+  const gyujtott0 = s.gazdasag.osszegyujtott.slice(0, 4).reduce((a, b) => a + b, 0);
+  const gyujtott1 = s.gazdasag.osszegyujtott.slice(4, 8).reduce((a, b) => a + b, 0);
+
+  console.log('');
+  sor('nehézség', NEHEZSEG_NEV[a0.nehezseg] + ' / ' + NEHEZSEG_NEV[a1.nehezseg],
+    '(indulás: ' + kezdo + ' egység összesen)');
+  sor('döntési kör', a0.dontes + ' / ' + a1.dontes, 'a nehezebb sűrűbben gondolkodik');
+  sor('kiadott gyűjtés-parancs', a0.gyujt + ' / ' + a1.gyujt);
+  sor('kiadott építés / képzés', a0.epit + '·' + a0.kepzes + ' / ' + a1.epit + '·' + a1.kepzes);
+  sor('élő munkás', mnk[0] + ' / ' + mnk[1], 'a gép ennyit tart fenn');
+  sor('összegyűjtött nyersanyag', gyujtott0 + ' / ' + gyujtott1);
+  sor('népesség', g0.nepesseg + '/' + g0.nepessegMax + '  ·  ' + g1.nepesseg + '/' + g1.nepessegMax);
+
+  // ÉPÜLT-E ANNYI HÁZ, AMENNYIT RENDELT? Ez a szám a v0.6/1 legdrágább hibáját
+  // őrzi. A gép a BAL-FELSŐ cellát adta át az `epit`-nek, ami viszont a
+  // KÖZÉPPONTOT várja és maga tolja vissza — a parancs egy cellával odébb, tipikusan
+  // foglalt helyre esett, és CSENDBEN elveszett. Mérve: 100 építési parancs, EGY
+  // ház. A determinizmus-kapu végig zöld volt, a „nulla ház" gát pedig azért nem
+  // fogott volna, mert egy ház azért véletlenül összejött.
+  //
+  // A tanulság általános: nem az a kérdés, hogy CSINÁLT-E valamit a rendszer,
+  // hanem hogy a KIADOTT SZÁNDÉK ÉS AZ EREDMÉNY összeér-e.
+  let haz = [0, 0];
+  for (let i = 0; i < s.epuletek.db; i++) {
+    if (s.epuletek.tipus[i] === 4 && s.epuletek.elo[i]) haz[s.epuletek.csapat[i] & 1]++;
+  }
+  sor('rendelt / felépült ház', (a0.epit + '→' + haz[0]) + ' / ' + (a1.epit + '→' + haz[1]),
+    'az elveszett parancs csendben vész el');
+
+  if (a0.dontes === 0 || a1.dontes === 0) {
+    console.log('\n  \u26d4 VALAMELYIK GÉP EGYSZER SEM GONDOLKODOTT: az `Ai.lep()` ága néma.');
+    console.log('     Nézd meg a `beallit()` hívást és a `DONTES_KOZ` maradékos szűrőt.');
+    bukas++;
+  } else if (gyujtott0 === 0 || gyujtott1 === 0) {
+    console.log('\n  \u26d4 VALAMELYIK GÉP NEM GYŰJTÖTT SEMMIT: a döntés lefutott, de');
+    console.log('     nem lett belőle munka. A determinizmus-kapu ettől zöld —');
+    console.log('     a néma gép is reprodukálható. Nézd meg a `_munkaraFog`-ot:');
+    console.log('     tétlennek látja-e egyáltalán a munkásokat, és talál-e lelőhelyet.');
+    bukas++;
+  } else if (a1.dontes <= a0.dontes) {
+    // A nehéz szint SŰRŰBBEN gondolkodik. Ha ez nem látszik, a nehézség-index
+    // nem ér el a `DONTES_KOZ`-ig — a három szint egyetlen szint lenne, és a
+    // hash ettől még végig zöld maradna.
+    console.log('\n  \u26d4 A NEHÉZ GÉP NEM GONDOLKODOTT SŰRŰBBEN A KÖNNYŰNÉL:');
+    console.log('     a nehézség-szint nem ér el a `DONTES_KOZ`-ig, vagyis a három');
+    console.log('     szint a gyakorlatban EGY szint.');
+    bukas++;
+  }
+  // A gép a munkás-célszámig képez. Ha egyetlen munkás sem született, a
+  // `_munkastKepez` ága néma — a kezdő felállás munkásaival is „működne".
+  if (a0.kepzes === 0 && a1.kepzes === 0) {
+    console.log('\n  \u26d4 A GÉP EGYSZER SEM RENDELT MUNKÁST: a `_munkastKepez` ága néma.');
+    bukas++;
+  }
+  for (let cs = 0; cs < 2; cs++) {
+    const rendelt = cs === 0 ? a0.epit : a1.epit;
+    if (rendelt > 0 && haz[cs] * 2 < rendelt) {
+      console.log('\n  \u26d4 A ' + cs + '. GÉP ÉPÍTÉSI PARANCSAI ELVESZNEK: ' + rendelt
+        + ' rendelésből ' + haz[cs] + ' ház lett.');
+      console.log('     A parancs csendben eldobódik — legvalószínűbb ok, hogy a');
+      console.log('     koordináta a rossz rendszerben megy át (sarok kontra középpont),');
+      console.log('     vagy hogy a gép foglalt helyre rendel újra meg újra.');
+      bukas++;
+    }
+  }
+}
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -872,6 +1021,9 @@ sor('7) v0.4 harc',
 sor('8) v0.5 építkezés+tech',
   ketV05.ok ? (kevertV05.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV05.tick + ')')
     : 'BUKOTT (tick ' + ketV05.tick + ')');
+sor('9) v0.6 gépi ellenfél',
+  ketV06.ok ? (kevertV06.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV06.tick + ')')
+    : 'BUKOTT (tick ' + ketV06.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));
