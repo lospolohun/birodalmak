@@ -13,7 +13,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
-| v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **folyamatban** — lásd alább |
+| v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
@@ -98,7 +98,7 @@ egyetlen kimaradó ág olyan hibát ad, ami hónapokig lappang.
 |---|---|---|
 | v0.6/1 | AI-váz, nehézségi szintek, gazdasági kör | **kész** |
 | v0.6/2 | build order: katonai épületek, katona-képzés, technológia | **kész** |
-| v0.6/3 | felderítés és támadási döntés | hátravan |
+| v0.6/3 | felderítés és támadási döntés | **kész** |
 
 Az AI a **sim része**, nem a kliensé. A v0.8 lockstepjében minden gép futtatja a
 szimulációt; ha az AI a kliensben lakna, a két gép mást döntene, és az azonnali
@@ -146,6 +146,50 @@ célszámát (30 munkás, 30 katona), és 1770 helyett 4810 nyersanyagot gyűjt.
 A szonda 9. vizsgálatába ezért bekerült egy **invariáns**, nem heurisztika: a
 mozgás-magnak két módja van célba érni (mező vagy szabad egyenes), és aki úton
 van, annak legalább az egyikkel rendelkeznie KELL. A megengedett érték nulla.
+
+### v0.6/3 — a gép nem olvashatja ki, hol az ellenség
+
+Ez a szakasz legfontosabb önkorlátozása, és pont azért kell leírni, mert a kód
+szintjén semmi nem akadályozná meg: az `epuletek` tömb ott van, egyetlen ciklus,
+és a gép a 0. ticktől tudná az ellenséges központ helyét.
+
+Miért nem tesszük: a v0.7 hozza a hadi ködöt, és ha a gép addig a teljes pályát
+látná, a köd bevezetése egy csapásra megváltoztatná a viselkedését — egy „kész"
+AI-t kellene újraírni. Ennél is fontosabb a játékos oldala: egy ellenfél, aki a
+bázisod helyét a semmiből tudja, nem nehéz, hanem **igazságtalan**, és a
+felderítés mint mechanika azonnal értelmét veszti.
+
+A gép ezért saját tudást tart (`ismertX/ismertY`), amit csak úgy szerezhet meg,
+ahogy a játékos: valamelyik egysége látótávon belülre kerül egy ellenséges
+épülethez.
+
+**Amit a szakasz mérése átírt:**
+
+- **A védelem nem panikolhat egy kémtől.** Egyetlen betévedt felderítő is
+  átlépi a védelmi sugarat, és az első változat ettől hazarendelte a teljes
+  hadsereget. A nehéz gép háromszor váltott védekezésre, a serege végig hazafelé
+  menetelt, és a KÖNNYŰ gép verte meg. Most két ellenség kell hozzá.
+- **A sereg-parancs elveszi a felderítőt.** A kém a sereg része, tehát a
+  hazarendelés levette az útjáról — a gép viszont azt hitte, még kint van
+  (az index érvényes, az egység él), és soha nem küldött újat. Így sosem tudta
+  meg, hol az ellenfél, tehát támadni sem tudott.
+- **A támadási küszöb nem lehet nagyobb a sereg-célnál.** A könnyű gép 14-nél
+  támadott volna, de csak 8 katonát képzett — a saját célszámával SOHA nem érte
+  volna el a küszöböt. Hogy mégis támadott, az kizárólag a szonda örökölt
+  kezdősereg-ének volt köszönhető. Két külön tömb ellentmondása némán megél.
+- **A szonda köre csupa munkással indul.** A v0.5 felállását örökölve
+  csapatonként 15 katonával kezdett, és az első döntési körben (120. tick)
+  elindult egy teljes hadsereg, még mielőtt bármelyik gazdaság létezett volna.
+  A meccset az örökölt sereg döntötte el, nem az AI. Most a gépnek végig kell
+  mennie a saját láncán: gyűjtés → ház → laktanya → katona → felderítés →
+  támadás.
+
+⚠️ **A „hány támadást indított" önmagában HIBÁS gát** — ugyanabba a csapdába
+sétál, mint a v0.4 épület-célzása: a parancs kiadható úgy is, hogy egyetlen
+egység sem ér oda. Az első ötlet („okozott épület-sérülés") szintén rossz volt:
+ha a védő serege kiáll, a támadók vele verekszenek, és épületig el sem jutnak,
+pedig a hullám megérkezett. A szonda ezért futás közben méri a sereg **legjobb
+megközelítését** az ellenséges központhoz.
 
 ## A záró lépcsők (v0.11–v0.13)
 

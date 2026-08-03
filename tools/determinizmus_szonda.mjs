@@ -36,7 +36,14 @@
 //   --tick=N --parancs=N --hash=N --egyseg=N   (alap: 10000 / 250 / 100 / 1600)
 // Kilépési kód: 0 = rendben, 1 = bukás.
 //
-// ⏱️ A teljes kör ~25 mp. TÖRTÉNETI JEGYZET, mert tanulság: az első futásnál
+// ⏱️ A teljes kör ~2 perc 20 mp (mérve, v0.6/3). A „~25 mp" itt sokáig ELAVULT
+//    adatként állt — a kör azóta öt verzió-körrel bővült. A két legdrágább:
+//    a 6. (v0.3 gazdaság, 29 mp: 1600 egység, 400 munkás, kimerülő lelőhelyek)
+//    és a 9. (v0.6 gépi ellenfél, 22 mp: két AI, valódi csatákkal). Ez tudatos
+//    költség — a lefedettség fontosabb, mint a kör hossza. Füstteszthez a
+//    `--v06tick=4000` és társai lejjebb veszik.
+//
+// TÖRTÉNETI JEGYZET, mert tanulság: az első futásnál
 //    ~9 PERC volt, és nem a tick-szám miatt — egyetlen `szondaParancs()` 1600
 //    egységnél 4065 ms CPU-t vitt el (minden egység a SAJÁT alakzat-helyére kért
 //    áramlási mezőt, a 8 elemű gyorstár csapkodott). A 4. vizsgálat mutatta ki;
@@ -283,8 +290,8 @@ const FORGATOKONYVEK = {
   // FORGATÓKÖNYV MAGA AZ AI. Pont ezt kell a kapunak őriznie — hogy a gép
   // döntései bitre reprodukálhatók. A `fut` ezért üres.
   v06: {
-    nev: 'v0.6 gépi ellenfél (könnyű vs nehéz)', tickek: ervSzam('v06tick', 12000),
-    egysegSzam: 60,
+    nev: 'v0.6 gépi ellenfél (könnyű vs nehéz)', tickek: ervSzam('v06tick', 16000),
+    egysegSzam: 24,
     felallit: (sim, db) => sim.szondaFelallasV06(db),
     fut: () => {},
   },
@@ -928,7 +935,32 @@ if (ketV06.ok) {
   const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
   const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
   const kezdo = s.szondaFelallasV06(FORGATOKONYVEK.v06.egysegSzam);
-  for (let t = 1; t <= FORGATOKONYVEK.v06.tickek; t++) s.lep();
+  // A hullám legjobb megközelítése az ELLENSÉGES központhoz, futás közben mérve.
+  const kozelites = [1e9, 1e9];
+  const kozpont = [null, null];
+  for (let t = 1; t <= FORGATOKONYVEK.v06.tickek; t++) {
+    s.lep();
+    if ((t % 100) !== 0) continue;
+    for (let cs = 0; cs < 2; cs++) {
+      if (!kozpont[cs]) {
+        for (let k = 0; k < s.epuletek.db; k++) {
+          if (s.epuletek.csapat[k] === cs && s.epuletek.tipus[k] === 0 && s.epuletek.elo[k]) {
+            kozpont[cs] = { x: s.epuletek.x[k], y: s.epuletek.y[k] };
+            break;
+          }
+        }
+      }
+    }
+    for (let i = 0; i < s.egysegek.db; i++) {
+      if (!s.harc.elo[i] || s.egysegek.tipus[i] === 0) continue;
+      const cs = s.egysegek.csapat[i] & 1;
+      const c = kozpont[1 - cs];
+      if (!c) continue;
+      const dx = s.egysegek.px[i] - c.x, dy = s.egysegek.py[i] - c.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < kozelites[cs]) kozelites[cs] = d;
+    }
+  }
 
   const a0 = s.ai.osszesites(0), a1 = s.ai.osszesites(1);
   const g0 = s.gazdasag.allapot(0), g1 = s.gazdasag.allapot(1);
@@ -1017,6 +1049,56 @@ if (ketV06.ok) {
   if (a1.kutatas === 0) {
     console.log('\n  \u26d4 A NEHÉZ GÉP EGYSZER SEM ADOTT KI KUTATÁS-PARANCSOT.');
     bukas++;
+  }
+
+  // v0.6/3 — FELDERÍTÉS ÉS HADMŰVELET.
+  //
+  // ⚠️ AZ UTOLSÓ SZÁM A LEGFONTOSABB. A „hány támadást indított" önmagában
+  // ugyanabba a csapdába sétál, amibe a v0.4 épület-célzása: a parancs
+  // kiadható úgy is, hogy egyetlen egység sem ér oda. Az EGYETLEN bizonyíték
+  // az, hogy az ellenséges épületek TÉNYLEG sérültek — vagyis a hullám
+  // megérkezett és ütött.
+  // A mérés a FUTÁS KÖZBEN gyűlt (`kozelites`): a hullám legjobb megközelítése
+  // az ellenséges központhoz. A végállapot erre nem alkalmas — a támadók addigra
+  // vagy elestek, vagy visszavonultak, és a nyoma sem látszana.
+  //
+  // Az „okozott épület-sérülés" első ötlet volt, és HIBÁS gát: ha a védő serege
+  // kiáll, a támadók vele verekszenek, és épületig el sem jutnak — pedig a
+  // hullám tökéletesen megérkezett.
+  sor('felderítő kiküldve', a0.felderit + ' / ' + a1.felderit,
+    'felfedezte a bázist: ' + (a0.felfedez > 0 ? 'igen' : 'NEM')
+    + ' / ' + (a1.felfedez > 0 ? 'igen' : 'NEM'));
+  sor('indított támadás', a0.tamadas + ' / ' + a1.tamadas,
+    'védekezésre váltás: ' + a0.vedekezes + ' / ' + a1.vedekezes);
+  sor('legjobb megközelítés', kozelites[0].toFixed(1) + ' / ' + kozelites[1].toFixed(1),
+    'az ELLENSÉGES központtól — ez bizonyítja, hogy a hullám odaért');
+
+  if (a0.felfedez === 0 && a1.felfedez === 0) {
+    console.log('\n  \u26d4 EGYIK GÉP SEM TALÁLTA MEG AZ ELLENSÉGET: a `_felderit`');
+    console.log('     látás-ága néma. A gép SZÁNDÉKOSAN nem olvashatja ki az');
+    console.log('     `epuletek`-ből, hol az ellenfél — ha a felderítés nem megy,');
+    console.log('     sosem indul támadás. Nézd meg a `LATOTAV`-ot és azt, hogy');
+    console.log('     elindul-e egyáltalán a felderítő.');
+    bukas++;
+  }
+  if (a0.tamadas === 0 && a1.tamadas === 0) {
+    console.log('\n  \u26d4 EGYIK GÉP SEM INDÍTOTT TÁMADÁST: a `_hadmuvelet` ága néma.');
+    console.log('     Nézd meg a `TAMADAS_KUSZOB`-ot és azt, hogy elér-e a sereg');
+    console.log('     egyáltalán akkora létszámot.');
+    bukas++;
+  } else {
+    for (let cs = 0; cs < 2; cs++) {
+      const tam = cs === 0 ? a0.tamadas : a1.tamadas;
+      if (tam > 0 && kozelites[cs] > 30) {
+        console.log('\n  \u26d4 A ' + cs + '. GÉP TÁMADÁST INDÍTOTT, DE A SEREGE SOSEM JUTOTT');
+        console.log('     ' + kozelites[cs].toFixed(1) + ' egységnél közelebb az ellenséges központhoz.');
+        console.log('     A parancs kiment, a hullám nem ért oda — pontosan az a hiba,');
+        console.log('     amit a v0.4-ben már egyszer megfogtunk (nulla egység indult');
+        console.log('     el egy 1200 életerejű célpont felé). Nézd meg a');
+        console.log('     `_seregParancs` célpontját és a `_jarhatoKozel` eredményét.');
+        bukas++;
+      }
+    }
   }
 
   // NAVIGÁCIÓ NÉLKÜL ÁLLÓ MUNKÁS — a v0.6/2 legdrágább hibájának őre.

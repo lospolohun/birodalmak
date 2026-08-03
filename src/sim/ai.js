@@ -56,6 +56,7 @@ import { NYERS } from './eroforras.js';
 import { EPULET, EP_AR, EP_MERET } from './epuletek.js';
 import { MUNKA } from './munkas.js';
 import { TECH_DB, techEpulete } from './technologia.js';
+import { EGYSEG_AR } from './kepzes.js';
 
 export const NEHEZSEG = { KONNYU: 0, KOZEPES: 1, NEHEZ: 2 };
 export const NEHEZSEG_NEV = ['könnyű', 'közepes', 'nehéz'];
@@ -158,6 +159,61 @@ const KUTATAS_CEL = [0, 3, 6];
  */
 const SOR_KORLAT = 2;
 
+// ── v0.6/3: FELDERÍTÉS ÉS HADMŰVELET ─────────────────────────────────────
+//
+// ⚠️ A GÉP NEM OLVASHATJA KI, HOL AZ ELLENSÉG. Ez a fájl legfontosabb
+// önkorlátozása, és pont azért kell leírni, mert a kód szintjén SEMMI nem
+// akadályozná meg: az `epuletek` tömb ott van, egyetlen ciklus, és a gép
+// pontosan tudná az ellenséges központ helyét a 0. ticktől.
+//
+// Miért nem tesszük: a v0.7 hozza a hadi ködöt, és ha a gép addig a teljes
+// pályát látná, a köd bevezetése egy csapásra MEGVÁLTOZTATNÁ a viselkedését —
+// egy „kész" AI-t kellene újraírni. Ennél is fontosabb viszont a játékos
+// oldala: egy ellenfél, aki a bázisod helyét a semmiből tudja, nem nehéz,
+// hanem IGAZSÁGTALAN, és a felderítés mint játékmechanika azonnal értelmét
+// veszti.
+//
+// Ezért a gép SAJÁT tudást tart (`ismertX/ismertY`), amit csak úgy szerezhet
+// meg, ahogy a játékos: valamelyik EGYSÉGE a látótávon belülre kerül egy
+// ellenséges épülethez. A `_felderit` az egyetlen hely, ahol ez a tudás
+// keletkezik.
+const LATOTAV = 14;
+
+/** Hány tickenként indít új felderítőt, ha az előző odaveszett. */
+const FELDERITO_KOZ = [1200, 800, 500];
+
+/**
+ * Mekkora sereggel indul TÁMADÁS.
+ *
+ * ⚠️ A KÜSZÖB NEM LEHET NAGYOBB A `SEREG_CEL`-NÁL. Az első változatban a
+ * könnyű gép 14-nél támadott, de csak 8 katonát képzett — vagyis a saját
+ * célszámával SOHA nem érte volna el a küszöböt. Hogy mégis támadott, az
+ * kizárólag a szonda kezdő felállásának volt köszönhető (15 katona
+ * csapatonként): egyetlen hullámot indított az örökölt sereggel, aztán soha
+ * többet. Ez a fajta ellentmondás két külön tömb között némán megél.
+ *
+ * Így viszont a három szint értelmes: a könnyű a teljes (kicsi) seregével
+ * támad, a nehéz a nagy seregének kétharmadával, tehát otthon is marad
+ * védelem. A nehéz később üt, de sokkal keményebben.
+ */
+const TAMADAS_KUSZOB = [8, 14, 22];
+
+/**
+ * Ha a hullám ez alá fogy, VISSZAVONUL és újragyűlik. Enélkül a gép a maradék
+ * két katonáját is a vesztes csatába küldi utánpótlásként, egyesével — ez a
+ * gépi ellenfelek klasszikus, kínos hibája.
+ */
+const VISSZAVONULAS = [4, 4, 3];
+
+/** Ekkora sugárban számít a bázis VESZÉLYBEN lévőnek. */
+const VEDELEM_SUGAR = 28;
+
+/** Hány döntési körönként frissítjük a támadó parancsot (lemaradók begyűjtése). */
+const PARANCS_FRISSITES = 8;
+
+/** A gép hadműveleti állapota. */
+const HAD = { GYULT: 0, TAMAD: 1, VEDEKEZIK: 2 };
+
 export class Ai {
   /**
    * @param {number} csapatDb
@@ -185,6 +241,25 @@ export class Ai {
     this.kepzesDb = new Int32Array(this.csapatDb);
     this.kutatasDb = new Int32Array(this.csapatDb);
 
+    // ── v0.6/3: a gép SAJÁT TUDÁSA és hadműveleti állapota ──────────────
+    /** A felfedezett ellenséges bázis, vagy -1 ha még nem tudjuk. */
+    this.ismertX = new Int32Array(this.csapatDb).fill(-1);
+    this.ismertY = new Int32Array(this.csapatDb).fill(-1);
+    /** A kiküldött felderítő INDEXE és GENERÁCIÓJA (lásd v0.5/1). */
+    this.felderito = new Int32Array(this.csapatDb).fill(-1);
+    this.felderitoGen = new Int32Array(this.csapatDb);
+    /** Ez előtt a tick előtt nem küldünk új felderítőt. */
+    this.felderitoIdo = new Int32Array(this.csapatDb);
+    /** `HAD.*` — gyülekezik, támad, vagy védekezik. */
+    this.had = new Int32Array(this.csapatDb);
+    /** Hány döntési kör telt el az utolsó támadó-parancs frissítés óta. */
+    this.frissitesIdo = new Int32Array(this.csapatDb);
+
+    this.felderitDb = new Int32Array(this.csapatDb);
+    this.felfedezDb = new Int32Array(this.csapatDb);
+    this.tamadasDb = new Int32Array(this.csapatDb);
+    this.vedekezesDb = new Int32Array(this.csapatDb);
+
     /**
      * Újrahasznált gyűjtő-tömb a tétlen munkásoknak. A döntési kör így NEM
      * allokál — ugyanaz a szabály, mint a render `frissit()`-jében.
@@ -198,6 +273,8 @@ export class Ai {
     /** Újrahasznált jelölt-tömb és pont — a döntési kör nem allokál. */
     this._jeloltek = [];
     this._pont = { x: 0, y: 0 };
+    /** Újrahasznált sereg-tömb a hadműveleti parancsokhoz. */
+    this._sereg = [];
   }
 
   /** Egy csapat átadása a gépnek. */
@@ -216,6 +293,17 @@ export class Ai {
     this.epitDb.fill(0);
     this.kepzesDb.fill(0);
     this.kutatasDb.fill(0);
+    this.ismertX.fill(-1);
+    this.ismertY.fill(-1);
+    this.felderito.fill(-1);
+    this.felderitoGen.fill(0);
+    this.felderitoIdo.fill(0);
+    this.had.fill(0);
+    this.frissitesIdo.fill(0);
+    this.felderitDb.fill(0);
+    this.felfedezDb.fill(0);
+    this.tamadasDb.fill(0);
+    this.vedekezesDb.fill(0);
   }
 
   /**
@@ -266,6 +354,168 @@ export class Ai {
     this._buildOrder(cs, bx, by);
     this._katonatKepez(cs);
     this._kutat(cs);
+    // v0.6/3 — a felderítés a HADMŰVELET ELŐTT fut: a támadási döntés arra a
+    // tudásra épül, amit a felderítés ebben a körben szerzett.
+    this._felderit(cs, bx, by);
+    this._hadmuvelet(cs, bx, by);
+  }
+
+  /**
+   * FELDERÍTÉS — a gép megtudja, hol az ellenség.
+   *
+   * Két része van, és a sorrend számít:
+   *
+   *   1. LÁTÁS: ha bármelyik ÉLŐ egységünk `LATOTAV`-on belül van egy
+   *      ellenséges épülethez, a helyét megjegyezzük. Ez az EGYETLEN hely,
+   *      ahol a gép tudása keletkezik — lásd a fájl `LATOTAV` fölötti
+   *      indoklását arról, miért nem olvassuk ki egyszerűen az `epuletek`-et.
+   *   2. FELDERÍTŐ: ha még nem tudjuk, hol az ellenség, kiküldünk EGY egységet
+   *      a pálya túloldalára. Egyet, nem többet: a felderítő jellemzően meghal,
+   *      és egy egész szakasz elvesztése a gazdaság elején végzetes.
+   */
+  _felderit(cs, bx, by) {
+    const sim = this.sim;
+    const e = sim.egysegek;
+    const ep = sim.epuletek;
+
+    // ── 1. LÁTÁS ───────────────────────────────────────────────────────
+    if (this.ismertX[cs] < 0) {
+      for (let i = 0; i < e.db && this.ismertX[cs] < 0; i++) {
+        if (e.csapat[i] !== cs || !sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
+        const k = ep.legkozelebbiEllenseges(cs, e.px[i], e.py[i], LATOTAV);
+        if (k < 0) continue;
+        this.ismertX[cs] = ep.x[k] | 0;
+        this.ismertY[cs] = ep.y[k] | 0;
+        this.felfedezDb[cs]++;
+      }
+    }
+    if (this.ismertX[cs] >= 0) return;
+
+    // ── 2. FELDERÍTŐ KIKÜLDÉSE ─────────────────────────────────────────
+    // Csak akkor, ha az előző már nincs meg. A GENERÁCIÓ dönti el, hogy a
+    // tárolt index még ugyanazt az egységet jelenti-e — a v0.5/1 slot-
+    // újrahasznosítása miatt egy nyers index néhány száz tick múlva egy
+    // vadidegen katonára mutatna, és a gép azt hinné, még felderít valaki.
+    const f = this.felderito[cs];
+    if (f >= 0 && e.ervenyes(f, this.felderitoGen[cs])) return;
+    if (sim.tick < this.felderitoIdo[cs]) return;
+
+    let jelolt = -1;
+    for (let i = 0; i < e.db; i++) {
+      if (e.csapat[i] !== cs || !sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
+      if (e.tipus[i] === TIPUS.MUNKAS) continue;   // a munkás dolgozzon
+      jelolt = i;
+      break;
+    }
+    if (jelolt < 0) return;
+
+    // A felderítő a pálya TÚLOLDALÁRA megy, a saját bázisunk tükörképére. Nem
+    // véletlen irány: a v0.1 óta a két bázis a pálya két oldalán van, és a
+    // felderítésnek nem az a dolga, hogy a térképet felfedezze, hanem hogy az
+    // ELLENFELET megtalálja. (A v0.10 térkép-presetjeinél ez általánosítandó.)
+    const c = sim._jarhatoKozel(sim.n - (bx | 0), by | 0);
+    this.felderito[cs] = jelolt;
+    this.felderitoGen[cs] = e.generacio[jelolt];
+    this.felderitoIdo[cs] = sim.tick + FELDERITO_KOZ[this.nehezseg[cs]];
+    this.felderitDb[cs]++;
+    // Sima menet, NEM támadó: a felderítő ne álljon meg minden ellenséggel
+    // verekedni, mert akkor sosem ér oda.
+    sim.parancs({ fajta: 'menet', egysegek: [jelolt], x: c.x, y: c.y });
+  }
+
+  /**
+   * HADMŰVELET — védekezés, gyülekezés, támadás.
+   *
+   * ⚠️ PARANCSOT CSAK ÁLLAPOTVÁLTÁSKOR ADUNK (plusz ritka frissítést). Ez
+   * ugyanaz a szabály, ami a munkásoknál a fejlécben áll: a menetparancs
+   * ÚJRAINDÍTJA az egységet, tehát ha a gép minden körben kiadná ugyanazt a
+   * támadási parancsot, a sereg minden döntési körben újratervezné az útját,
+   * és a helyben toporgás lenne az eredmény.
+   */
+  _hadmuvelet(cs, bx, by) {
+    const sim = this.sim;
+    const e = sim.egysegek;
+    const n = this.nehezseg[cs];
+
+    // ── VÉDEKEZÉS mindenek előtt ───────────────────────────────────────
+    // Ha ellenség van a bázison, a hadsereg helye OTTHON van. A gép különben
+    // boldogan rohamozna tovább, miközben a munkásait lemészárolják — ez a
+    // fajta hiba nem látszik semmilyen összesített számon, csak a meccs végén.
+    // KETTŐ ellenség kell, nem egy — és ezt mérni kellett. Egyetlen betévedt
+    // FELDERÍTŐ is átlépi a védelmi sugarat, és az első változat ettől
+    // hazarendelte a teljes hadsereget. A nehéz gép háromszor váltott
+    // védekezésre 12 000 tick alatt, a serege gyakorlatilag végig hazafelé
+    // menetelt, és a KÖNNYŰ gép verte meg. Egy magányos kém nem invázió.
+    let ellensegDb = 0;
+    for (let i = 0; i < e.db && ellensegDb < 2; i++) {
+      if (e.csapat[i] === cs || !sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
+      if (e.tipus[i] === TIPUS.MUNKAS) continue;
+      const dx = e.px[i] - bx, dy = e.py[i] - by;
+      if (dx * dx + dy * dy < VEDELEM_SUGAR * VEDELEM_SUGAR) ellensegDb++;
+    }
+    if (ellensegDb >= 2) {
+      if (this.had[cs] !== HAD.VEDEKEZIK) {
+        this.had[cs] = HAD.VEDEKEZIK;
+        this.vedekezesDb[cs]++;
+        this._seregParancs(cs, bx, by, true);
+      }
+      return;
+    }
+
+    if (this.had[cs] === HAD.VEDEKEZIK) this.had[cs] = HAD.GYULT;
+
+    // ── TÁMADÁS ────────────────────────────────────────────────────────
+    if (this.ismertX[cs] < 0) return;   // nem tudjuk, hova
+    if (this.had[cs] === HAD.GYULT) {
+      if (this._seregDb < TAMADAS_KUSZOB[n]) return;
+      this.had[cs] = HAD.TAMAD;
+      this.tamadasDb[cs]++;
+      this.frissitesIdo[cs] = 0;
+      this._seregParancs(cs, this.ismertX[cs], this.ismertY[cs], true);
+      return;
+    }
+
+    // Fut a hullám: elfogyott-e?
+    if (this._seregDb < VISSZAVONULAS[n]) {
+      this.had[cs] = HAD.GYULT;
+      this._seregParancs(cs, bx, by, false);
+      return;
+    }
+    // Ritka frissítés: a közben kiképzett katonák és a lemaradók is
+    // csatlakozzanak. Ritkán, mert minden parancs újratervezteti az utat.
+    if (++this.frissitesIdo[cs] >= PARANCS_FRISSITES) {
+      this.frissitesIdo[cs] = 0;
+      this._seregParancs(cs, this.ismertX[cs], this.ismertY[cs], true);
+    }
+  }
+
+  /**
+   * A teljes hadsereg EGY parancsot kap — egy csoport, egy áramlási mező.
+   * Ez a v0.1 legdrágább tanulsága (`parancsok.js` fejléce), és a gépnél
+   * ugyanúgy érvényes: egységenkénti parancs itt is mezőt kérne fejenként.
+   */
+  _seregParancs(cs, x, y, tamado) {
+    const sim = this.sim;
+    const e = sim.egysegek;
+    const sereg = this._sereg;
+    sereg.length = 0;
+    for (let i = 0; i < e.db; i++) {
+      if (e.csapat[i] !== cs || !sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
+      if (e.tipus[i] === TIPUS.MUNKAS) continue;
+      sereg.push(i);
+    }
+    if (sereg.length === 0) return;
+    // ⚠️ A FELDERÍTŐ IS A SEREG RÉSZE, tehát ez a parancs LEVETTE a felderítő
+    // útjáról. Ha ezt nem jegyeznénk fel, a gép azt hinné, még mindig kint van
+    // egy kém (az index érvényes, az egység él), és SOSEM küldene újat. Mérve:
+    // a nehéz gép egyetlen felderítőt indított 12 000 tick alatt, a hazarendelés
+    // után pedig soha nem tudta meg, hol az ellenfél — így támadni sem tudott.
+    this.felderito[cs] = -1;
+    const c = sim._jarhatoKozel(x, y);
+    sim.parancs({
+      fajta: tamado ? 'tamado_menet' : 'menet',
+      egysegek: sereg.slice(), x: c.x, y: c.y,
+    });
   }
 
   /**
@@ -346,6 +596,12 @@ export class Ai {
       for (let t = 0; t < 5; t++) {
         if (t === TIPUS.MUNKAS) continue;
         if (!sim.kepzes.kepezheti(ep.tipus[k], t)) continue;
+        // ELŐZETES ÁR-VIZSGÁLAT. A `Kepzes.sorba` úgyis elutasít, ha nem telik,
+        // de a vak rendelés zajt csinál: mérve 978 képzési parancsot adott ki a
+        // nehéz gép, aminek a túlnyomó része elutasításba futott. A v0.8-ban
+        // ezek a parancsok a HÁLÓZATON is átmennének — egy AI, ami másodpercenként
+        // tucat halott parancsot küld, ott már nem csak zaj.
+        if (!sim.gazdasag.telik(cs, EGYSEG_AR[t])) break;
         sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg: t });
         this.kepzesDb[cs]++;
         break;
@@ -678,6 +934,13 @@ export class Ai {
       epit: this.epitDb[csapat],
       kepzes: this.kepzesDb[csapat],
       kutatas: this.kutatasDb[csapat],
+      felderit: this.felderitDb[csapat],
+      felfedez: this.felfedezDb[csapat],
+      tamadas: this.tamadasDb[csapat],
+      vedekezes: this.vedekezesDb[csapat],
+      ismertX: this.ismertX[csapat],
+      ismertY: this.ismertY[csapat],
+      had: this.had[csapat],
     };
   }
 }

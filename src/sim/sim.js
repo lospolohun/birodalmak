@@ -933,7 +933,18 @@ export class Sim {
    * hash-en — a hiba a kapun belül maradna.
    */
   szondaFelallasV06(osszDb) {
-    const db = this.szondaFelallas(osszDb, { munkasMinden: 2 });
+    // ⚠️ CSUPA MUNKÁSSAL INDUL, ÉS EZ MÉRÉS EREDMÉNYE. A v0.5 felállását
+    // örökölve a kör csapatonként 15 KATONÁVAL kezdett, és bármelyik támadási
+    // küszöb azonnal teljesült: az első döntési körben (120. tick) elindult egy
+    // teljes hadsereg, még mielőtt bármelyik gazdaság létezett volna. A meccset
+    // az örökölt sereg döntötte el, nem az AI — a nehéz gép 2 munkással és
+    // NULLA katonai épülettel végezte, tehát a build ordere, a képzése és a
+    // kutatása gyakorlatilag ki sem futott.
+    //
+    // A műfaj valódi nyitása is ez: néhány munkás, semmi más. A gépnek végig
+    // kell mennie a saját láncán — gyűjtés → ház → laktanya → katona →
+    // felderítés → támadás —, és pont ez az, amit a kapun belül akarunk tudni.
+    const db = this.szondaFelallas(osszDb, { munkasMinden: 1 });
     this.ai.beallit(0, NEHEZSEG.KONNYU);
     this.ai.beallit(1, NEHEZSEG.NEHEZ);
     return db;
@@ -1056,6 +1067,18 @@ export class Sim {
       h = fnvSzam(h, ai.aktiv[cs]);
       h = fnvSzam(h, ai.nehezseg[cs]);
       h = fnvSzam(h, ai.dontesDb[cs]);
+      // v0.6/3 — a gép TUDÁSA és hadműveleti állapota is a világ állapota. Ha
+      // az egyik gépen már felfedezte az ellenséges bázist, a másikon még nem,
+      // akkor az egyiken elindul a támadás, a másikon nem — és onnantól két
+      // különböző meccs fut. A felderítő indexe és generációja ugyanígy: abból
+      // következik, hogy mikor küld a gép újat.
+      h = fnvSzam(h, ai.ismertX[cs]);
+      h = fnvSzam(h, ai.ismertY[cs]);
+      h = fnvSzam(h, ai.felderito[cs]);
+      h = fnvSzam(h, ai.felderitoGen[cs]);
+      h = fnvSzam(h, ai.felderitoIdo[cs]);
+      h = fnvSzam(h, ai.had[cs]);
+      h = fnvSzam(h, ai.frissitesIdo[cs]);
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
