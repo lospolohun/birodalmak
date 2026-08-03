@@ -58,6 +58,14 @@ const UTEM = [25, 15, 20, 16];
 export const HATOTAV = [1.15, 1.45, 6.0, 1.25];
 
 /**
+ * Távolsági-e? A távolsági egység nem azonnal sebez, hanem LÖVEDÉKET indít
+ * (`lovedek.js`), aminek repülési ideje van. Ez nem látvány, hanem
+ * játékmechanika: ettől lehet „túllőni" egy visszavonulót, és ezért éri meg a
+ * lovasnak berohanni az íjászok közé.
+ */
+const TAVOLSAGI = [0, 0, 1, 0];
+
+/**
  * ELLENSÚLY-TÁBLA: `SZORZO[támadástípus][páncéltípus]` SZÁZALÉKBAN.
  *
  * A háromszög innen olvasható ki:
@@ -149,27 +157,44 @@ export class Harc {
       const hat = HATOTAV[t];
       if (dx * dx + dy * dy > hat * hat) continue;
 
-      this._ut(i, cel, t);
+      const seb = this.sebzesErtek(t, e.tipus[cel]);
+      if (TAVOLSAGI[t]) {
+        // A sebzés a KILÖVÉSKOR dől el, és a lövedék viszi magával — a
+        // becsapódás így olcsó, és a szám nem változik meg út közben.
+        this.sim.lovedekek.lo(e.px[i], e.py[i], cel, seb, e.csapat[i]);
+      } else {
+        this.sebez(cel, seb, e.csapat[i]);
+      }
       this.utemHatra[i] = UTEM[t];
     }
   }
 
   /**
-   * Egy csapás. A sebzés MINDIG legalább 1 — enélkül két erősen páncélozott
-   * egység a végtelenségig ütné egymást nulla eredménnyel, és a játékos azt
-   * látná, hogy a csata „megállt".
+   * A csapás ÉRTÉKE — páncél és ellensúly beszámítva, egészben.
+   *
+   * A sebzés MINDIG legalább 1: enélkül két erősen páncélozott egység a
+   * végtelenségig ütné egymást nulla eredménnyel, és a játékos azt látná, hogy
+   * a csata „megállt".
+   *
+   * Külön metódus, mert KÉT hívója van: a közelharc azonnal alkalmazza, a
+   * távolsági viszont a kilövéskor számolja ki, és a lövedék viszi magával.
+   * @param {number} tamadoTipus @param {number} celTipus
+   * @returns {number} egész sebzés
    */
-  _ut(tamado, cel, tipus) {
-    const e = this.sim.egysegek;
-    const tt = TAMADAS_TIPUS[tipus];
-    const pt = PANCEL_TIPUS[e.tipus[cel]];
+  sebzesErtek(tamadoTipus, celTipus) {
+    const tt = TAMADAS_TIPUS[tamadoTipus];
+    const pt = PANCEL_TIPUS[celTipus];
     // Egész osztás — nincs kerekítési szabadság, tehát gépfüggetlen.
-    let seb = ((ALAP_SEBZES[tipus] * SZORZO[tt][pt]) / 100) | 0;
-    seb -= PANCEL_ERTEK[e.tipus[cel]];
-    if (seb < 1) seb = 1;
+    let seb = ((ALAP_SEBZES[tamadoTipus] * SZORZO[tt][pt]) / 100) | 0;
+    seb -= PANCEL_ERTEK[celTipus];
+    return seb < 1 ? 1 : seb;
+  }
 
+  /** A sebzés alkalmazása. A lövedék becsapódása is ide fut be. */
+  sebez(cel, seb, tamadoCsapat) {
+    if (cel < 0 || this.elo[cel] === 0) return;
     this.hp[cel] -= seb;
-    this.osszSebzes[e.csapat[tamado] & 1] += seb;
+    this.osszSebzes[tamadoCsapat & 1] += seb;
     if (this.hp[cel] <= 0) this._meghal(cel);
   }
 

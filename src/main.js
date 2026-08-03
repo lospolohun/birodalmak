@@ -31,6 +31,7 @@ import { Diszlet3D } from './render/props3d.js';
 import { Egysegek3D } from './render/units3d.js';
 import { Kijeloles3D } from './render/kijeloles3d.js';
 import { Gazdasag3D } from './render/gazdasag3d.js';
+import { Lovedek3D } from './render/lovedek3d.js';
 import { Bevitel } from './ui/bevitel.js';
 
 /** Egy tick hossza másodpercben — a `sim/sim.js` TICK_HZ-ével egyezik. */
@@ -70,6 +71,7 @@ class Jatek {
       props: new Diszlet3D(szinter, this.sim, opciok),
       egysegek: new Egysegek3D(szinter, this.sim, opciok),
       gazdasag: new Gazdasag3D(szinter, this.sim),
+      lovedek: new Lovedek3D(szinter, this.sim),
       kijeloles: new Kijeloles3D(szinter, this.sim, { kijeloles: this.bevitel.kijeloles }),
     };
 

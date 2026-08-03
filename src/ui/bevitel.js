@@ -388,13 +388,15 @@ export class Bevitel {
     const cs = this.kijeloles.sajatCsapat;
     const a = this.sim.gazdasag.allapot(cs);
     const m = this.sim.munkasok.osszesites(cs);
+    const h = this.sim.harc.osszesites();
     return NYERS_NEV[0] + ' ' + a.etel
       + ' · ' + NYERS_NEV[1] + ' ' + a.fa
       + ' · ' + NYERS_NEV[2] + ' ' + a.ko
       + ' · ' + NYERS_NEV[3] + ' ' + a.kristaly
       + '  |  ' + KORSZAK_NEV[a.korszak]
       + (a.valtasHatra ? ' → vált (' + Math.ceil(a.valtasHatra / 20) + ' mp)' : '')
-      + '  |  dolgozó munkás: ' + m.dolgozik;
+      + '  |  dolgozó munkás: ' + m.dolgozik
+      + '  |  élő: ' + h.elo[cs] + ' (elesett ' + h.halottak[cs] + ')';
   }
 
   /** Újrafelállás után a kijelölés és a csoportok takarítása. */

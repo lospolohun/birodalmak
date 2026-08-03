@@ -34,6 +34,7 @@ import { Epuletek, EPULET, EP_MERET } from './epuletek.js';
 import { Gazdasag, KORSZAK } from './gazdasag.js';
 import { Munkasok, MUNKA } from './munkas.js';
 import { Harc, TAMADAS, PANCEL } from './harc.js';
+import { Lovedekek } from './lovedek.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -77,6 +78,9 @@ export class Sim {
     // hasítótáblából, tehát egy csapásra megszűnik lökdösni és célponttá válni.
     this.harc = new Harc(this.maxEgyseg, this);
     this.egysegek.elo = this.harc.elo;
+    // A lövedék-tár felső korlátja bőven a valós csúcs fölött van; ha betelne,
+    // a lövés elvész, nem allokálunk (lásd `lovedek.js`).
+    this.lovedekek = new Lovedekek(this.maxEgyseg, this);
 
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
@@ -89,7 +93,12 @@ export class Sim {
       // mert az dönti el, kinek ki a célpontja és ki áll harcérintkezésben; a
       // harc már csak a sebzést végzi. A két kérdés — „kire támadok" és
       // „mennyit sebzek" — így nem keveredik egyetlen ciklusba.
-      lep: (t) => { this.parancsAllapot.lep(t); this.harc.lep(); this.munkasok.lep(t); },
+      lep: (t) => {
+        this.parancsAllapot.lep(t);
+        this.harc.lep();
+        this.lovedekek.lep();
+        this.munkasok.lep(t);
+      },
     };
 
     /** tick → parancsok. Kulcs szerint kérdezzük, sosem iteráljuk. */
@@ -224,6 +233,7 @@ export class Sim {
     this.parancsAllapot.nullaz(e.db);
     // Az életerő a TÍPUSBÓL jön, ezért csak a felállás után adható meg.
     this.harc.nullaz(e.db);
+    this.lovedekek.nullaz();
 
     // A munkás nem katona: alapból TŰZSZÜNETBEN áll. Enélkül az agresszív
     // alapállás miatt az első ellenség láttán otthagyná a bányát és rohanna
@@ -573,6 +583,17 @@ export class Sim {
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
+    // v0.4 — a repülő lövedék is állapot: a becsapódás ideje és a sebzése
+    // eldönti, ki hal meg. A nyers float-bájtokat hasítjuk, mint a pozíciókét.
+    const lv = this.lovedekek;
+    h = fnvSzam(h, lv.db);
+    h = fnvTomb(h, lv.x, lv.db);
+    h = fnvTomb(h, lv.y, lv.db);
+    for (let i = 0; i < lv.db; i++) {
+      h = fnvSzam(h, lv.cel[i]);
+      h = fnvSzam(h, lv.sebzes[i]);
+      h = fnvSzam(h, lv.elet[i]);
+    }
     return h >>> 0;
   }
 }
