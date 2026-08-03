@@ -16,7 +16,29 @@ A render sosem ír vissza a simbe. Ha hatni akarsz a világra, adj be parancsot:
 A játék verziója **`src/core/config.js` → `VERZIO`**. A `package.json` verziója
 nem ez, ne azt nézd. (A TELEPESEK-ben ez rendszeresen félrevezetett.)
 
-## Szondák futtatása ezen a gépen
+## Hol dolgozol? — ez eldönti, mit tudsz ellenőrizni
+
+A projekt két környezetben él, és **nem ugyanaz fut mindkettőben**:
+
+| | felhő (Claude Code weben) | otthoni iMac |
+|---|---|---|
+| kód írása, `npx vite build` | ✅ | ✅ |
+| `npm run det` (determinizmus) | ✅ **teljes értékű** | ✅ |
+| `npm run fps` (FPS-mérés) | ❌ nincs GPU | ✅ |
+| `node tools/kep.mjs` (képernyőkép) | ❌ nincs GPU | ✅ |
+
+A felhőben a Chrome szoftveres raszterizálóra (SwiftShader) esik. Az azon mért
+FPS **semmit nem jelent** — ezért az `fps_szonda.mjs` szándékosan MEGTAGADJA a
+mérést, ha `swiftshader|software|llvmpipe` jelzőt lát, és nem ad ítéletet.
+Ez nem hiba: ne kerüld meg, ne írd át a szűrőt, és **soha ne jelents felhőben
+mért FPS-t eredményként**.
+
+Amit felhőben nyugodtan csinálhatsz: sim-logika, útkeresés, harcrendszer, AI,
+UI, és a **determinizmus-szonda — az tiszta node, és pont az a legfontosabb
+kapu.** Ha teljesítményt érintő változtatást csinálsz, írd a PR/commit
+szövegébe, hogy `npm run fps` MÉG NEM futott rá, és az iMac-en le kell mérni.
+
+## Szondák futtatása az otthoni iMac-en
 
 macOS 12, Intel iMac: az `npx playwright install chromium` **bukik**
 („Playwright does not support chromium on mac12"). A rendszer-Chrome-ot kell
