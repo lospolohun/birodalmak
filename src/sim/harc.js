@@ -181,7 +181,7 @@ export class Harc {
       if (TAVOLSAGI[t]) {
         // A sebzés a KILÖVÉSKOR dől el, és a lövedék viszi magával — a
         // becsapódás így olcsó, és a szám nem változik meg út közben.
-        this.sim.lovedekek.lo(e.px[i], e.py[i], cel, seb, e.csapat[i]);
+        this.sim.lovedekek.lo(e.px[i], e.py[i], cel, seb, e.csapat[i], e.generacio[cel]);
       } else {
         this.sebez(cel, seb, e.csapat[i]);
       }
@@ -272,6 +272,22 @@ export class Harc {
     // marad (nem teremtünk nyersanyagot, csak nem érkezik meg).
     if (e.tipus[i] === TIPUS.MUNKAS) sim.munkasok.elenged(i);
     this.halottak[e.csapat[i] & 1]++;
+    // v0.5: a slot felszabadul és a GENERÁCIÓ lép — ettől a pillanattól minden
+    // rá mutató hivatkozás (célpont, lövedék, kijelölés) elavult, és a
+    // `ervenyes()` el is kapja.
+    e.felszabadit(i);
+  }
+
+  /**
+   * Egy ÚJ egység harc-állapota (v0.5). A `nullaz()` az egész seregre megy;
+   * ez egyetlen frissen kiképzett vagy újrahasznosított slotra.
+   */
+  szuletik(i) {
+    const t = this.sim.egysegek.tipus[i];
+    this.maxHp[i] = MAX_HP[t];
+    this.hp[i] = MAX_HP[t];
+    this.elo[i] = 1;
+    this.utemHatra[i] = i % UTEM[t];
   }
 
   /** Élő létszám csapatonként — a jelentésekhez és a HUD-hoz. */

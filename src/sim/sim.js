@@ -176,7 +176,9 @@ export class Sim {
    */
   szondaFelallas(osszDb, opciok) {
     const e = this.egysegek;
-    e.db = 0;
+    // v0.5: nem `db = 0`, hanem teljes újrakezdés — MINDEN generáció lép, tehát
+    // egyetlen korábbi hivatkozás sem támadhat fel érvényesként.
+    e.ujraKezd();
     const racs = this.racs;
     const n = this.n;
 
@@ -277,6 +279,38 @@ export class Sim {
     // A felállás és a lerakás is nyúlt a járhatósághoz — a mezők mehetnek.
     this._mezoErvenytelenites();
     return e.db;
+  }
+
+  /**
+   * ÚJ EGYSÉG a világba (v0.5) — EGYETLEN hely, ahol egység születik.
+   *
+   * MIÉRT KELL EGY HELY: az egység nem csak az `Egysegek` tömbjeiben él, hanem
+   * négy másik rétegben is (parancs-állapot, harc, munkás-AI, beszállásolás).
+   * Egy újrahasznosított slotnál MINDEGYIKET nullázni kell — ha bármelyik
+   * kimarad, az új katona az előző lakó céljával, rakományával vagy épp
+   * „épületben van" jelzőjével születik meg. Ezért nem hívjuk sehol közvetlenül
+   * az `egysegek.hozzaad()`-ot.
+   *
+   * @returns {number} az egység indexe, vagy -1
+   */
+  egysegKepez(x, y, tipus, csapat) {
+    const e = this.egysegek;
+    const i = e.hozzaad(x, y, tipus, csapat);
+    if (i < 0) return -1;
+    const pa = this.parancsAllapot;
+    pa.parancs[i] = PARANCS.NINCS;
+    pa.allas[i] = tipus === TIPUS.MUNKAS ? ALLAS.TUZSZUNET : ALLAS.AGRESSZIV;
+    pa.alakzat[i] = ALAKZAT.NEGYZET;
+    pa.celEgyseg[i] = -1;
+    pa.celEpulet[i] = -1;
+    pa.celGeneracio[i] = -1;
+    pa.vegX[i] = x; pa.vegY[i] = y; pa.vegMezo[i] = -1;
+    pa.horgonyX[i] = x; pa.horgonyY[i] = y;
+    this.munkasok.elenged(i);
+    this.beszallas.bent[i] = 0;
+    this.beszallas.hol[i] = -1;
+    this.harc.szuletik(i);
+    return i;
   }
 
   /**
@@ -636,6 +670,8 @@ export class Sim {
       h = fnvSzam(h, pa.allas[i]);
       h = fnvSzam(h, pa.celEgyseg[i]);
       h = fnvSzam(h, pa.celEpulet[i]);
+      h = fnvSzam(h, pa.celGeneracio[i]);
+      h = fnvSzam(h, e.generacio[i]);
       // v0.4 — egyetlen életerő-pont eltérése dönti el, hogy egy katona
       // túlél-e egy csapást; onnantól két különböző meccs fut a két gépen.
       h = fnvSzam(h, this.harc.hp[i]);

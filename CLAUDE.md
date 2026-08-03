@@ -50,6 +50,22 @@ export AOC_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 npm run szonda
 ```
 
+## ⚠️ A felhőben mért TICK-IDŐ sem összehasonlítható
+
+Az FPS-ről már tudjuk, hogy felhőben értelmetlen (nincs GPU). A determinizmus-
+szonda 4. vizsgálatának `ms/tick` száma viszont TISZTA CPU, tehát csábító azt
+hinni, hogy összevethető két futás között. **Nem az.** A felhő-gép osztott CPU-n
+fut, és a terhelése óráról órára változik.
+
+Mérve: ugyanaz a kód, ugyanaz a nap — 0,58 ms reggel, 0,88 ms este. A kettő közé
+beírt „optimalizálás" 32 %-os romlásnak látszott, holott a kód nem is számított:
+a változtatás NÉLKÜL futtatva ugyanannyi jött ki (0,883 / 0,880 / 0,853 a
+0,876 / 0,859 / 0,853 helyett).
+
+A szabály tehát: a tick-idő EGY FUTÁSON BELÜL összehasonlítható (A/B, `git
+stash`-sel), két különböző alkalom között NEM. Ha teljesítmény-változást
+állítasz, ugyanabban a munkamenetben mérd meg mindkét oldalt.
+
 ## Kód-stílus
 
 - Magyar azonosítók és kommentek, ahogy a meglévő fájlokban.

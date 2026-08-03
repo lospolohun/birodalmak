@@ -108,6 +108,62 @@ export class Egysegek {
      * harcrendszer felől.
      */
     this.bent = null;
+
+    // ── v0.5: SLOT-ÚJRAHASZNOSÍTÁS GENERÁCIÓS SZÁMLÁLÓVAL ────────────
+    //
+    // MIÉRT KELL: a v0.4-ig a halott slot örökre megmaradt, mert nem lehetett
+    // egységet KÉPEZNI — a létszám csak fogyott. A v0.5-ben viszont a
+    // laktanya termel, tehát a felszabadult helyeket újra kell használni,
+    // különben a `maxDb` néhány perc alatt betelik hullákkal.
+    //
+    // MIÉRT VESZÉLYES: az egység-INDEX a szimuláció legelterjedtebb
+    // hivatkozása — `parancsAllapot.celEgyseg`, `lovedek.cel`, a kliens
+    // kijelölése és a Ctrl-csoportok mind indexet tárolnak. Ha egy slot új
+    // gazdát kap, MINDEN ilyen hivatkozás csendben egy másik egységre mutatna:
+    // a nyílvessző a frissen kiképzett munkásba csapódna, a Ctrl-2 csoportban
+    // pedig idegenek jelennének meg. És a legrosszabb: ez determinisztikus
+    // lenne, tehát a desync-szonda ZÖLDEN hallgatna végig.
+    //
+    // A MEGOLDÁS: minden slothoz tartozik egy GENERÁCIÓ, ami felszabaduláskor
+    // eggyel nő. A hivatkozás az indexet ÉS a generációt tárolja, és használat
+    // előtt `ervenyes()`-t kérdez. Az elavult hivatkozás így ELKAPHATÓ — nem
+    // csak elromlik, hanem hamisat ad, és a hívó tud róla.
+    this.generacio = new Int32Array(m);
+    /** Felszabadult slotok verme. LIFO — a halálok sorrendje determinisztikus. */
+    this._szabad = new Int32Array(m);
+    this._szabadDb = 0;
+  }
+
+  /**
+   * Teljes újrakezdés: minden slot felszabadul, és MINDEN generáció lép.
+   *
+   * A generáció-léptetés nem elhagyható: ha nullázva újraindulnánk, egy régi,
+   * 0. generációs hivatkozás hirtelen újra érvényesnek látszana.
+   */
+  ujraKezd() {
+    for (let i = 0; i < this.maxDb; i++) this.generacio[i] = (this.generacio[i] + 1) | 0;
+    this.db = 0;
+    this._szabadDb = 0;
+  }
+
+  /**
+   * Egy slot felszabadítása (halál). A generáció lép, tehát minden rá mutató
+   * hivatkozás ettől a pillanattól elavult.
+   */
+  felszabadit(i) {
+    if (i < 0 || i >= this.db) return;
+    this.generacio[i] = (this.generacio[i] + 1) | 0;
+    if (this._szabadDb < this.maxDb) this._szabad[this._szabadDb++] = i;
+  }
+
+  /**
+   * Érvényes-e még egy (index, generáció) hivatkozás?
+   * @param {number} i @param {number} gen
+   */
+  ervenyes(i, gen) {
+    if (i < 0 || i >= this.db) return false;
+    if (this.generacio[i] !== gen) return false;
+    return !this.elo || this.elo[i] === 1;
   }
 
   /**
@@ -115,8 +171,12 @@ export class Egysegek {
    * @returns {number} az egység indexe, vagy -1 ha betelt
    */
   hozzaad(x, y, tipus, csapat) {
-    if (this.db >= this.maxDb) return -1;
-    const i = this.db++;
+    // Előbb a felszabadult helyekből — LIFO, tehát a sorrend a halálok
+    // (determinisztikus) sorrendjéből következik, nem a memória állapotából.
+    let i;
+    if (this._szabadDb > 0) i = this._szabad[--this._szabadDb];
+    else if (this.db < this.maxDb) i = this.db++;
+    else return -1;
     this.px[i] = x; this.py[i] = y;
     this.vx[i] = 0; this.vy[i] = 0;
     this.szog[i] = 0;
@@ -126,6 +186,10 @@ export class Egysegek {
     this.tipus[i] = tipus;
     this.csapat[i] = csapat;
     this.egyenes[i] = 0;
+    // ⚠️ Újrahasznált slotnál a MOZGÁS-mezőket is nullázni kell, különben az
+    // előző lakó sebessége és célja öröklődne.
+    this.celX[i] = x; this.celY[i] = y;
+    this.szog[i] = 0;
     return i;
   }
 

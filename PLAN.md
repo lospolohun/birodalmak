@@ -61,11 +61,22 @@ tud:** a beszállásolt íjász nem lő ki az épületből. Az önálló mechani
 (célkeresés az épület pozíciójából, saját ütemmel), és a v0.5 tornyával együtt
 érdemes megcsinálni.
 
-**Ismert adósság a v0.5 felé:** a halott slot nem szabadul fel. Amint egységet
-képezni is lehet, kell a slot-újrahasznosítás, ahhoz pedig **generációs
-számláló** — az egység-index a sim legelterjedtebb hivatkozása (`celEgyseg`,
-munkás-célok, kijelölés, Ctrl-csoportok), és az elavult hivatkozásnak
-elkaphatónak kell lennie, nem csak elromlania.
+**Ez az adósság KIFIZETVE** (a v0.5 első szakasza): a halott slot felszabadul,
+és minden slothoz tartozik egy generáció, ami felszabaduláskor lép. A
+hivatkozások (`celEgyseg`, `lovedek.cel`) az indexet ÉS a generációt tárolják,
+és `Egysegek.ervenyes()`-t kérdeznek. Az egység születésének EGYETLEN helye a
+`Sim.egysegKepez()` — az mind az öt réteget (mozgás, parancs, harc, munkás,
+beszállásolás) nullázza, mert egy újrahasznált slot különben az előző lakó
+céljával vagy rakományával születne meg.
+
+## A v0.5 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.5/1 | slot-újrahasznosítás generációs számlálóval | **kész** |
+| v0.5/2 | egység-képzés (laktanya, sorbanállás, népesség) | hátravan |
+| v0.5/3 | épület-roster | hátravan |
+| v0.5/4 | technológiafa | hátravan |
 
 ## A záró lépcsők (v0.11–v0.13)
 

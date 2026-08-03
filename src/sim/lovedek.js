@@ -48,6 +48,8 @@ export class Lovedekek {
     this.x = new Float64Array(m);
     this.y = new Float64Array(m);
     this.cel = new Int32Array(m);
+    /** A célpont generációja (v0.5) — lásd `units.js` slot-újrahasznosítás. */
+    this.celGen = new Int32Array(m);
     this.sebzes = new Int32Array(m);
     this.csapat = new Uint8Array(m);
     this.elet = new Int32Array(m);
@@ -74,9 +76,10 @@ export class Lovedekek {
    * pillanatnyi tömeg-összecsapás korlátlanul allokálna, és a képkocka-büdzsé
    * kiszámíthatatlanná válna. A korlát (`maxDb`) bőven a valós csúcs fölött van.
    */
-  lo(fx, fy, cel, sebzes, csapat) {
+  lo(fx, fy, cel, sebzes, csapat, celGen) {
     if (this.db >= this.maxDb) return -1;
     const i = this.db++;
+    this.celGen[i] = celGen;
     this.x[i] = fx;
     this.y[i] = fy;
     this.cel[i] = cel;
@@ -106,8 +109,11 @@ export class Lovedekek {
     // ⚠️ VISSZAFELÉ: a swap-remove az utolsó elemet hozza ide (lásd a fejlécet).
     for (let i = this.db - 1; i >= 0; i--) {
       const cel = this.cel[i];
-      // A cél meghalt vagy eltűnt: a lövedék elenyészik, sebzés nélkül.
-      if (cel < 0 || cel >= e.db || harc.elo[cel] === 0) { this._kivesz(i); continue; }
+      // A cél meghalt, eltűnt, VAGY a slotja új gazdát kapott: a lövedék
+      // elenyészik, sebzés nélkül. A generáció-ellenőrzés nélkül a nyíl a
+      // frissen kiképzett egységbe csapódna — determinisztikusan, tehát a
+      // desync-szonda zölden hallgatna végig.
+      if (!e.ervenyes(cel, this.celGen[i])) { this._kivesz(i); continue; }
       if (--this.elet[i] <= 0) { this._kivesz(i); continue; }
 
       const dx = e.px[cel] - this.x[i];
@@ -134,6 +140,7 @@ export class Lovedekek {
     this.x[i] = this.x[u];
     this.y[i] = this.y[u];
     this.cel[i] = this.cel[u];
+    this.celGen[i] = this.celGen[u];
     this.sebzes[i] = this.sebzes[u];
     this.csapat[i] = this.csapat[u];
     this.elet[i] = this.elet[u];

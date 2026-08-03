@@ -144,6 +144,13 @@ export class ParancsAllapot {
      * támadják.
      */
     this.celEpulet = new Int32Array(m);
+    /**
+     * A `celEgyseg` GENERÁCIÓJA (v0.5). A slot-újrahasznosítás óta az index
+     * önmagában nem azonosít: ha a célpont meghalt és a helyére új egység
+     * született, a puszta index a ÚJ lakóra mutatna. Ezt a párost a
+     * `Egysegek.ervenyes()` ellenőrzi.
+     */
+    this.celGeneracio = new Int32Array(m);
 
     // ── A VÉGSŐ úti cél, amit az üldözés nem írhat felül ──────────────
     // Támadó menetnél az egység útközben letér a célpontra. Ha csak a
@@ -160,6 +167,7 @@ export class ParancsAllapot {
 
     this.celEgyseg.fill(-1);
     this.celEpulet.fill(-1);
+    this.celGeneracio.fill(-1);
     this.vegMezo.fill(-1);
   }
 
@@ -177,6 +185,7 @@ export class ParancsAllapot {
     this.alakzat.fill(ALAKZAT.NEGYZET);
     this.celEgyseg.fill(-1);
     this.celEpulet.fill(-1);
+    this.celGeneracio.fill(-1);
     this.vegMezo.fill(-1);
     const e = this.egysegek;
     for (let i = 0; i < n; i++) {
@@ -206,6 +215,7 @@ export class ParancsAllapot {
     // MEGSZERZETT célt is el kell engedni, különben az egység egy hullára
     // meredve állna a csata végéig.
     const elo = e.elo;
+    const generacio = e.generacio;
 
     const bent = e.bent;
     for (let i = 0; i < db; i++) {
@@ -238,7 +248,14 @@ export class ParancsAllapot {
       // amekkorán megszereztük. Enélkül a látótáv peremén álló ellenségre
       // tickenként rá-le kapcsolna, és az egység remegne.
       if (cel >= 0) {
-        if (cel >= db || csapat[cel] === csapat[i] || (elo && elo[cel] === 0)) {
+        // v0.5: INDEX + GENERÁCIÓ. A puszta index a slot új lakójára mutatna.
+        //
+        // Kifejtve, nem `e.ervenyes()` hívással — de NEM teljesítmény miatt:
+        // mérve a kettő között nincs különbség (lásd a `CLAUDE.md` figyelmeztetését
+        // a felhőben mért tick-időről). Azért van így, mert a `csapat`-vizsgálat
+        // úgyis idetartozik, és egy feltételben olvasható az egész érvényesség.
+        if (cel >= db || generacio[cel] !== this.celGeneracio[i]
+          || (elo && elo[cel] === 0) || csapat[cel] === csapat[i]) {
           cel = -1;
         } else {
           const d = fxHossz(px[cel] - x, py[cel] - y);
@@ -257,6 +274,7 @@ export class ParancsAllapot {
         if (this.parancs[i] !== PARANCS.MENET) {
           cel = this._keres(i, x, y, csapat[i], sugar, db);
           this.celEgyseg[i] = cel;
+          this.celGeneracio[i] = cel >= 0 ? e.generacio[cel] : -1;
         }
       }
 
