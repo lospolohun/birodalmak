@@ -21,8 +21,9 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
 | v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
-| v0.14 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |
-| v1.0 | Kiadási kapu, i18n (hu/en/de), PWA | |
+| v0.14 | **Nyelvek: magyar + angol** — teljes fordítás, nyelvválasztó a menüben | |
+| v0.15 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |
+| v1.0 | Kiadási kapu, PWA | |
 
 ## A v0.4 állása
 
@@ -88,7 +89,24 @@ determinizmus-kör, FPS-mérés minden lépcsőn, balansz-átnézés (a v0.9 nyo
 civje), UX-végigjátszás és hibalista. A `qa/` mappa eddigi jelentései ennek az
 előfutárai.
 
-**v0.14 — kirakás SkyNetre.** A cél `https://skynet.lospolo.hu/aotc`.
+**v0.14 — magyar + angol.** Teljes fordítás, nyelvválasztó a főmenüben (ezért
+jön a menü UTÁN). A szerkezet a TELEPESEK i18n-jéből átvehető.
+
+⚠️ **A KÓD magyar marad — a SZÖVEG lesz kétnyelvű.** Ez a kettő nem ugyanaz, és
+a keverésük itt konkrét munkát jelent: a `src/sim/` alatt MA is vannak
+megjelenítendő feliratok — `ALAKZAT_NEV`, `ALLAS_NEV`, `NYERS_NEV`,
+`KORSZAK_NEV`, `EPULET_NEV`, `TAMADAS_NEV`, `PANCEL_NEV`. Ezek magyar
+szövegek egy olyan rétegben, aminek semmilyen felhasználói szövegről nem
+szabadna tudnia. A v0.14 első lépése ezeket KULCSOKKÁ alakítani (`'alakzat.ek'`),
+és a feloldást a UI-ba tenni. A sim így node-ban is ugyanaz marad, és a
+nyelvváltás egyetlen réteget érint.
+
+A második lépés a HUD és a menü: ott ma nyers magyar sztringek vannak
+összefűzve (`bevitel.js`, `main.js`). Ezeknek is a fordítási táblán kell
+átmenniük — enélkül a nyelvváltás felerészben megtörténne, ami rosszabb, mint
+ha egynyelvű maradna.
+
+**v0.15 — kirakás SkyNetre.** A cél `https://skynet.lospolo.hu/aotc`.
 
 A build STATIKUS (`vite build` → `dist/`), tehát a SkyNet PHP-s kiszolgálója
 tökéletesen elég hozzá — nem kell futó Node-processz.
