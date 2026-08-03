@@ -27,6 +27,7 @@
 //   { fajta:'kiszallas',    csapat, epulet }                 ← v0.4
 //   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
 //   { fajta:'csere',        csapat, ad, kap, mennyiseg }     ← v0.5 (piac kell hozzá)
+//   { fajta:'kutatas',      csapat, tech, epulet }           ← v0.5/4
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -69,6 +70,7 @@ export function vegrehajt(sim, p) {
     case 'kiszallas': return kiszallas(sim, p);
     case 'kepzes': return kepzes(sim, p);
     case 'csere': return csere(sim, p);
+    case 'kutatas': return kutatas(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -386,6 +388,16 @@ function csere(sim, p) {
   }
   if (!vanPiac) return;
   sim.gazdasag.csere(cs, p.ad | 0, p.kap | 0, p.mennyiseg | 0);
+}
+
+/**
+ * TECHNOLÓGIA KUTATÁSA. A `Technologia` dönt mindenről: jó épület-e, elérte-e
+ * a korszakot, nincs-e már kész, és telik-e rá. Itt szándékosan NINCS előzetes
+ * szűrés — egy helyen legyen a szabály, különben a két ellenőrzés elcsúszik.
+ * @param {{csapat:number, tech:number, epulet:number}} p
+ */
+function kutatas(sim, p) {
+  sim.technologia.indit(p.csapat | 0, p.tech | 0, p.epulet | 0);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

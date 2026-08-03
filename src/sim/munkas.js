@@ -225,7 +225,10 @@ export class Munkasok {
           this._indulLelohelyre(i);
           continue;
         }
-        this.ora[i] += UTEM[fajta];
+        // A gyűjtés üteme a technológiából jön (v0.5/4). Egész osztás — az
+        // ekevas +25 %-a minden gépen ugyanazt a számot adja.
+        this.ora[i] += ((UTEM[fajta] * sim.technologia.utemSzazalek(e.csapat[i])) / 100) | 0;
+        const kap = KAPACITAS + sim.technologia.cipelTobblet(e.csapat[i]);
         while (this.ora[i] >= 100) {
           const vett = ef.kitermel(node, 1);
           this.ora[i] -= 100;
@@ -236,9 +239,9 @@ export class Munkasok {
           if (this.cipelDb[i] > 0 && this.cipelFajta[i] !== fajta) this.cipelDb[i] = 0;
           this.cipelFajta[i] = fajta;
           this.cipelDb[i]++;
-          if (this.cipelDb[i] >= KAPACITAS) break;
+          if (this.cipelDb[i] >= kap) break;
         }
-        if (this.cipelDb[i] >= KAPACITAS) this._indulLerakatra(i);
+        if (this.cipelDb[i] >= kap) this._indulLerakatra(i);
         else if (!ef.el(node)) this._ujLelohely(i);
         continue;
       }

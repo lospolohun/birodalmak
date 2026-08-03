@@ -37,6 +37,7 @@ import { Harc, TAMADAS, PANCEL } from './harc.js';
 import { Lovedekek } from './lovedek.js';
 import { Beszallas } from './beszallas.js';
 import { Kepzes } from './kepzes.js';
+import { Technologia, TECH, TECH_DB, techEpulete } from './technologia.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -91,6 +92,10 @@ export class Sim {
     // ── v0.5: egység-képzés ─────────────────────────────────────────────
     this.kepzes = new Kepzes(this.epuletek.maxDb, this);
     this.gazdasag.kotSim(this);
+    // A technológia MINDEN réteg fölött ül, tehát utoljára jön létre — és az
+    // épületek visszakapják a hivatkozást, mert a falazás a LERAKÁSKOR hat.
+    this.technologia = new Technologia(2, this);
+    this.epuletek.tech = this.technologia;
 
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
@@ -136,6 +141,7 @@ export class Sim {
     }
     this.epuletek.lep();
     this.gazdasag.lep();
+    this.technologia.lep();
     this.kepzes.lep();
     this.egysegek.lep(this.tick, this._tickHorog);
     this._mezoErvenytelenites();
@@ -192,6 +198,12 @@ export class Sim {
     // SORREND: előbb az épületek (visszaadják a celláikat), utána a
     // nyersanyagok (újra lezárják a sajátjukat). Fordítva egy épület alatti
     // erdő-cella járhatóként maradna ott, ahol erdő van.
+    // ⚠️ A TECHNOLÓGIA A LEGELSŐ. A falazás az épület LERAKÁSAKOR szorozza az
+    // életerőt, és a központok pár sorral lentebb kerülnek le — ha a technológia
+    // csak utána nullázódna, az ÚJ meccs központjai a RÉGI meccs bónuszával
+    // születnének meg. Egy friss `Sim`-nél ez sosem látszana; az újrafelállásnál
+    // viszont csendes desync-forrás lenne.
+    this.technologia.nullaz();
     this.epuletek.nullaz();
     this.eroforrasok.nullaz();
     this.gazdasag.nullaz();
@@ -700,6 +712,8 @@ export class Sim {
         this.parancs({ fajta: 'csere', csapat: cs, ad: NYERS.FA, kap: NYERS.KO, mennyiseg: 60 });
       }
 
+      this._szondaKutat(cs);
+
       const munkasok = [];
       for (let i = 0; i < e.db; i++) {
         if (e.csapat[i] === cs && e.tipus[i] === TIPUS.MUNKAS && this.harc.elo[i]) munkasok.push(i);
@@ -763,6 +777,31 @@ export class Sim {
         default:
           this._szondaKepez(cs);
           break;
+      }
+    }
+  }
+
+  /**
+   * KUTATÁS (v0.5/4) — minden körben végigpróbáljuk a hat technológiát.
+   *
+   * Ugyanaz a minta, mint az építési sornál: a `Technologia.indit()` maga dönt
+   * mindenről (jó épület-e, megvan-e a korszak, telik-e rá), és csendben
+   * elutasít. A szondának így nem kell külön ütemtervet tartania — ami
+   * megfizethető, az elindul, a többi a következő körben próbálkozik újra.
+   *
+   * A kutatás a legdrágább dolog a körben, ezért a FA-TARTALÉK itt is él:
+   * enélkül a kovácsolás elvinné a piacra szánt fát, és a v0.5/3 ága esne ki.
+   */
+  _szondaKutat(cs) {
+    if (this.gazdasag.keszlet[cs * 4 + NYERS.FA] < 200) return;
+    const ep = this.epuletek;
+    for (let t = 0; t < TECH_DB; t++) {
+      if (this.technologia.allapot[cs * TECH_DB + t] !== 0) continue;
+      const kellEp = techEpulete(t);
+      for (let k = 0; k < ep.db; k++) {
+        if (ep.csapat[k] !== cs || !ep.kesz(k) || ep.tipus[k] !== kellEp) continue;
+        this.parancs({ fajta: 'kutatas', csapat: cs, tech: t, epulet: k });
+        break;
       }
     }
   }
@@ -964,6 +1003,16 @@ export class Sim {
       for (let k = 0; k < this.kepzes.sorDb[i]; k++) {
         h = fnvSzam(h, this.kepzes.sor[i * 8 + k]);
       }
+    }
+    // v0.5/4 — a technológia a VILÁG állapota. Ha kimaradna, két gép futhatna
+    // azonos hash-sel úgy, hogy az egyiken már kész a kovácsolás, a másikon
+    // nem — és a következő csata máshogy dőlne el. A ki nem mondott bónusz a
+    // legrosszabb fajta desync: a hash zöld, a meccs mégis kettéválik.
+    const tech = this.technologia;
+    for (let i = 0; i < tech.allapot.length; i++) {
+      h = fnvSzam(h, tech.allapot[i]);
+      h = fnvSzam(h, tech.hatra[i]);
+      h = fnvSzam(h, tech.hol[i]);
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);

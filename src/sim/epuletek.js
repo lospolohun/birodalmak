@@ -83,6 +83,11 @@ export class Epuletek {
     this.racs = racs;
     this.maxDb = maxDb | 0;
     this.db = 0;
+    /**
+     * A technológia-réteg — a `Sim` köti be, mert az épületek ELŐBB készülnek
+     * el nála. `null`, amíg nincs bekötve; a falazás-szorzó ilyenkor 100 %.
+     */
+    this.tech = null;
 
     /** A bal-felső cella koordinátái (egész). */
     this.cx = new Int32Array(maxDb);
@@ -161,8 +166,14 @@ export class Epuletek {
     this.tipus[i] = tipus;
     this.csapat[i] = csapat;
     this.epulHatra[i] = azonnalKesz ? 0 : EP_IDO[tipus];
-    this.maxHp[i] = EP_HP[tipus];
-    this.hp[i] = EP_HP[tipus];
+    // A FALAZÁS (v0.5/4) csak az EZUTÁN épült házakra hat, a már állókra nem.
+    // Nem lustaság: a visszamenőleges gyógyítás azt jelentené, hogy egy ostrom
+    // alatt álló épület a kutatás befejeztével hirtelen felgyógyul — az a
+    // játékosnak megmagyarázhatatlan, és a támadó szempontjából igazságtalan.
+    const szaz = this.tech ? this.tech.epuletHpSzazalek(csapat) : 100;
+    const hp = ((EP_HP[tipus] * szaz) / 100) | 0;
+    this.maxHp[i] = hp;
+    this.hp[i] = hp;
     this.elo[i] = 1;
     this.nyitva[i] = 0;
     this.lovesHatra[i] = 0;

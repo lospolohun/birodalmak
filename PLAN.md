@@ -12,7 +12,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.2** | Irányítás: keret-kijelölés, Ctrl-csoportok, attack-move, alakzatok, állás-parancsok — mind a parancs-soron át | **kész** (`qa/V0.2_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
-| v0.5 | Épület-roster + technológiafa → **első játszható build** | |
+| v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
@@ -81,7 +81,7 @@ céljával vagy rakományával születne meg.
 | v0.5/1 | slot-újrahasznosítás generációs számlálóval | **kész** |
 | v0.5/2 | egység-képzés (laktanya, sorbanállás, népesség) | **kész** |
 | v0.5/3 | épület-roster | **kész** — 11 épülettípus, torony (sortűz + őrség-bónusz), piac (csere) |
-| v0.5/4 | technológiafa | hátravan |
+| v0.5/4 | technológiafa | **kész** — 6 technológia, épülethez és korszakhoz kötve |
 
 A képzés épületenkénti SORRAL megy, nem globálisan — ettől lesz valódi döntés,
 hogy több laktanya vagy több munkás. Az ár a SORBAÁLLÁSKOR megy le, nem a

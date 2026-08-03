@@ -259,7 +259,7 @@ const FORGATOKONYVEK = {
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
   v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
   v05: {
-    nev: 'v0.5 építkezés és egység-képzés', tickek: ervSzam('v05tick', 12000),
+    nev: 'v0.5 építkezés, képzés, torony, piac, technológia', tickek: ervSzam('v05tick', 12000),
     egysegSzam: 60,
     // Minden MÁSODIK egység munkás. A négyelt alapfelállás mérve csapatonként
     // 7 munkást adott, és annyiból a piac (175 fa) sosem épült fel — piac
@@ -728,7 +728,7 @@ if (ketV04.ok) {
 //
 // A kör egyben a legegyszerűbb valódi BUILD ORDER is: gyűjtés → ház → laktanya
 // → képzés. A v0.6 AI-ja ezt a mintát fogja bővíteni.
-cim('8) v0.5 ÉPÍTKEZÉS ÉS EGYSÉG-KÉPZÉS — két friss Sim');
+cim('8) v0.5 ÉPÍTKEZÉS, KÉPZÉS, TORONY, PIAC, TECHNOLÓGIA — két friss Sim');
 const t8 = Date.now();
 const ketV05 = ketFutas(FORGATOKONYVEK.v05);
 let kevertV05 = { ok: false, tick: 0, a: 0, b: 0 };
@@ -800,6 +800,22 @@ if (ketV05.ok) {
     'kapott nyersanyag: ' + (s.gazdasag.csereKapott[0] + s.gazdasag.csereKapott[1])
     + ', elutasítva: ' + (s.gazdasag.csereElutasitva[0] + s.gazdasag.csereElutasitva[1]));
 
+  // v0.5/4 — a technológia működés-száma. Egy KÉSZ technológia az egyetlen
+  // bizonyíték: a „folyik" állapot még lehet örökre beragadt visszaszámláló is.
+  const tec0 = s.technologia.osszesites(0), tec1 = s.technologia.osszesites(1);
+  const tech = tec0.keszult + tec1.keszult;
+  sor('kész technológia', tec0.keszult + ' / ' + tec1.keszult,
+    'folyik: ' + (tec0.folyik + tec1.folyik)
+    + ', elutasítva: ' + (s.technologia.elutasitva[0] + s.technologia.elutasitva[1]));
+
+  if (tech === 0) {
+    console.log('\n  ⛔ EGYETLEN TECHNOLÓGIA SEM KÉSZÜLT EL: a v0.5/4 ága néma.');
+    console.log('     A determinizmus-kapu ettől zöld — egy soha el nem induló');
+    console.log('     kutatás is reprodukálható. Nézd meg a `TECH_EPULET` és a');
+    console.log('     `TECH_KORSZAK` feltételeit, meg hogy telik-e egyáltalán rá.');
+    bukas++;
+  }
+
   if (cserek === 0) {
     console.log('\n  ⛔ EGYETLEN PIACI CSERE SEM MENT ÁT: a v0.5/3 piac-ága néma.');
     console.log('     A csere adja a követ a toronyhoz — ha ez áll, minden utána is áll.');
@@ -853,7 +869,7 @@ sor('6) v0.3 gazdaság',
 sor('7) v0.4 harc',
   ketV04.ok ? (kevertV04.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV04.tick + ')')
     : 'BUKOTT (tick ' + ketV04.tick + ')');
-sor('8) v0.5 képzés',
+sor('8) v0.5 építkezés+tech',
   ketV05.ok ? (kevertV05.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV05.tick + ')')
     : 'BUKOTT (tick ' + ketV05.tick + ')');
 console.log('\n  ' + (bukas === 0

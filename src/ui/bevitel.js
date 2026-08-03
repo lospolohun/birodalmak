@@ -46,6 +46,7 @@
 //   P                 piac     (nyersanyag-csere)          (v0.5/3)
 //   M                 piaci csere: 100 fa → 70 kő          (v0.5/3)
 //   C                 KÉPZÉS a kurzorhoz legközelebbi saját épületben (v0.5)
+//   R                 KUTATÁS ugyanott — a sorban első kutatható (v0.5/4)
 //
 // A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
 // nyersanyagra kattintva gyűjtés, minden más esetben menet.
@@ -53,9 +54,9 @@
 import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
 import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
 import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
-import { NYERS_NEV } from '../sim/eroforras.js';
+import { NYERS, NYERS_NEV } from '../sim/eroforras.js';
 import { EPULET, EPULET_NEV } from '../sim/epuletek.js';
-import { NYERS } from '../sim/eroforras.js';
+import { TECH_DB, TECH_NEV, TECH_LEIRAS, techEpulete } from '../sim/technologia.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
 import { TIPUS } from '../sim/units.js';
 
@@ -330,6 +331,37 @@ export class Bevitel {
   }
 
   /**
+   * KUTATÁS (v0.5/4) a kurzorhoz legközelebbi saját épületben — a SORBAN első
+   * olyan technológiát indítja, amit az az épület kutathat, és még nincs kész.
+   *
+   * Ugyanaz a minta, mint a `C` képzésnél: a v0.5-ben még nincs épület-panel,
+   * ahol listából lehetne választani (az a v0.7 UI-köre). Ez viszont elég
+   * ahhoz, hogy a technológiafa ne csak a szonda számára létezzen.
+   */
+  _kutatasParancs() {
+    const p = this._celPont(this._mostX, this._mostY);
+    if (!p) return;
+    const ep = this.sim.epuletek;
+    const cs = this.kijeloles.sajatCsapat;
+    let legjobb = -1, legjobbD2 = 40 * 40;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.csapat[i] !== cs || !ep.kesz(i)) continue;
+      const dx = ep.x[i] - p.x, dy = ep.y[i] - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
+    }
+    if (legjobb < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
+    for (let t = 0; t < TECH_DB; t++) {
+      if (techEpulete(t) !== ep.tipus[legjobb]) continue;
+      if (this.sim.technologia.allapot[cs * TECH_DB + t] !== 0) continue;
+      this._ad({ fajta: 'kutatas', csapat: cs, tech: t, epulet: legjobb });
+      this._uzenet = TECH_NEV[t] + ' — kutatás indul (' + TECH_LEIRAS[t] + ')';
+      return;
+    }
+    this._uzenet = EPULET_NEV[ep.tipus[legjobb]] + ': nincs több kutatnivaló';
+  }
+
+  /**
    * A parancsba a kijelölés MÁSOLATA megy, nem maga a tömb. MIÉRT: a parancs
    * `KESLELTETES` tickig a sorban ül, és ha közben átjelölök, a végrehajtás már
    * az ÚJ kijelölésre futna le. Ez a fajta hiba játékban „szellem-parancsként"
@@ -395,6 +427,7 @@ export class Bevitel {
       case 'KeyP': this._epitParancs(EPULET.PIAC); break;
       case 'KeyM': this._csereParancs(); break;
       case 'KeyC': this._kepzesParancs(); break;
+      case 'KeyR': this._kutatasParancs(); break;
       case 'KeyK':
         this._ad({ fajta: 'korszak', csapat: this.kijeloles.sajatCsapat });
         break;

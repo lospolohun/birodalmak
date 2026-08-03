@@ -196,7 +196,7 @@ export class Harc {
       const hat = HATOTAV[t];
       if (dx * dx + dy * dy > hat * hat) continue;
 
-      const seb = this.sebzesErtek(t, e.tipus[cel]);
+      const seb = this.sebzesErtek(t, e.tipus[cel], e.csapat[i], e.csapat[cel]);
       if (TAVOLSAGI[t]) {
         // A sebzés a KILÖVÉSKOR dől el, és a lövedék viszi magával — a
         // becsapódás így olcsó, és a szám nem változik meg út közben.
@@ -234,7 +234,10 @@ export class Harc {
       // 1 alap nyíl + a bent állók. A `letszam` a beszállásolás nyilvántartása.
       const nyilak = 1 + sim.beszallas.letszam[k];
       const e = sim.egysegek;
-      const seb = ((TORONY_SEBZES * SZORZO[TAMADAS.NYIL][PANCEL_TIPUS[e.tipus[cel]]]) / 100) | 0;
+      const tech = sim.technologia;
+      const alap = TORONY_SEBZES + tech.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL);
+      let seb = ((alap * SZORZO[TAMADAS.NYIL][PANCEL_TIPUS[e.tipus[cel]]]) / 100) | 0;
+      seb -= tech.pancelBonusz(e.csapat[cel]);
       for (let n = 0; n < nyilak; n++) {
         sim.lovedekek.lo(ep.x[k], ep.y[k], cel, seb < 1 ? 1 : seb,
           ep.csapat[k], e.generacio[cel]);
@@ -302,7 +305,7 @@ export class Harc {
 
     // Az épület a PANCEL.EPULET oszlopba esik — itt fejti ki az ostrom-támadás
     // a 400 %-át, és itt bünteti a nyíl a 30 %-ával azt, aki íjásszal ostromol.
-    const seb = this.sebzesEpuletre(t);
+    const seb = this.sebzesEpuletre(t, e.csapat[i]);
     // A beszállásolás VÉDELMET ad (a bent lévő nem célozható), és ennek ez az
     // ára: az épülettel a benne állók is odavesznek.
     if (ep.sebez(cel, seb)) sim.beszallas.epuletPusztult(cel);
@@ -311,9 +314,13 @@ export class Harc {
   }
 
   /** A csapás értéke ÉPÜLETRE. Az épületnek nincs lapos páncélja. */
-  sebzesEpuletre(tamadoTipus) {
+  sebzesEpuletre(tamadoTipus, tamadoCsapat) {
     const tt = TAMADAS_TIPUS[tamadoTipus];
-    const seb = ((ALAP_SEBZES[tamadoTipus] * SZORZO[tt][PANCEL.EPULET]) / 100) | 0;
+    // A technológia az ALAPSEBZÉST emeli, tehát az ellensúly-szorzó UTÁNA jön:
+    // a kovácsolás így az ostromgépen sokat ér az épület ellen, a nyílon
+    // keveset — pont ez a szorzó-tábla dolga, és nem akarjuk megkerülni.
+    const alap = ALAP_SEBZES[tamadoTipus] + this.sim.technologia.sebzesBonusz(tamadoCsapat, tt);
+    const seb = ((alap * SZORZO[tt][PANCEL.EPULET]) / 100) | 0;
     return seb < 1 ? 1 : seb;
   }
 
@@ -329,12 +336,14 @@ export class Harc {
    * @param {number} tamadoTipus @param {number} celTipus
    * @returns {number} egész sebzés
    */
-  sebzesErtek(tamadoTipus, celTipus) {
+  sebzesErtek(tamadoTipus, celTipus, tamadoCsapat, celCsapat) {
     const tt = TAMADAS_TIPUS[tamadoTipus];
     const pt = PANCEL_TIPUS[celTipus];
+    const tech = this.sim.technologia;
     // Egész osztás — nincs kerekítési szabadság, tehát gépfüggetlen.
-    let seb = ((ALAP_SEBZES[tamadoTipus] * SZORZO[tt][pt]) / 100) | 0;
-    seb -= PANCEL_ERTEK[celTipus];
+    const alap = ALAP_SEBZES[tamadoTipus] + tech.sebzesBonusz(tamadoCsapat, tt);
+    let seb = ((alap * SZORZO[tt][pt]) / 100) | 0;
+    seb -= PANCEL_ERTEK[celTipus] + tech.pancelBonusz(celCsapat);
     return seb < 1 ? 1 : seb;
   }
 
