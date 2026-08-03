@@ -1,0 +1,337 @@
+// AGE OF THE CRYSTALS — EGÉR ÉS BILLENTYŰ → PARANCS.
+//
+// ── EZ A RÉTEG NEM DÖNT SEMMIT A VILÁGRÓL ─────────────────────────────────
+// Minden, amit a játékos csinál, PARANCCSÁ alakul és a soron megy be
+// (`sim.parancs(...)`). Egyetlen helyen sem írunk sim-állapotot közvetlenül —
+// se pozíciót, se célt, se állást. Ez unalmasan hangzik, de ez a v0.8 netcode
+// előfeltétele: ha a bemenet bármit MEGKERÜLNE, az a hálózaton nem menne át, és
+// a két gép azonnal széttartana.
+//
+// A parancs ráadásul nem is azonnal hat: a `Sim.parancs()` a `tick +
+// KESLELTETES`-re sorolja. Egyjátékosban is. Ez szándékos — így a v0.8-ban nem
+// derül ki hirtelen, hogy a játék „ragadósnak" érződik a bemenet-késleltetéstől.
+//
+// ── A JOBB GOMB KÉT GAZDÁJA ───────────────────────────────────────────────
+// A `camera3d.js` a jobb gomb HÚZÁSÁRA forgat, az RTS-hagyomány szerint viszont
+// a jobb KATTINTÁS a parancs. A kettő megfér, ha nem a lenyomásra, hanem a
+// FELENGEDÉSRE döntünk: ha az egér közben alig mozdult, az kattintás (parancs),
+// ha sokat, az forgatás volt (a kamera már el is végezte). Így egyetlen sort sem
+// kellett a kamerában átírni.
+//
+// ── BILLENTYŰK ────────────────────────────────────────────────────────────
+// A `camera3d.js` már foglalja: W A S D, nyilak, Q E, szóköz, +/-. Az itteni
+// kiosztás ezeket szándékosan KERÜLI — ezért nem `A` az attack-move, ahogy a
+// műfajban szokás. Egy ütköző billentyű nem „apró kényelmetlenség": menet
+// közben a kamera is elindulna, és a játékos azt hinné, elromlott a játék.
+//
+//   bal gomb húzás    keret-kijelölés          (Shift: hozzáadás)
+//   bal gomb kattintás  egy egység kijelölése  (Shift: hozzáadás)
+//   jobb gomb         menet a kattintott pontra
+//   Shift + jobb gomb támadó menet
+//   T                 a következő jobb kattintás támadó menet
+//   X                 megállás
+//   H                 tartás (állás-parancs)
+//   F                 alakzat léptetése   (négyzet → vonal → ék → szórt)
+//   G                 állás léptetése     (agresszív → védekező → tartás → tűzszünet)
+//   1..9, 0           csoport előhívása   (kétszer gyorsan: kamera oda)
+//   Ctrl + 1..9, 0    csoport mentése
+
+import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
+import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
+import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
+
+/** Ezen belül két csoport-gombnyomás dupla kattintásnak számít (ms). */
+const DUPLA_MS = 350;
+
+export class Bevitel {
+  /**
+   * @param {HTMLCanvasElement} vaszon
+   * @param {import('../sim/sim.js').Sim} sim
+   * @param {import('../render/camera3d.js').Kamera3D} kamera
+   * @param {{sajatCsapat?:number, parancsra?:()=>void}} [opciok]
+   */
+  constructor(vaszon, sim, kamera, opciok = {}) {
+    this.vaszon = vaszon;
+    this.sim = sim;
+    this.kamera = kamera;
+    this.kijeloles = new Kijeloles(sim, opciok.sajatCsapat ?? 0);
+    /** A gazda (main.js) értesítése: a játékos átvette az irányítást. */
+    this._parancsra = opciok.parancsra || null;
+
+    /** A kijelölés alakzata és állása — a HUD ezt mutatja, a parancs ezt küldi. */
+    this.alakzat = ALAKZAT.NEGYZET;
+    this.allas = ALLAS.AGRESSZIV;
+    /** A `T` billentyű állította egyszeri támadó-menet mód. */
+    this.tamadoMod = false;
+
+    // ── Húzás-állapot ────────────────────────────────────────────────
+    this._huz = false;
+    this._huzX = 0; this._huzY = 0;
+    this._mostX = 0; this._mostY = 0;
+    this._jobbX = 0; this._jobbY = 0;
+    this._jobbLent = false;
+    this._utolsoCsoport = -1;
+    this._utolsoCsoportIdo = 0;
+
+    /** Újrahasznosított kimenő pont — hogy a kattintás se allokáljon. */
+    this._pont = { x: 0, y: 0 };
+
+    this._keret = this._keretElem();
+    this._kotesek();
+  }
+
+  /** A kijelölő keret DOM-eleme. Azért DOM és nem 3D: nulla GPU-költség. */
+  _keretElem() {
+    if (typeof document === 'undefined') return null;
+    const d = document.createElement('div');
+    d.id = 'kijelolo-keret';
+    d.style.display = 'none';
+    document.body.appendChild(d);
+    return d;
+  }
+
+  // ── ESEMÉNYEK ──────────────────────────────────────────────────────────
+
+  _kotesek() {
+    this._bontok = [];
+    const v = this.vaszon;
+    if (!v || typeof window === 'undefined') return;
+
+    const le = (ev) => {
+      if (ev.button === 0) {
+        this._huz = true;
+        this._huzX = ev.offsetX; this._huzY = ev.offsetY;
+        this._mostX = ev.offsetX; this._mostY = ev.offsetY;
+      } else if (ev.button === 2) {
+        // Csak megjegyezzük, hol kezdődött — a döntés a felengedésnél lesz.
+        this._jobbLent = true;
+        this._jobbX = ev.offsetX; this._jobbY = ev.offsetY;
+      }
+    };
+
+    const mozog = (ev) => {
+      this._mostX = ev.offsetX; this._mostY = ev.offsetY;
+      if (this._huz) this._keretRajz();
+    };
+
+    const fel = (ev) => {
+      if (ev.button === 0 && this._huz) {
+        this._huz = false;
+        this._keretRejt();
+        const dx = ev.offsetX - this._huzX, dy = ev.offsetY - this._huzY;
+        const hozzaadva = ev.shiftKey;
+        if (Math.abs(dx) < KERET_KUSZOB && Math.abs(dy) < KERET_KUSZOB) {
+          this._kattintasKijelol(ev.offsetX, ev.offsetY, hozzaadva);
+        } else {
+          this._keretKijelol(this._huzX, this._huzY, ev.offsetX, ev.offsetY, hozzaadva);
+        }
+      } else if (ev.button === 2 && this._jobbLent) {
+        this._jobbLent = false;
+        const dx = ev.offsetX - this._jobbX, dy = ev.offsetY - this._jobbY;
+        // Elmozdult → az a kamera forgatása volt, nem parancs (lásd a fejlécet).
+        if (Math.abs(dx) < KERET_KUSZOB && Math.abs(dy) < KERET_KUSZOB) {
+          this._menetParancs(ev.offsetX, ev.offsetY, ev.shiftKey || this.tamadoMod);
+          this.tamadoMod = false;
+        }
+      }
+    };
+
+    // A vászonról kicsúszó húzást is le kell zárni, különben a keret ottmarad.
+    const vak = () => {
+      if (this._huz) { this._huz = false; this._keretRejt(); }
+      this._jobbLent = false;
+    };
+
+    const gomb = (ev) => this._billentyu(ev);
+
+    v.addEventListener('pointerdown', le);
+    v.addEventListener('pointermove', mozog);
+    window.addEventListener('pointerup', fel);
+    window.addEventListener('blur', vak);
+    window.addEventListener('keydown', gomb);
+    this._bontok.push(() => {
+      v.removeEventListener('pointerdown', le);
+      v.removeEventListener('pointermove', mozog);
+      window.removeEventListener('pointerup', fel);
+      window.removeEventListener('blur', vak);
+      window.removeEventListener('keydown', gomb);
+    });
+  }
+
+  // ── KIJELÖLÉS ──────────────────────────────────────────────────────────
+
+  _meret() {
+    const v = this.vaszon;
+    return { szel: v.clientWidth || v.width || 1, mag: v.clientHeight || v.height || 1 };
+  }
+
+  _kattintasKijelol(x, y, hozzaadva) {
+    const { szel, mag } = this._meret();
+    this.kijeloles.kattintasbol(this.kamera.objektum, x, y, szel, mag, hozzaadva);
+    this._szinkron();
+  }
+
+  _keretKijelol(x0, y0, x1, y1, hozzaadva) {
+    const { szel, mag } = this._meret();
+    this.kijeloles.keretbol(this.kamera.objektum, x0, y0, x1, y1, szel, mag, hozzaadva);
+    this._szinkron();
+  }
+
+  /**
+   * A kijelölés megváltozott: az alakzat/állás kijelzőt a KIJELÖLÉS első
+   * egységéhez igazítjuk, hogy a HUD azt mutassa, ami tényleg érvényes rá —
+   * ne azt, amit legutóbb beállítottunk egy másik csoporton.
+   */
+  _szinkron() {
+    const l = this.kijeloles.lista;
+    if (!l.length) return;
+    const pa = this.sim.parancsAllapot;
+    this.alakzat = pa.alakzat[l[0]];
+    this.allas = pa.allas[l[0]];
+  }
+
+  // ── PARANCSOK ──────────────────────────────────────────────────────────
+
+  /** Világpont a kurzor alatt, vagy `null`, ha az égre mutat. */
+  _celPont(x, y) {
+    const { szel, mag } = this._meret();
+    const ndcX = (x / szel) * 2 - 1;
+    const ndcY = -((y / mag) * 2 - 1);
+    if (!talajPont(this.kamera.objektum, this.sim.racs, ndcX, ndcY, this._pont)) return null;
+    return this._pont;
+  }
+
+  _menetParancs(x, y, tamado) {
+    if (!this.kijeloles.db) return;
+    const p = this._celPont(x, y);
+    if (!p) return;
+    this._ad({
+      fajta: tamado ? 'tamado_menet' : 'menet',
+      egysegek: this._masolat(),
+      x: p.x, y: p.y,
+      alakzat: this.alakzat,
+    });
+  }
+
+  /**
+   * A parancsba a kijelölés MÁSOLATA megy, nem maga a tömb. MIÉRT: a parancs
+   * `KESLELTETES` tickig a sorban ül, és ha közben átjelölök, a végrehajtás már
+   * az ÚJ kijelölésre futna le. Ez a fajta hiba játékban „szellem-parancsként"
+   * jelentkezik, és nagyon nehéz megtalálni.
+   */
+  _masolat() {
+    const l = this.kijeloles.lista;
+    const ki = new Array(l.length);
+    for (let k = 0; k < l.length; k++) ki[k] = l[k];
+    return ki;
+  }
+
+  _ad(parancs) {
+    this.sim.parancs(parancs);
+    if (this._parancsra) this._parancsra();
+  }
+
+  // ── BILLENTYŰK ─────────────────────────────────────────────────────────
+
+  _billentyu(ev) {
+    // A csoport-gombok. `ev.code` és nem `ev.key`: a `key` a billentyűkiosztástól
+    // függ, a `code` a fizikai gombtól — magyar kiosztáson is ugyanaz.
+    if (ev.code.startsWith('Digit')) {
+      const n = Number(ev.code.slice(5));
+      if (!Number.isNaN(n)) {
+        ev.preventDefault();
+        if (ev.ctrlKey || ev.metaKey) this._csoportMent(n);
+        else this._csoportBetolt(n, ev.shiftKey);
+        return;
+      }
+    }
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+
+    switch (ev.code) {
+      case 'KeyT':
+        this.tamadoMod = !this.tamadoMod;
+        break;
+      case 'KeyX':
+        if (this.kijeloles.db) this._ad({ fajta: 'allj', egysegek: this._masolat() });
+        break;
+      case 'KeyH':
+        if (this.kijeloles.db) this._ad({ fajta: 'tartas', egysegek: this._masolat() });
+        break;
+      case 'KeyF':
+        this.alakzat = (this.alakzat + 1) & 3;
+        if (this.kijeloles.db) {
+          this._ad({ fajta: 'alakzat', egysegek: this._masolat(), alakzat: this.alakzat });
+        }
+        break;
+      case 'KeyG':
+        this.allas = (this.allas + 1) & 3;
+        if (this.kijeloles.db) {
+          this._ad({ fajta: 'allas', egysegek: this._masolat(), allas: this.allas });
+        }
+        break;
+      default:
+        return;
+    }
+    ev.preventDefault();
+  }
+
+  _csoportMent(n) {
+    this.kijeloles.csoportMent(n);
+  }
+
+  _csoportBetolt(n, hozzaadva) {
+    this.kijeloles.csoportBetolt(n, hozzaadva);
+    this._szinkron();
+    // Dupla nyomás UGYANARRA a csoportra: a kamera odaugrik. Klasszikus RTS
+    // kényelem, és a `performance.now()` itt szabad — ez nem a sim.
+    const most = performance.now();
+    if (this._utolsoCsoport === n && (most - this._utolsoCsoportIdo) < DUPLA_MS) {
+      const k = this.kijeloles.csoportKozep(n);
+      if (k && this.kamera.kozepre) this.kamera.kozepre(k.x, k.y);
+    }
+    this._utolsoCsoport = n;
+    this._utolsoCsoportIdo = most;
+  }
+
+  // ── KERET-RAJZ ─────────────────────────────────────────────────────────
+
+  _keretRajz() {
+    const d = this._keret;
+    if (!d) return;
+    const x0 = Math.min(this._huzX, this._mostX), x1 = Math.max(this._huzX, this._mostX);
+    const y0 = Math.min(this._huzY, this._mostY), y1 = Math.max(this._huzY, this._mostY);
+    if ((x1 - x0) < KERET_KUSZOB && (y1 - y0) < KERET_KUSZOB) { d.style.display = 'none'; return; }
+    d.style.display = 'block';
+    d.style.left = x0 + 'px';
+    d.style.top = y0 + 'px';
+    d.style.width = (x1 - x0) + 'px';
+    d.style.height = (y1 - y0) + 'px';
+  }
+
+  _keretRejt() {
+    if (this._keret) this._keret.style.display = 'none';
+  }
+
+  // ── HUD ────────────────────────────────────────────────────────────────
+
+  /** Egysoros állapot a HUD-nak. */
+  hudSzoveg() {
+    const db = this.kijeloles.db;
+    if (!db) return 'kijelölés: — · húzz keretet a bal gombbal';
+    return 'kijelölés: ' + db
+      + ' · alakzat: ' + ALAKZAT_NEV[this.alakzat]
+      + ' · állás: ' + ALLAS_NEV[this.allas]
+      + (this.tamadoMod ? ' · TÁMADÓ MENET' : '');
+  }
+
+  /** Újrafelállás után a kijelölés és a csoportok takarítása. */
+  ujraKot() {
+    this.kijeloles.frissitCsoportok();
+  }
+
+  bont() {
+    for (const f of (this._bontok || [])) { try { f(); } catch { /* nem kritikus */ } }
+    if (this._bontok) this._bontok.length = 0;
+    if (this._keret && this._keret.parentNode) this._keret.parentNode.removeChild(this._keret);
+  }
+}

@@ -29,6 +29,8 @@ import { Kamera3D } from './render/camera3d.js';
 import { Terep3D } from './render/terrain3d.js';
 import { Diszlet3D } from './render/props3d.js';
 import { Egysegek3D } from './render/units3d.js';
+import { Kijeloles3D } from './render/kijeloles3d.js';
+import { Bevitel } from './ui/bevitel.js';
 
 /** Egy tick hossza másodpercben — a `sim/sim.js` TICK_HZ-ével egyezik. */
 const TICK_HOSSZ = 1 / 20;
@@ -50,11 +52,23 @@ class Jatek {
     jegyezdKamera(this.kamera);
     const opciok = { kamera: this.kamera, kameraFv: () => this.kamera.objektum };
 
+    // ── v0.2: az irányítás ─────────────────────────────────────────────
+    // A bevitel a rétegek ELŐTT készül el, mert a jelölő-réteg a kijelölés
+    // modelljét olvassa. A `parancsra` visszahívás az egyetlen kapcsolat
+    // visszafelé: ebből tudjuk meg, hogy a játékos átvette az irányítást.
+    this.bevitel = new Bevitel(vaszon, this.sim, this.kamera, {
+      sajatCsapat: 0,
+      parancsra: () => { this.jatekosVezerel = true; },
+    });
+    /** Amíg hamis, a v0.1 szonda-forgatókönyve masíroztatja a seregeket. */
+    this.jatekosVezerel = false;
+
     const szinter = this.mag.scene;
     this.retegek = {
       terep: new Terep3D(szinter, this.sim, opciok),
       props: new Diszlet3D(szinter, this.sim, opciok),
       egysegek: new Egysegek3D(szinter, this.sim, opciok),
+      kijeloles: new Kijeloles3D(szinter, this.sim, { kijeloles: this.bevitel.kijeloles }),
     };
 
     // ── Óra-állapot ────────────────────────────────────────────────────
@@ -94,7 +108,10 @@ class Jatek {
     this._maradek += dt;
     let potolt = 0;
     while (this._maradek >= TICK_HOSSZ && potolt < MAX_POTLAS) {
-      if (this.sim.tick >= this._parancsTick) {
+      // A szonda-forgatókönyv csak addig jár, amíg a játékos hozzá nem nyúl.
+      // Enélkül a saját parancsainkat 12 másodpercenként felülírná egy
+      // „mindenki a másik oldalra" menet — és úgy az irányítás tesztelhetetlen.
+      if (!this.jatekosVezerel && this.sim.tick >= this._parancsTick) {
         this.sim.szondaParancs();
         this._parancsTick = this.sim.tick + 240; // 240 tick = 12 s
       }
@@ -144,7 +161,10 @@ class Jatek {
       '  ·  egység: ' + this.sim.egysegek.db +
       '  ·  tick: ' + this.sim.tick +
       '  ·  sim ' + this._simMs.toFixed(2) + ' ms / render ' + this._renderMs.toFixed(2) + ' ms' +
-      '  ·  △ ' + (info.triangles / 1000).toFixed(0) + 'k / ' + info.calls + ' hívás';
+      '  ·  △ ' + (info.triangles / 1000).toFixed(0) + 'k / ' + info.calls + ' hívás' +
+      '\n' + this.bevitel.hudSzoveg() +
+      '\nbal: kijelölés · jobb: menet · Shift+jobb / T: támadó menet · X: állj · '
+      + 'H: tartás · F: alakzat · G: állás · Ctrl+1..0: csoport';
   }
 
   // ── A szonda felülete ────────────────────────────────────────────────
@@ -158,6 +178,11 @@ class Jatek {
     const tenyleges = this.sim.ujraFelallas(n);
     this._parancsTick = 0;
     this._maradek = 0;
+    // A szonda a lépcsők között hívja ezt, tehát vissza is adjuk neki a
+    // vezérlést — különben egy korábbi kézi parancs miatt a mérés álló
+    // seregen futna, és hamisan alacsony képkocka-időt adna.
+    this.jatekosVezerel = false;
+    this.bevitel.ujraKot();
     for (const nev in this.retegek) {
       const r = this.retegek[nev];
       if (r.ujraKot) r.ujraKot(this.sim);
@@ -219,4 +244,13 @@ window.__aoc = {
   simHash: () => jatek.sim.allapotHash(),
   // Diagnosztika: hány áramlási mezőt kellett tényleg kiszámolni
   mezoSzamitasok: () => jatek.sim.mezoTar.szamitasok,
+
+  // ── v0.2: az irányítás felülete ─────────────────────────────────────
+  // Nem a játékhoz kell, hanem hogy az irányítás KÍVÜLRŐL is hajtható legyen
+  // (kézi próba a konzolról, később automata felvétel-visszajátszás). Minden
+  // ág ugyanazon a parancs-soron megy be, mint az egér — nincs kerülőút.
+  kijeloles: () => jatek.bevitel.kijeloles.lista.slice(),
+  kijelolMind: () => jatek.bevitel.kijeloles.mind(),
+  parancs: (p) => { jatek.jatekosVezerel = true; jatek.sim.parancs(p); },
+  vezerles: (be) => { jatek.jatekosVezerel = !!be; return jatek.jatekosVezerel; },
 };

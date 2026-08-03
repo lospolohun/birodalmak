@@ -26,6 +26,9 @@ import { Racs, TEREP } from './grid.js';
 import { MezoTar } from './flowfield.js';
 import { Egysegek, ALLAPOT, TIPUS, DT } from './units.js';
 import { mulberry32 } from './rng.js';
+import { AlakzatSzamolo, ALAKZAT } from './alakzat.js';
+import { ParancsAllapot, PARANCS, ALLAS } from './parancsallapot.js';
+import { vegrehajt } from './parancsok.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -47,6 +50,12 @@ export class Sim {
     this.egysegek = new Egysegek(this.maxEgyseg, this.racs, this.mezoTar);
     /** A meccs-RNG. MINDEN véletlen ebből jön, sosem a `Math.random`-ból. */
     this.rng = mulberry32(this.seed ^ 0xa5a5a5a5);
+
+    // ── v0.2: az irányítás rétege ───────────────────────────────────────
+    // Az alakzat-számoló és a parancs-állapot előre lefoglalt tömbökkel dolgozik,
+    // hogy egy 1600 fős menetparancs se allokáljon.
+    this.alakzatSzamolo = new AlakzatSzamolo(this.maxEgyseg);
+    this.parancsAllapot = new ParancsAllapot(this.maxEgyseg, this.egysegek);
 
     /** tick → parancsok. Kulcs szerint kérdezzük, sosem iteráljuk. */
     this._sor = new Map();
@@ -71,38 +80,16 @@ export class Sim {
       for (let i = 0; i < lista.length; i++) this._vegrehajt(lista[i]);
       this._sor.delete(this.tick);
     }
-    this.egysegek.lep(this.tick);
+    this.egysegek.lep(this.tick, this.parancsAllapot);
     this.tick++;
   }
 
+  /**
+   * Egy parancs végrehajtása. A v0.2 óta a `sim/parancsok.js` végzi — lásd
+   * annak fejlécét arról, miért került ki a sim magjából.
+   */
   _vegrehajt(p) {
-    if (p.fajta === 'menet') {
-      const e = this.egysegek;
-      const idk = p.egysegek;
-      const db = idk.length;
-      if (db === 0) return;
-
-      // EGY mező az egész csoportnak. Ez az áramlási mező teljes lényege: a
-      // költséges Dijkstra egyszer fut, és bármennyi egység ingyen olvassa.
-      const ci = this.racs.idx(p.x | 0, p.y | 0);
-      if (ci < 0 || this.racs.jarhato[ci] === 0) return;
-      const mezoId = this.mezoTar.kerj(ci, this.tick);
-
-      // Alakzat-szerű szórás a cél KÖRÜL: ha 800 egység ugyanarra a pontra
-      // menne, a szeparáció örökre tolná őket egymáson. Négyzetrácsos
-      // elrendezés — a v0.2-ben ezt váltja a valódi alakzat-rendszer.
-      // Ez CSAK az egység végpontja; az odáig vezető utat a közös mező adja.
-      const oldal = Math.ceil(Math.sqrt(db));
-      const koz = 0.95;
-      for (let k = 0; k < db; k++) {
-        const sx = (k % oldal) - (oldal - 1) * 0.5;
-        const sy = ((k / oldal) | 0) - (oldal - 1) * 0.5;
-        let cx = p.x + sx * koz;
-        let cy = p.y + sy * koz;
-        if (!this.racs.jarhatoPont(cx, cy)) { cx = p.x; cy = p.y; }
-        e.menetparancs(idk[k], cx, cy, mezoId);
-      }
-    }
+    vegrehajt(this, p);
   }
 
   /**
@@ -139,6 +126,10 @@ export class Sim {
         if ((orseg & 255) === 0) sugar += 1.5;
       }
     }
+    // A parancs-állapotot a felállás UTÁN nullázzuk: a `celEgyseg` egység-
+    // INDEXRE mutat, és a felállás újrahasznosítja az indexeket. Enélkül egy
+    // korábbi futás célpontja egy vadidegen egységre mutatna tovább.
+    this.parancsAllapot.nullaz(e.db);
     return e.db;
   }
 
@@ -182,6 +173,72 @@ export class Sim {
     if (b.length) this.parancs({ fajta: 'menet', egysegek: b, x: celB.x, y: celB.y });
   }
 
+  /**
+   * v0.2 SZONDA-FORGATÓKÖNYV — a teljes irányítás-felület determinizmus-próbája.
+   *
+   * ── MIÉRT KELL KÜLÖN A `szondaParancs()` MELLÉ ────────────────────────
+   * A v0.1 forgatókönyve EGYETLEN parancsfajtát ismer (`menet`). A v0.2 hatot
+   * hozott, és azok új, hasított állapotot írnak (`parancs`, `allas`,
+   * `celEgyseg`) — vagyis pont az a kód maradna a kapun KÍVÜL, ami a legfrissebb,
+   * tehát a legkockázatosabb. Egy zöld szonda, ami a v0.2-t meg sem nézi, rosszabb
+   * a semminél: biztonságérzetet ad.
+   *
+   * A forgatókönyv körökre jár, és körönként mást csinál, hogy a parancsok
+   * EGYMÁSRA hatása is látszódjon (üldözés közben érkező állás-váltás, félbehagyott
+   * menet, alakzat-csere menet közben). Minden döntés a `kor` számlálóból és az
+   * indexekből következik — nincs benne se véletlen, se valós idő.
+   *
+   * @param {number} kor hányadik parancs-kör (a hívó lépteti)
+   */
+  szondaParancsV02(kor) {
+    const e = this.egysegek;
+    const n = this.n;
+    const a = [], b = [];
+    for (let i = 0; i < e.db; i++) (e.csapat[i] === 0 ? a : b).push(i);
+    if (a.length === 0 && b.length === 0) return;
+
+    const celA = this._jarhatoKozel(n * 0.78, n * 0.5);
+    const celB = this._jarhatoKozel(n * 0.22, n * 0.5);
+    const kozep = this._jarhatoKozel(n * 0.5, n * 0.5);
+
+    switch (kor & 3) {
+      case 0:
+        // Két sereg egymásnak, ELTÉRŐ alakzatban. Ez a legdurvább eset: az
+        // átfedő seregekben minden egység célt talál, tehát az üldözés-ág és a
+        // harcérintkezés-ág egyszerre fut mind az 1600-on.
+        if (a.length) this.parancs({ fajta: 'tamado_menet', egysegek: a, x: celA.x, y: celA.y, alakzat: ALAKZAT.EK });
+        if (b.length) this.parancs({ fajta: 'tamado_menet', egysegek: b, x: celB.x, y: celB.y, alakzat: ALAKZAT.VONAL });
+        break;
+      case 1:
+        // Állás-váltás MENET KÖZBEN. A védekező kötélhossz és a tartás-állás
+        // itt kezd el visszahúzni egységeket, miközben a menet még él.
+        if (a.length) this.parancs({ fajta: 'allas', egysegek: a, allas: ALLAS.VEDEKEZO });
+        if (b.length) this.parancs({ fajta: 'allas', egysegek: b, allas: ALLAS.TARTAS });
+        break;
+      case 2: {
+        // Részleges kijelölés: minden sereg FELE megáll (tartás), a másik fele
+        // középre indul szórt alakzatban. Így egy csapaton belül is keveredik a
+        // parancs-fajta — a valódi játékban ez a jellemző állapot.
+        const aFel = a.filter((_, k) => (k & 1) === 0);
+        const aMas = a.filter((_, k) => (k & 1) === 1);
+        const bFel = b.filter((_, k) => (k & 1) === 0);
+        const bMas = b.filter((_, k) => (k & 1) === 1);
+        if (aFel.length) this.parancs({ fajta: 'tartas', egysegek: aFel });
+        if (aMas.length) this.parancs({ fajta: 'menet', egysegek: aMas, x: kozep.x, y: kozep.y, alakzat: ALAKZAT.SZORT });
+        if (bFel.length) this.parancs({ fajta: 'allj', egysegek: bFel });
+        if (bMas.length) this.parancs({ fajta: 'tamado_menet', egysegek: bMas, x: kozep.x, y: kozep.y, alakzat: ALAKZAT.NEGYZET });
+        break;
+      }
+      default:
+        // Vissza agresszívre, és tűzszünet a másik oldalon — a tűzszünet ága
+        // (cél azonnali elengedése harc közben) különben sosem futna le.
+        if (a.length) this.parancs({ fajta: 'allas', egysegek: a, allas: ALLAS.AGRESSZIV });
+        if (b.length) this.parancs({ fajta: 'allas', egysegek: b, allas: ALLAS.TUZSZUNET });
+        if (a.length) this.parancs({ fajta: 'tamado_menet', egysegek: a, x: celA.x, y: celA.y, alakzat: ALAKZAT.NEGYZET });
+        break;
+    }
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -216,10 +273,18 @@ export class Sim {
     h = fnvTomb(h, e.vx, db);
     h = fnvTomb(h, e.vy, db);
     h = fnvTomb(h, e.szog, db);
+    const pa = this.parancsAllapot;
     for (let i = 0; i < db; i++) {
       h = fnvSzam(h, e.allapot[i]);
       h = fnvSzam(h, e.egyenes[i]);
       h = fnvSzam(h, e.mezoId[i]);
+      // v0.2 — az irányítás állapota IS a szimuláció állapota. Ha két gépen
+      // más egységet céloz meg ugyanaz a katona, az néhány száz tick alatt
+      // látható szétcsúszás; a desync-detektornak ezt ugyanúgy el kell kapnia,
+      // mint egy elmozdult koordinátát.
+      h = fnvSzam(h, pa.parancs[i]);
+      h = fnvSzam(h, pa.allas[i]);
+      h = fnvSzam(h, pa.celEgyseg[i]);
     }
     return h >>> 0;
   }
@@ -257,4 +322,4 @@ function kSin(x) {
     s * (-1.984126984126984e-4 + s * (2.7557319223985893e-6 + s * -2.505210838544172e-8)))));
 }
 
-export { ALLAPOT, TIPUS, TEREP, DT };
+export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS };

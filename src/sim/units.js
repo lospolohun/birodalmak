@@ -131,9 +131,21 @@ export class Egysegek {
     this.egyenes[i] = szabadVonal(this.racs, this.px[i], this.py[i], celX, celY) ? 1 : 0;
   }
 
-  /** Egy szimulációs tick. */
-  lep(tick) {
+  /**
+   * Egy szimulációs tick.
+   *
+   * A `parancsAllapot` a hasítótábla felépítése UTÁN, a sebesség-számítás ELŐTT
+   * kap szót — ez a v0.2 óta a célzás és az állás-logika helye. A sorrend nem
+   * ízlés kérdése: a célkeresés a most felépült térbeli táblát olvassa, és amit
+   * eldönt (kit üldöz, hol áll meg), annak még EBBEN a tickben hatnia kell a
+   * sebességre. Ha a hívó nem ad ilyet, a tick a v0.1 viselkedését futtatja.
+   *
+   * @param {number} tick
+   * @param {{lep:(t:number)=>void}} [parancsAllapot]
+   */
+  lep(tick, parancsAllapot) {
     this._hasitoEpit();
+    if (parancsAllapot) parancsAllapot.lep(tick);
     this._sebessegek(tick);
     this._mozgat();
   }

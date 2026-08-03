@@ -70,6 +70,13 @@ const TICKEK = ervSzam('tick', 10000);
 const PARANCS_KOZ = ervSzam('parancs', 250);  // ennyi tickenként küldjük át a két sereget
 const HASH_KOZ = ervSzam('hash', 100);        // ennyi tickenként hasonlítunk állapot-hasht
 const EGYSEG = ervSzam('egyseg', CEL_EGYSEG); // 1600
+/**
+ * A v0.2 parancs-felület köre RÖVIDEBB, és ez tudatos költség-döntés: az a kör
+ * tickenként nagyságrenddel több ÁLLAPOTOT mozgat (célzás, üldözés, állás-váltás
+ * 1600 egységen), tehát drágább. A desyncek túlnyomó része az első pár száz
+ * ticken belül kiütközik — a hosszú futás a v0.1 magjára van fenntartva.
+ */
+const V02_TICKEK = ervSzam('v02tick', 4000);
 
 let bukas = 0;
 const sor = (a, b, c) => console.log('  ' + String(a).padEnd(34) + String(b).padEnd(14) + (c ?? ''));
@@ -221,10 +228,23 @@ function statikus() {
  * megkülönböztethetetlen egy lefagyottól. A `stderr`-re megy, hogy a `> log`
  * átirányítás a táblázatot tisztán hagyja.
  */
-function halad(t) {
+function halad(t, osszes) {
   if (!process.stderr.isTTY) return;
-  process.stderr.write('\r  … ' + t + '/' + TICKEK + ' tick   ');
+  process.stderr.write('\r  … ' + t + '/' + osszes + ' tick   ');
 }
+
+/**
+ * A FORGATÓKÖNYVEK — mit parancsolunk a seregeknek a futás közben.
+ *
+ * MIÉRT KETTŐ: a `v01` a motor-mag regresszió-őre, és SOSEM változhat, különben
+ * a v0.1 mérései elveszítik az összehasonlítási alapjukat. A `v02` az irányítás
+ * teljes felületét járja körbe (menet, támadó menet, megállás, tartás, állás,
+ * alakzat) — az új kód a kockázatos kód, tehát annak is a kapun BELÜL a helye.
+ */
+const FORGATOKONYVEK = {
+  v01: { nev: 'v0.1 menet-parancs', tickek: TICKEK, fut: (sim) => sim.szondaParancs() },
+  v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
+};
 
 /** Friss sim, felállítva. A `Sim` konstruktora MINDENT újraépít (rács, mező). */
 function ujSim() {
@@ -238,15 +258,16 @@ function ujSim() {
  * adja vissza — ez az, amit egy desync-jelentésnél tudni kell.
  * @returns {{ok:boolean, tick:number, a:number, b:number, hashek:Map<number,number>}}
  */
-function ketFutas() {
+function ketFutas(fk) {
   const A = ujSim(), B = ujSim();
   const hashek = new Map();
   hashek.set(0, A.sim.allapotHash());
   if (A.sim.allapotHash() !== B.sim.allapotHash()) {
     return { ok: false, tick: 0, a: A.sim.allapotHash(), b: B.sim.allapotHash(), hashek, db: A.db };
   }
-  for (let t = 1; t <= TICKEK; t++) {
-    if ((t % PARANCS_KOZ) === 0) { A.sim.szondaParancs(); B.sim.szondaParancs(); halad(t); }
+  let kor = 0;
+  for (let t = 1; t <= fk.tickek; t++) {
+    if ((t % PARANCS_KOZ) === 0) { fk.fut(A.sim, kor); fk.fut(B.sim, kor); kor++; halad(t, fk.tickek); }
     A.sim.lep();
     B.sim.lep();
     if ((t % HASH_KOZ) === 0) {
@@ -255,7 +276,7 @@ function ketFutas() {
       if (ha !== hb) return { ok: false, tick: t, a: ha, b: hb, hashek, db: A.db };
     }
   }
-  return { ok: true, tick: TICKEK, a: 0, b: 0, hashek, db: A.db };
+  return { ok: true, tick: fk.tickek, a: 0, b: 0, hashek, db: A.db };
 }
 
 /**
@@ -265,7 +286,7 @@ function ketFutas() {
  * itt szétcsúszna. Az elvárás: BITRE ugyanaz a hash-sorozat.
  * @param {Map<number,number>} vart a tiszta futás hash-sorozata
  */
-function kevertFutas(vart) {
+function kevertFutas(vart, fk) {
   const { sim } = ujSim();
   let szemet = 0;   // hogy a JIT ne optimalizálja ki az idegen munkát
   const zavar = (t) => {
@@ -279,16 +300,17 @@ function kevertFutas(vart) {
   };
   const h0 = sim.allapotHash();
   if (h0 !== vart.get(0)) return { ok: false, tick: 0, a: vart.get(0), b: h0, szemet };
-  for (let t = 1; t <= TICKEK; t++) {
+  let kor = 0;
+  for (let t = 1; t <= fk.tickek; t++) {
     zavar(t);
-    if ((t % PARANCS_KOZ) === 0) { sim.szondaParancs(); halad(t); }
+    if ((t % PARANCS_KOZ) === 0) { fk.fut(sim, kor); kor++; halad(t, fk.tickek); }
     sim.lep();
     if ((t % HASH_KOZ) === 0) {
       const h = sim.allapotHash();
       if (h !== vart.get(t)) return { ok: false, tick: t, a: vart.get(t), b: h, szemet };
     }
   }
-  return { ok: true, tick: TICKEK, a: 0, b: 0, szemet };
+  return { ok: true, tick: fk.tickek, a: 0, b: 0, szemet };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -368,8 +390,9 @@ const statOk = statikus();
 
 cim('2) FUTÁSI ELLENŐRZÉS — két friss Sim, azonos seed, lockstep');
 const t2 = Date.now();
-const ket = ketFutas();
+const ket = ketFutas(FORGATOKONYVEK.v01);
 const ido2 = ((Date.now() - t2) / 1000).toFixed(1);
+sor('forgatókönyv', FORGATOKONYVEK.v01.nev);
 sor('felállított egység', ket.db, '(kért: ' + EGYSEG + ')');
 sor('lefutott tick', ket.tick, '(' + ido2 + ' mp, két sim párhuzamosan)');
 if (ket.ok) {
@@ -390,7 +413,7 @@ cim('3) KEVERT FUTÁS — idegen munka a tickek között (globális szivárgás)
 let kevert = { ok: false, tick: 0, a: 0, b: 0, szemet: 0 };
 if (ket.ok) {
   const t3 = Date.now();
-  kevert = kevertFutas(ket.hashek);
+  kevert = kevertFutas(ket.hashek, FORGATOKONYVEK.v01);
   const ido3 = ((Date.now() - t3) / 1000).toFixed(1);
   sor('zavarás', 'Float64Array(20000) + Math.random + JSON.stringify + for…in');
   sor('lefutott tick', kevert.tick, '(' + ido3 + ' mp)');
@@ -439,12 +462,60 @@ if (k.parancsMs > 100) {
   console.log('     adja át minden egységnek; az alakzat-eltolás csak a végpont legyen.');
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 5) v0.2 PARANCS-FELÜLET
+// ════════════════════════════════════════════════════════════════════════════
+//
+// MIÉRT KÜLÖN VIZSGÁLAT: a 2-3. a v0.1 menet-parancsát járatja, ami a motor-mag
+// regresszió-őre — azt szándékosan nem bántjuk. De attól, hogy a mag stabil, az
+// irányítás rétege (célzás, üldözés, állás-váltás, alakzat) még bármit
+// csinálhat: ÚJ, hasított állapotot ír (`parancs`, `allas`, `celEgyseg`), és
+// pont az új kód a kockázatos. Ez a kör azt a felületet járja végig.
+//
+// A célkeresés a legesélyesebb desync-forrás az egész v0.2-ben: két, egymásra
+// tükrözött sereg tele van BITRE azonos távolságokkal, és ha a döntetlent nem
+// az index oldaná fel, a vödör-bejárás sorrendje döntene — gépenként másképp.
+cim('5) v0.2 PARANCS-FELÜLET — teljes irányítás-kör, két friss Sim');
+const t5 = Date.now();
+const ketV02 = ketFutas(FORGATOKONYVEK.v02);
+let kevertV02 = { ok: false, tick: 0, a: 0, b: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v02.nev);
+sor('parancsok', 'menet · támadó menet · megállás · tartás · állás · alakzat');
+sor('lefutott tick', ketV02.tick, '(' + ((Date.now() - t5) / 1000).toFixed(1) + ' mp)');
+if (ketV02.ok) {
+  sor('két futás', 'AZONOS', (V02_TICKEK / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV02.hashek.get(V02_TICKEK).toString(16).padStart(8, '0'));
+  kevertV02 = kevertFutas(ketV02.hashek, FORGATOKONYVEK.v02);
+  if (kevertV02.ok) {
+    sor('kevert futás', 'AZONOS', 'a tiszta futás sorozatával');
+    console.log('\n  ✓ Az irányítás rétege is determinisztikus: a célzás, az üldözés,');
+    console.log('    az állás-váltás és az alakzat-hozzárendelés bitre reprodukálható.');
+  } else {
+    console.log('\n  ⛔ ELTÉRÉS a(z) ' + kevertV02.tick + '. ticken a KEVERT futásban:');
+    console.log('       tiszta: 0x' + (kevertV02.a >>> 0).toString(16).padStart(8, '0'));
+    console.log('       kevert: 0x' + (kevertV02.b >>> 0).toString(16).padStart(8, '0'));
+    bukas++;
+  }
+} else {
+  console.log('\n  ⛔ DESYNC a(z) ' + ketV02.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV02.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV02.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     ELSŐNEK NÉZD MEG: a `parancsallapot.js` célkeresésének döntetlen-');
+  console.log('     szabályát (azonos távolságnál a KISEBB index nyer), és az');
+  console.log('     `alakzat.js` rendezés-komparátorát (a harmadik kulcs az index).');
+  console.log('     Ez a két hely dönt sorrendről, tehát ez a két hely tud desyncelni.');
+  bukas++;
+}
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
 sor('3) kevert futás', ket.ok ? (kevert.ok ? 'RENDBEN' : 'BUKOTT (tick ' + kevert.tick + ')') : 'kihagyva');
 sor('4) tick-költség', k.msPerTick.toFixed(3) + ' ms/tick', '(mérés, nem kapu)');
 sor('   parancs-tüske', k.parancsMs.toFixed(0) + ' ms', '(útkeresés regresszió-őre, nem kapu)');
+sor('5) v0.2 parancs-felület',
+  ketV02.ok ? (kevertV02.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV02.tick + ')')
+    : 'BUKOTT (tick ' + ketV02.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

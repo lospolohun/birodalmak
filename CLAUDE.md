@@ -64,6 +64,17 @@ Több agenttel dolgozunk. A szabály: **diszjunkt fájlkészlet**, minden agent
 csak ÚJ fájlokat hoz létre a saját sávjában. Az `INTERFACES.md` a szerződés
 közöttük — azt előbb olvasd el, mint a kódot.
 
+## Ha ÚJ parancsfajtát veszel fel
+
+A determinizmus-szonda nem magától találja meg az új kódot: forgatókönyvekből
+dolgozik. A v0.1-es kör (`szondaParancs`) csak a `menet`-et járatja, a v0.2-es
+(`szondaParancsV02`) a teljes irányítás-felületet. **Ha új parancsot adsz hozzá,
+vedd bele a forgatókönyvbe is** — különben a legfrissebb, tehát legkockázatosabb
+kód marad a kapun kívül, és a zöld szonda hamis biztonságérzetet ad.
+
+A v0.1-es forgatókönyv SOSEM változhat: az a motor-mag regresszió-őre, és a
+`qa/V0.1_EREDMENY.md` számai ahhoz vannak kötve.
+
 ## Mielőtt késznek mondasz valamit
 
 `npm run det` (determinizmus) és `npx vite build` fusson hibátlanul. Ha a
