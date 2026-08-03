@@ -22,6 +22,7 @@
 //   { fajta:'gyujt',        egysegek:[…], x, y, nyers? }     ← v0.3
 //   { fajta:'epit',         csapat, tipus, x, y }            ← v0.3
 //   { fajta:'korszak',      csapat }                         ← v0.3
+//   { fajta:'kapu',         csapat, epulet, nyit }           ← v0.4
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -59,6 +60,7 @@ export function vegrehajt(sim, p) {
     case 'gyujt': return gyujt(sim, p);
     case 'epit': return epit(sim, p);
     case 'korszak': return korszak(sim, p);
+    case 'kapu': return kapu(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -79,10 +81,22 @@ function menet(sim, p, tamado) {
   const db = idk.length;
   if (db === 0) return;
 
-  // A célcella járhatóságát ITT ellenőrizzük, nem egységenként: ha a
-  // kattintás vízbe vagy sziklára esett, az egész parancs értelmetlen.
-  const ci = sim.racs.idx(p.x | 0, p.y | 0);
-  if (ci < 0 || sim.racs.jarhato[ci] === 0) return;
+  // ── A célcella járhatósága ──────────────────────────────────────────
+  // ⚠️ v0.4: HA NEM JÁRHATÓ, A LEGKÖZELEBBI JÁRHATÓ PONTRA MEGYÜNK, nem dobjuk
+  // el a parancsot. Az eldobás a v0.1-ben helyes volt (vízbe kattintás), de a
+  // v0.4-ben MEGBUKOTT: az ellenséges épület közepe definíció szerint zárt
+  // cella, tehát „támadd meg azt a központot" némán elveszett — mérve nulla
+  // egység indult el egy 1200 életerejű célpont felé, és a hiba semmilyen
+  // visszajelzést nem adott. A partra sétálás rosszabb esetben is értelmesebb,
+  // mint a néma semmittevés.
+  let cx0 = p.x, cy0 = p.y;
+  let ci = sim.racs.idx(cx0 | 0, cy0 | 0);
+  if (ci < 0 || sim.racs.jarhato[ci] === 0) {
+    const kozel = sim._jarhatoKozel(p.x, p.y);
+    cx0 = kozel.x; cy0 = kozel.y;
+    ci = sim.racs.idx(cx0 | 0, cy0 | 0);
+    if (ci < 0 || sim.racs.jarhato[ci] === 0) return;
+  }
   const mezoId = sim.mezoTar.kerj(ci, sim.tick);
 
   // ── Menetirány: a csoport SÚLYPONTJÁBÓL a célpont felé ──────────────
@@ -90,7 +104,7 @@ function menet(sim, p, tamado) {
   // tehát az összeadás sorrendje — és így a lebegőpontos eredmény — rögzített.
   let sx = 0, sy = 0;
   for (let k = 0; k < db; k++) { sx += e.px[idk[k]]; sy += e.py[idk[k]]; }
-  const kx = p.x - sx / db, ky = p.y - sy / db;
+  const kx = cx0 - sx / db, ky = cy0 - sy / db;
   // Ha a csoport már a célon áll, nincs értelmes irány — a 0 szög (kelet felé)
   // determinisztikus megegyezés, nem véletlen választás.
   const szog = (kx === 0 && ky === 0) ? 0 : fxAtan2(ky, kx);
@@ -106,12 +120,12 @@ function menet(sim, p, tamado) {
   const ujParancs = tamado ? PARANCS.TAMADO_MENET : PARANCS.MENET;
   for (let h = 0; h < db; h++) {
     const i = idk[asz.parositas[h]];
-    let cx = p.x + asz.helyX[h];
-    let cy = p.y + asz.helyY[h];
+    let cx = cx0 + asz.helyX[h];
+    let cy = cy0 + asz.helyY[h];
     // Ha az alakzat-hely falba vagy vízbe esne, az egység a NYERS célpontra
     // megy. Inkább tömörödjön a csoport, mint hogy valaki elérhetetlen helyre
     // induljon és örökre „úton" maradjon.
-    if (!sim.racs.jarhatoPont(cx, cy)) { cx = p.x; cy = p.y; }
+    if (!sim.racs.jarhatoPont(cx, cy)) { cx = cx0; cy = cy0; }
 
     e.menetparancs(i, cx, cy, mezoId);
     pa.parancs[i] = ujParancs;
@@ -293,6 +307,18 @@ function epit(sim, p) {
     const ar = EP_AR[tipus];
     for (let f = 0; f < 4; f++) sim.gazdasag.keszlet[csapat * 4 + f] += ar[f];
   }
+}
+
+/**
+ * KAPU nyitása/zárása. A kapu a saját csapatáé kell legyen — különben egy
+ * ellenséges kapu kinyitása ingyenes áttörés lenne.
+ * @param {{csapat:number, epulet:number, nyit:boolean}} p
+ */
+function kapu(sim, p) {
+  const i = p.epulet | 0;
+  if (!sim.epuletek.el(i)) return;
+  if (sim.epuletek.csapat[i] !== (p.csapat | 0)) return;
+  sim.epuletek.kapu(i, !!p.nyit);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

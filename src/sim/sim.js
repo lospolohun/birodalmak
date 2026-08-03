@@ -66,7 +66,7 @@ export class Sim {
     // Az alakzat-számoló és a parancs-állapot előre lefoglalt tömbökkel dolgozik,
     // hogy egy 1600 fős menetparancs se allokáljon.
     this.alakzatSzamolo = new AlakzatSzamolo(this.maxEgyseg);
-    this.parancsAllapot = new ParancsAllapot(this.maxEgyseg, this.egysegek);
+    this.parancsAllapot = new ParancsAllapot(this.maxEgyseg, this.egysegek, this);
 
     // ── v0.3: a gazdaság rétege ─────────────────────────────────────────
     this.epuletek = new Epuletek(this.racs);
@@ -488,6 +488,34 @@ export class Sim {
     const celA = this._jarhatoKozel(bx / b.length, by / b.length);
     const celB = this._jarhatoKozel(ax / a.length, ay / a.length);
 
+    if ((kor & 3) === 1) {
+      // FAL és KAPU: a v0.4/3-4 ága. A fal ZÁRJA a celláit (mező-érvénytelenítés
+      // menet közben), a kapu nyitása pedig MEGNYITJA — vagyis mindkét irányban
+      // változik a pálya, miközben seregek masíroznak rajta.
+      for (let cs = 0; cs < 2; cs++) {
+        const fx = (cs === 0 ? this.n * 0.34 : this.n * 0.66) | 0;
+        const fy = (this.n * 0.5) | 0;
+        // Négy fal + egy kapu: a kezdőkészletbe (100 kő) pont belefér. Hattal
+        // a kapura már nem maradna kő, és a forgatókönyv csendben kihagyná a
+        // kapu-ágat — vagyis a legfrissebb kód maradna ki a vizsgálatból.
+        for (let k = -2; k <= 2; k++) {
+          if (k === 0) continue;
+          this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.FAL, x: fx, y: fy + k });
+        }
+        this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.KAPU, x: fx, y: fy });
+      }
+    }
+    if ((kor & 3) === 3) {
+      // A kapuk nyitása: a `nyitva` jelző és a járhatóság együtt vált.
+      for (let i = 0; i < this.epuletek.db; i++) {
+        if (this.epuletek.tipus[i] === EPULET.KAPU && this.epuletek.el(i)) {
+          this.parancs({
+            fajta: 'kapu', csapat: this.epuletek.csapat[i],
+            epulet: i, nyit: ((kor >> 2) & 1) === 0,
+          });
+        }
+      }
+    }
     if ((kor & 3) === 2) {
       // Egy körben állást is váltunk: a védekező kötélhossz és a tartás
       // másképp viselkedik, ha közben tényleg fogynak az egységek.
@@ -546,6 +574,7 @@ export class Sim {
       h = fnvSzam(h, pa.parancs[i]);
       h = fnvSzam(h, pa.allas[i]);
       h = fnvSzam(h, pa.celEgyseg[i]);
+      h = fnvSzam(h, pa.celEpulet[i]);
       // v0.4 — egyetlen életerő-pont eltérése dönti el, hogy egy katona
       // túlél-e egy csapást; onnantól két különböző meccs fut a két gépen.
       h = fnvSzam(h, this.harc.hp[i]);
@@ -580,6 +609,10 @@ export class Sim {
       h = fnvSzam(h, ep.tipus[i]);
       h = fnvSzam(h, ep.csapat[i]);
       h = fnvSzam(h, ep.epulHatra[i]);
+      // v0.4 — az épület életereje és a kapu állása is a világ állapota.
+      h = fnvSzam(h, ep.hp[i]);
+      h = fnvSzam(h, ep.elo[i]);
+      h = fnvSzam(h, ep.nyitva[i]);
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);

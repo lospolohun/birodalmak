@@ -21,20 +21,28 @@
 // hogy a hely szabad-e (`lerakhato`). Ez a játékos dolga, nem a simé — és így
 // nincs olyan ág, ami egységet mozgatna parancs nélkül.
 
-export const EPULET = { KOZPONT: 0, RAKTAR: 1 };
-export const EPULET_NEV = ['központ', 'raktár'];
+export const EPULET = { KOZPONT: 0, RAKTAR: 1, FAL: 2, KAPU: 3 };
+export const EPULET_NEV = ['központ', 'raktár', 'fal', 'kapu'];
 
 /** Alapterület cellában (négyzet). */
-export const EP_MERET = [3, 2];
-/** Építési idő tickben (20 Hz → a központ 10 mp, a raktár 5 mp). */
-const EP_IDO = [200, 100];
+export const EP_MERET = [3, 2, 1, 1];
+/** Építési idő tickben (20 Hz → a központ 10 mp, a raktár 5 mp, a fal 1,5 mp). */
+const EP_IDO = [200, 100, 30, 60];
 /** Ára: [étel, fa, kő, kristály]. A központ indulásnál INGYEN jár. */
 export const EP_AR = [
   [0, 250, 100, 0],
   [0, 90, 0, 0],
+  [0, 0, 12, 0],
+  [0, 20, 30, 0],
 ];
-/** Lerakat-e? A v0.3-ban mindkettő az, de a v0.5 rosterben már nem lesz igaz. */
-const LERAKO = [1, 1];
+/** Lerakat-e? A fal és a kapu nyilván nem. */
+const LERAKO = [1, 1, 0, 0];
+/**
+ * ÉLETERŐ. A fal sokat bír, de az ostrom-támadás 400 %-ot üt rá (lásd
+ * `harc.js` ellensúly-táblája) — a fal tehát nem áttörhetetlen, csak drága
+ * módon áttörhető. Pont ez a szerepe.
+ */
+const EP_HP = [1200, 400, 900, 700];
 
 export class Epuletek {
   /**
@@ -56,12 +64,33 @@ export class Epuletek {
     this.csapat = new Uint8Array(maxDb);
     /** Hátralévő építési tick. 0 = kész. */
     this.epulHatra = new Int32Array(maxDb);
+    /** Életerő — egészben, ugyanazért, amiért az egységeknél (`harc.js`). */
+    this.hp = new Int32Array(maxDb);
+    this.maxHp = new Int32Array(maxDb);
+    /** 1 = áll. A lerombolt épület slotja megmarad, de nem létezik többé. */
+    this.elo = new Uint8Array(maxDb);
+    /**
+     * KAPU: nyitva van-e? A nyitott kapu cellája JÁRHATÓ.
+     *
+     * ⚠️ A v0.4-ben a kapu MINDENKINEK nyitva vagy MINDENKINEK zárva van, nem
+     * csak a sajátjainknak. Ennek oka szerkezeti: az áramlási mező a
+     * `racs.jarhato`-ból épül, ami EGY közös réteg — a csapatonként eltérő
+     * járhatóság csapatonként külön mezőkészletet igényelne. Az a v0.5 dolga,
+     * a roster mellett; addig a kapu egy kézzel nyitható átjáró.
+     */
+    this.nyitva = new Uint8Array(maxDb);
 
     this.jarhatosagValtozott = false;
   }
 
-  /** Kész van-e (nem építés alatt)? */
-  kesz(i) { return i >= 0 && i < this.db && this.epulHatra[i] === 0; }
+  /** Kész van-e (áll, és nem építés alatt)? */
+  kesz(i) { return i >= 0 && i < this.db && this.elo[i] === 1 && this.epulHatra[i] === 0; }
+
+  /** Áll-e még egyáltalán? */
+  el(i) { return i >= 0 && i < this.db && this.elo[i] === 1; }
+
+  /** Alapterület cellában — a megközelítési távolsághoz kell. */
+  meret(i) { return EP_MERET[this.tipus[i]]; }
 
   /**
    * Lerakható-e ide? Minden érintett cellának járhatónak kell lennie — tehát
@@ -94,6 +123,10 @@ export class Epuletek {
     this.tipus[i] = tipus;
     this.csapat[i] = csapat;
     this.epulHatra[i] = azonnalKesz ? 0 : EP_IDO[tipus];
+    this.maxHp[i] = EP_HP[tipus];
+    this.hp[i] = EP_HP[tipus];
+    this.elo[i] = 1;
+    this.nyitva[i] = 0;
     for (let dy = 0; dy < m; dy++) {
       for (let dx = 0; dx < m; dx++) {
         this.racs.jarhato[this.racs.idx(bx + dx, by + dy)] = 0;
@@ -110,6 +143,7 @@ export class Epuletek {
    */
   nullaz() {
     for (let i = 0; i < this.db; i++) {
+      if (this.elo[i] === 0) continue;   // a rom celláit már felszabadítottuk
       const m = EP_MERET[this.tipus[i]];
       for (let dy = 0; dy < m; dy++) {
         for (let dx = 0; dx < m; dx++) {
@@ -119,13 +153,76 @@ export class Epuletek {
       }
     }
     this.db = 0;
+    this.hp.fill(0);
+    this.maxHp.fill(0);
+    this.elo.fill(0);
+    this.nyitva.fill(0);
     this.jarhatosagValtozott = true;
+  }
+
+  /** Az épület celláinak lezárása vagy felszabadítása. */
+  _cellak(i, zart) {
+    const m = EP_MERET[this.tipus[i]];
+    for (let dy = 0; dy < m; dy++) {
+      for (let dx = 0; dx < m; dx++) {
+        const ci = this.racs.idx(this.cx[i] + dx, this.cy[i] + dy);
+        if (ci >= 0) this.racs.jarhato[ci] = zart ? 0 : 1;
+      }
+    }
+    this.jarhatosagValtozott = true;
+  }
+
+  /**
+   * Sebzés az épületre. A `harc.js` hívja — az ostrom-támadás itt fejti ki a
+   * 400 %-os szorzóját.
+   * @returns {boolean} elpusztult-e ettől a csapástól
+   */
+  sebez(i, seb) {
+    if (!this.el(i)) return false;
+    this.hp[i] -= seb;
+    if (this.hp[i] > 0) return false;
+    this.hp[i] = 0;
+    this.elo[i] = 0;
+    // A romok NEM maradnak akadálynak: a cella felszabadul, és a mezőket el
+    // kell dobni — különben a sereg egy már nem létező falat kerülgetne.
+    this._cellak(i, false);
+    return true;
+  }
+
+  /**
+   * Kapu nyitása/zárása. A nyitott kapu cellája járható MINDENKINEK (lásd a
+   * `nyitva` mező megjegyzését arról, miért nem csapatfüggő még).
+   */
+  kapu(i, nyit) {
+    if (!this.kesz(i) || this.tipus[i] !== EPULET.KAPU) return false;
+    const uj = nyit ? 1 : 0;
+    if (this.nyitva[i] === uj) return false;
+    this.nyitva[i] = uj;
+    this._cellak(i, !nyit);
+    return true;
+  }
+
+  /**
+   * A LEGKÖZELEBBI ellenséges épület egy ponthoz, sugáron belül. Az épületekből
+   * néhány tucat van, tehát lineáris keresés — és csak akkor fut, ha az egység
+   * NEM talált élő ellenséget, tehát ritkán. Döntetlennél a kisebb index nyer.
+   * @returns {number} épület-index vagy -1
+   */
+  legkozelebbiEllenseges(csapat, wx, wy, sugar) {
+    let legjobb = -1, legjobbD2 = sugar * sugar;
+    for (let i = 0; i < this.db; i++) {
+      if (this.elo[i] === 0 || this.csapat[i] === csapat) continue;
+      const dx = this.x[i] - wx, dy = this.y[i] - wy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
+    }
+    return legjobb;
   }
 
   /** Egy tick: az építkezések haladnak. Olcsó — kevés épület van. */
   lep() {
     for (let i = 0; i < this.db; i++) {
-      if (this.epulHatra[i] > 0) this.epulHatra[i]--;
+      if (this.elo[i] === 1 && this.epulHatra[i] > 0) this.epulHatra[i]--;
     }
   }
 
@@ -138,7 +235,7 @@ export class Epuletek {
   legkozelebbiLerako(csapat, wx, wy) {
     let legjobb = -1, legjobbD2 = Infinity;
     for (let i = 0; i < this.db; i++) {
-      if (this.csapat[i] !== csapat) continue;
+      if (this.csapat[i] !== csapat || this.elo[i] === 0) continue;
       if (this.epulHatra[i] !== 0 || !LERAKO[this.tipus[i]]) continue;
       const dx = this.x[i] - wx, dy = this.y[i] - wy;
       const d2 = dx * dx + dy * dy;

@@ -145,11 +145,16 @@ export class Harc {
       if (this.elo[i] === 0) continue;
       if (this.utemHatra[i] > 0) this.utemHatra[i]--;
 
-      const cel = pa.celEgyseg[i];
-      if (cel < 0 || cel >= db || this.elo[cel] === 0) continue;
-      if (e.csapat[cel] === e.csapat[i]) continue;
       if (e.allapot[i] !== ALLAPOT.HARCOL) continue;
       if (this.utemHatra[i] > 0) continue;
+
+      const cel = pa.celEgyseg[i];
+      if (cel < 0 || cel >= db || this.elo[cel] === 0) {
+        // Nincs élő katona-célpont — üthet-e ÉPÜLETET? (v0.4)
+        this._epuletUt(i);
+        continue;
+      }
+      if (e.csapat[cel] === e.csapat[i]) continue;
 
       // Hatótávon belül van-e? Négyzetes összehasonlítás, gyökvonás nélkül.
       const t = e.tipus[i];
@@ -167,6 +172,40 @@ export class Harc {
       }
       this.utemHatra[i] = UTEM[t];
     }
+  }
+
+  /**
+   * Csapás az épület-célpontra, ha van és hatótávon belül van.
+   *
+   * A megközelítési (és így az ütési) távolság a hatótáv PLUSZ az épület fél
+   * átmérője — ugyanaz a szabály, mint a `parancsallapot.js` közelítésénél. A
+   * kettőnek egyeznie kell, különben az egység odaáll, de nem üt.
+   */
+  _epuletUt(i) {
+    const sim = this.sim;
+    const e = sim.egysegek;
+    const ep = sim.epuletek;
+    const cel = sim.parancsAllapot.celEpulet[i];
+    if (cel < 0 || !ep.el(cel) || ep.csapat[cel] === e.csapat[i]) return;
+
+    const t = e.tipus[i];
+    const hat = HATOTAV[t] + 0.5 * ep.meret(cel) + 0.2;
+    const dx = ep.x[cel] - e.px[i], dy = ep.y[cel] - e.py[i];
+    if (dx * dx + dy * dy > hat * hat) return;
+
+    // Az épület a PANCEL.EPULET oszlopba esik — itt fejti ki az ostrom-támadás
+    // a 400 %-át, és itt bünteti a nyíl a 30 %-ával azt, aki íjásszal ostromol.
+    const seb = this.sebzesEpuletre(t);
+    ep.sebez(cel, seb);
+    this.osszSebzes[e.csapat[i] & 1] += seb;
+    this.utemHatra[i] = UTEM[t];
+  }
+
+  /** A csapás értéke ÉPÜLETRE. Az épületnek nincs lapos páncélja. */
+  sebzesEpuletre(tamadoTipus) {
+    const tt = TAMADAS_TIPUS[tamadoTipus];
+    const seb = ((ALAP_SEBZES[tamadoTipus] * SZORZO[tt][PANCEL.EPULET]) / 100) | 0;
+    return seb < 1 ? 1 : seb;
   }
 
   /**

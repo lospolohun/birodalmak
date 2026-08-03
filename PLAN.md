@@ -28,16 +28,24 @@ A verzió szakaszokra van bontva, és a kész szakaszok külön-külön is megá
 |---|---|---|
 | v0.4/1 | életerő, páncéltípusok, fegyvernem-ellensúlyok, halál | **kész** |
 | v0.4/2 | repülési idejű lövedékek | **kész** |
-| v0.4/3 | ostrom-egység | hátravan |
-| v0.4/4 | fal és kapu | hátravan |
+| v0.4/3 | épület-életerő, épületek elleni harc | **kész** |
+| v0.4/4 | fal és kapu | **kész** (a kapu még nem csapatfüggő) |
+| v0.4/6 | ostrom-EGYSÉG (új egységtípus) | hátravan |
 | v0.4/5 | beszállásolás | hátravan |
 
-Az ellensúly-tábla `TÁMADÁSTÍPUS × PÁNCÉLTÍPUS` (nem típus × típus), és van benne
-`OSTROM` sor és `EPULET` oszlop — az ostrom-szakasznak tehát nem kell új
-mechanizmus, csak egy új egységtípus és a hozzá tartozó adatsor. A fal/kapu a
-`epuletek.js`-re épülhet (az már zárja a celláit és érvényteleníti a mezőket),
-a beszállásolás pedig az `elo` jelzőre: a beszállásolt egység ugyanúgy kiesik a
-hasítótáblából, mint a halott, csak visszahozhatóan.
+Az épület-oldal kész: az épületnek van életereje, a támadó menetben lévő sereg
+célba veszi az ellenséges épületeket (élő katona MINDIG előbbre való), a fal
+zárja a celláit, a kapu nyitható. Az ostrom-EGYSÉG viszont még hiányzik — ahhoz
+új egységtípus kell, ami a `units3d.js` figura-építését is érinti, tehát nem
+puszta adatsor.
+
+⚠️ **A kapu még nem csapatfüggő:** nyitva MINDENKINEK nyitva van. Ennek oka
+szerkezeti — az áramlási mező a `racs.jarhato` EGY közös rétegéből épül, és a
+csapatonként eltérő járhatóság csapatonként külön mezőkészletet igényelne. Ez a
+v0.5 dolga, a roster mellett.
+
+A beszállásolás az `elo` jelzőre épülhet: a beszállásolt egység ugyanúgy kiesik
+a hasítótáblából, mint a halott, csak visszahozhatóan.
 
 **Ismert adósság a v0.5 felé:** a halott slot nem szabadul fel. Amint egységet
 képezni is lehet, kell a slot-újrahasznosítás, ahhoz pedig **generációs

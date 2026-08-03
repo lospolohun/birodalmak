@@ -116,10 +116,12 @@ export class ParancsAllapot {
   /**
    * @param {number} maxDb ugyanaz a felső korlát, mint az `Egysegek`-nél
    * @param {import('./units.js').Egysegek} egysegek
+   * @param {import('./sim.js').Sim} [sim] az épület-célzáshoz (v0.4)
    */
-  constructor(maxDb, egysegek) {
+  constructor(maxDb, egysegek, sim) {
     this.maxDb = maxDb | 0;
     this.egysegek = egysegek;
+    this.sim = sim || null;
     const m = this.maxDb;
 
     this.parancs = new Uint8Array(m);
@@ -128,6 +130,19 @@ export class ParancsAllapot {
     this.alakzat = new Uint8Array(m);
     /** A megszerzett célpont egység-indexe, vagy -1. */
     this.celEgyseg = new Int32Array(m);
+    /**
+     * A megcélzott ELLENSÉGES ÉPÜLET indexe, vagy -1 (v0.4).
+     *
+     * Külön mező, nem közös a `celEgyseg`-gel: az egység és az épület más
+     * indextérben él, és egy közös mezőben az előjellel vagy eltolással
+     * kódolás pont az a fajta trükk, amit egy desync-vadászat közben senki nem
+     * akar visszafejteni. Két mező, egyértelmű jelentéssel.
+     *
+     * Az ÉLŐ ELLENSÉG MINDIG ELŐBBRE VALÓ: épületet csak akkor keresünk, ha
+     * nincs elérhető katona. Enélkül a sereg falat verne, miközben hátba
+     * támadják.
+     */
+    this.celEpulet = new Int32Array(m);
 
     // ── A VÉGSŐ úti cél, amit az üldözés nem írhat felül ──────────────
     // Támadó menetnél az egység útközben letér a célpontra. Ha csak a
@@ -143,6 +158,7 @@ export class ParancsAllapot {
     this.horgonyY = new Float64Array(m);
 
     this.celEgyseg.fill(-1);
+    this.celEpulet.fill(-1);
     this.vegMezo.fill(-1);
   }
 
@@ -159,6 +175,7 @@ export class ParancsAllapot {
     this.allas.fill(ALLAS.AGRESSZIV);
     this.alakzat.fill(ALAKZAT.NEGYZET);
     this.celEgyseg.fill(-1);
+    this.celEpulet.fill(-1);
     this.vegMezo.fill(-1);
     const e = this.egysegek;
     for (let i = 0; i < n; i++) {
@@ -196,6 +213,7 @@ export class ParancsAllapot {
       // ── Tűzszünet: se célt nem tart, se újat nem keres ──────────────
       if (allas === ALLAS.TUZSZUNET) {
         if (this.celEgyseg[i] >= 0) this._celtElenged(i);
+        this.celEpulet[i] = -1;
         continue;
       }
 
@@ -271,9 +289,60 @@ export class ParancsAllapot {
         cel = -1;
       }
 
+      // ── 3/b. Nincs élő ellenség: van-e ellenséges ÉPÜLET? ───────────
+      // Csak támadó menetben és csak agresszív/védekező állásban — a `menet`
+      // szándékosan vak, a tartás pedig nem indul sehova.
+      if (this.parancs[i] === PARANCS.TAMADO_MENET
+        && (allas === ALLAS.AGRESSZIV || allas === ALLAS.VEDEKEZO)) {
+        if (this._epuletCel(i, x, y, tick)) continue;
+      } else {
+        this.celEpulet[i] = -1;
+      }
+
       // ── 4. Cél nélkül: vissza a parancs szerinti dolgunkra ──────────
       this._parancsFolytat(i, x, y);
     }
+  }
+
+  /**
+   * ÉPÜLET-CÉLPONT keresése és megközelítése.
+   *
+   * A megközelítési távolság a hatótáv PLUSZ az épület fél átmérője: az épület
+   * a KÖZÉPPONTJÁVAL van nyilvántartva, de a fala már korábban kezdődik. E
+   * nélkül egy 3×3-as központot a közelharci egység sosem érne el — beleállna
+   * a falába, és a hatótáv-vizsgálat a középponthoz mérve elbukna.
+   *
+   * @returns {boolean} igaz, ha van épület-célja (és a hívó ne menjen tovább)
+   */
+  _epuletCel(i, x, y, tick) {
+    const e = this.egysegek;
+    const ep = this.sim ? this.sim.epuletek : null;
+    if (!ep) return false;
+
+    let cel = this.celEpulet[i];
+    if (cel >= 0 && (!ep.el(cel) || ep.csapat[cel] === e.csapat[i])) cel = -1;
+    if (cel < 0 && ((tick + i) % CELZAS_PERIODUS) === 0) {
+      cel = ep.legkozelebbiEllenseges(e.csapat[i], x, y, LATOTAV[e.tipus[i]] * 2);
+    }
+    this.celEpulet[i] = cel;
+    if (cel < 0) return false;
+
+    const felAtmero = 0.5 * (ep.meret ? ep.meret(cel) : 1) + 0.2;
+    const hat = tamadoTav(e.tipus[i]) + felAtmero;
+    const dx = ep.x[cel] - x, dy = ep.y[cel] - y;
+    const d = fxHossz(dx, dy);
+    if (d <= hat) {
+      e.allapot[i] = ALLAPOT.HARCOL;
+      if (dx !== 0 || dy !== 0) e.szog[i] = fxAtan2(dy, dx);
+      return true;
+    }
+    // Odamegyünk. Rövid táv, egyenes vonal — mint az egység-üldözésnél.
+    e.celX[i] = ep.x[cel];
+    e.celY[i] = ep.y[cel];
+    e.mezoId[i] = -1;
+    e.egyenes[i] = 1;
+    e.allapot[i] = ALLAPOT.MEGY;
+    return true;
   }
 
   /**
