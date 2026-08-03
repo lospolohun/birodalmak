@@ -33,6 +33,7 @@ import { Eroforrasok, NYERS } from './eroforras.js';
 import { Epuletek, EPULET, EP_MERET } from './epuletek.js';
 import { Gazdasag, KORSZAK } from './gazdasag.js';
 import { Munkasok, MUNKA } from './munkas.js';
+import { Harc, TAMADAS, PANCEL } from './harc.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -71,6 +72,12 @@ export class Sim {
     this.gazdasag = new Gazdasag(2);
     this.munkasok = new Munkasok(this.maxEgyseg, this);
 
+    // ── v0.4: a harc rétege ─────────────────────────────────────────────
+    // Az `elo` jelzőt átadjuk a mozgás-magnak: a halott így kimarad a térbeli
+    // hasítótáblából, tehát egy csapásra megszűnik lökdösni és célponttá válni.
+    this.harc = new Harc(this.maxEgyseg, this);
+    this.egysegek.elo = this.harc.elo;
+
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -78,7 +85,11 @@ export class Sim {
      * tickenkénti gyártása allokáció lenne a forró úton.
      */
     this._tickHorog = {
-      lep: (t) => { this.parancsAllapot.lep(t); this.munkasok.lep(t); },
+      // SORREND: célzás → sebzés → munka. A `Harc` a `ParancsAllapot` UTÁN fut,
+      // mert az dönti el, kinek ki a célpontja és ki áll harcérintkezésben; a
+      // harc már csak a sebzést végzi. A két kérdés — „kire támadok" és
+      // „mennyit sebzek" — így nem keveredik egyetlen ciklusba.
+      lep: (t) => { this.parancsAllapot.lep(t); this.harc.lep(); this.munkasok.lep(t); },
     };
 
     /** tick → parancsok. Kulcs szerint kérdezzük, sosem iteráljuk. */
@@ -211,6 +222,8 @@ export class Sim {
     // INDEXRE mutat, és a felállás újrahasznosítja az indexeket. Enélkül egy
     // korábbi futás célpontja egy vadidegen egységre mutatna tovább.
     this.parancsAllapot.nullaz(e.db);
+    // Az életerő a TÍPUSBÓL jön, ezért csak a felállás után adható meg.
+    this.harc.nullaz(e.db);
 
     // A munkás nem katona: alapból TŰZSZÜNETBEN áll. Enélkül az agresszív
     // alapállás miatt az első ellenség láttán otthagyná a bányát és rohanna
@@ -433,6 +446,50 @@ export class Sim {
     }
   }
 
+  /**
+   * v0.4 SZONDA-FORGATÓKÖNYV — a harcrendszer determinizmus-próbája.
+   *
+   * A két sereg egymásnak megy és HALÁLIG verekszik. Ez a kör azt a két ágat
+   * járatja, amit a v0.2-es nem tudott: a sebzés-számítást (páncél, ellensúly,
+   * ütem) és a HALÁLT — ami a szimuláció legdurvább állapotváltozása, mert egy
+   * egység egyszerre esik ki a mozgásból, a célzásból, a hasítótáblából és a
+   * képből, miközben mások épp őt célozták.
+   *
+   * A körök közt újra parancsot adunk, mert a fogyó sereg egyre ritkul, és a
+   * megmaradtaknak újra kell keresniük egymást.
+   *
+   * @param {number} kor hányadik parancs-kör
+   */
+  szondaParancsV04(kor) {
+    const e = this.egysegek;
+    const elo = this.harc.elo;
+    const a = [], b = [];
+    for (let i = 0; i < e.db; i++) {
+      if (elo[i] === 0) continue;
+      (e.csapat[i] === 0 ? a : b).push(i);
+    }
+    if (a.length === 0 || b.length === 0) return;
+
+    // A cél a MÁSIK sereg súlypontja — így a ritkuló seregek is megtalálják
+    // egymást, nem egy fix pontra masíroznak, ahol már nincs senki.
+    let ax = 0, ay = 0, bx = 0, by = 0;
+    for (let k = 0; k < a.length; k++) { ax += e.px[a[k]]; ay += e.py[a[k]]; }
+    for (let k = 0; k < b.length; k++) { bx += e.px[b[k]]; by += e.py[b[k]]; }
+    const celA = this._jarhatoKozel(bx / b.length, by / b.length);
+    const celB = this._jarhatoKozel(ax / a.length, ay / a.length);
+
+    if ((kor & 3) === 2) {
+      // Egy körben állást is váltunk: a védekező kötélhossz és a tartás
+      // másképp viselkedik, ha közben tényleg fogynak az egységek.
+      this.parancs({ fajta: 'allas', egysegek: a, allas: ALLAS.VEDEKEZO });
+      this.parancs({ fajta: 'allas', egysegek: b, allas: ALLAS.AGRESSZIV });
+    }
+    const alakA = (kor & 1) ? ALAKZAT.VONAL : ALAKZAT.EK;
+    const alakB = (kor & 1) ? ALAKZAT.NEGYZET : ALAKZAT.VONAL;
+    this.parancs({ fajta: 'tamado_menet', egysegek: a, x: celA.x, y: celA.y, alakzat: alakA });
+    this.parancs({ fajta: 'tamado_menet', egysegek: b, x: celB.x, y: celB.y, alakzat: alakB });
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -479,6 +536,11 @@ export class Sim {
       h = fnvSzam(h, pa.parancs[i]);
       h = fnvSzam(h, pa.allas[i]);
       h = fnvSzam(h, pa.celEgyseg[i]);
+      // v0.4 — egyetlen életerő-pont eltérése dönti el, hogy egy katona
+      // túlél-e egy csapást; onnantól két különböző meccs fut a két gépen.
+      h = fnvSzam(h, this.harc.hp[i]);
+      h = fnvSzam(h, this.harc.elo[i]);
+      h = fnvSzam(h, this.harc.utemHatra[i]);
     }
 
     // v0.3 — a gazdaság is a szimuláció állapota. Egyetlen fával több az egyik
@@ -547,4 +609,4 @@ function kSin(x) {
     s * (-1.984126984126984e-4 + s * (2.7557319223985893e-6 + s * -2.505210838544172e-8)))));
 }
 
-export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA };
+export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA, TAMADAS, PANCEL };

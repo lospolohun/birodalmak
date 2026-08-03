@@ -84,6 +84,12 @@ const V02_TICKEK = ervSzam('v02tick', 4000);
  * a pálya járhatósága futás közben). Rövid körrel az sosem futna le.
  */
 const V03_TICKEK = ervSzam('v03tick', 6000);
+/**
+ * A v0.4 harci kör RÖVIDEBB lehet: a seregek gyorsan összeérnek, és onnantól
+ * tickenként több száz csapás esik. A halál — a szimuláció legdurvább
+ * állapotváltozása — az első pár száz ticken belül tömegesen lefut.
+ */
+const V04_TICKEK = ervSzam('v04tick', 3000);
 
 let bukas = 0;
 const sor = (a, b, c) => console.log('  ' + String(a).padEnd(34) + String(b).padEnd(14) + (c ?? ''));
@@ -252,6 +258,7 @@ const FORGATOKONYVEK = {
   v01: { nev: 'v0.1 menet-parancs', tickek: TICKEK, fut: (sim) => sim.szondaParancs() },
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
   v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
+  v04: { nev: 'v0.4 harc', tickek: V04_TICKEK, fut: (sim, kor) => sim.szondaParancsV04(kor) },
 };
 
 /** Friss sim, felállítva. A `Sim` konstruktora MINDENT újraépít (rács, mező). */
@@ -589,6 +596,70 @@ if (ketV03.ok) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 7) v0.4 HARC
+// ════════════════════════════════════════════════════════════════════════════
+//
+// MIÉRT A LEGDURVÁBB ÁLLAPOTVÁLTOZÁS: a HALÁL. Egy egység egyetlen ticken belül
+// esik ki a mozgásból, a célzásból, a térbeli hasítótáblából és a képből —
+// miközben mások épp őt célozták. Ha bármelyik ág egy tickkel később venné
+// észre, a két gép más csatát vívna.
+//
+// A sebzés ezért végig EGÉSZ: az ellensúly-szorzó százalékban, egész osztással.
+// Egyetlen életerő-pont eltérése dönti el, hogy egy katona túlél-e egy csapást.
+cim('7) v0.4 HARC — ellensúlyok, páncél, halál, két friss Sim');
+const t7 = Date.now();
+const ketV04 = ketFutas(FORGATOKONYVEK.v04);
+let kevertV04 = { ok: false, tick: 0, a: 0, b: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v04.nev);
+sor('lefutott tick', ketV04.tick, '(' + ((Date.now() - t7) / 1000).toFixed(1) + ' mp)');
+if (ketV04.ok) {
+  sor('két futás', 'AZONOS', (V04_TICKEK / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV04.hashek.get(V04_TICKEK).toString(16).padStart(8, '0'));
+  kevertV04 = kevertFutas(ketV04.hashek, FORGATOKONYVEK.v04);
+  if (kevertV04.ok) {
+    sor('kevert futás', 'AZONOS', 'a tiszta futás sorozatával');
+    console.log('\n  ✓ A harc is determinisztikus: a sebzés, a páncél, az ellensúlyok');
+    console.log('    és a halál bitre reprodukálható.');
+  } else {
+    console.log('\n  ⛔ ELTÉRÉS a(z) ' + kevertV04.tick + '. ticken a KEVERT futásban.');
+    bukas++;
+  }
+} else {
+  console.log('\n  ⛔ DESYNC a(z) ' + ketV04.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV04.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV04.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     ELSŐNEK NÉZD MEG: a `harc.js` sebzés-számítását (EGÉSZ osztás, a');
+  console.log('     szorzó százalékban), és a halál ágát — az egyszerre nyúl a');
+  console.log('     mozgáshoz, a célzáshoz és a hasítótáblához.');
+  bukas++;
+}
+
+// VERT-E EGYÁLTALÁN VALAKI VALAKIT? A determinizmus-kapu erre sem felel: két
+// egymás mellett ácsorgó sereg is tökéletesen reprodukálható. (Lásd a v0.3
+// tanulságát: hat zöld vizsgálat mellett állt a gazdaság.)
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  const kezdo = s.szondaFelallas(EGYSEG);
+  for (let t = 1; t <= 2500; t++) {
+    if ((t % PARANCS_KOZ) === 0) s.szondaParancsV04((t / PARANCS_KOZ) | 0);
+    s.lep();
+  }
+  const o = s.harc.osszesites();
+  const osszHalott = o.halottak[0] + o.halottak[1];
+  console.log('');
+  sor('2500 tick alatt elesett', osszHalott, 'csapat 0: ' + o.halottak[0] + ' · csapat 1: ' + o.halottak[1]);
+  sor('élő létszám', o.elo[0] + ' / ' + o.elo[1], '(indulás: ' + kezdo + ' összesen)');
+  sor('okozott sebzés', o.sebzes[0] + ' / ' + o.sebzes[1]);
+  if (osszHalott === 0) {
+    console.log('\n  ⛔ A HARC NEM INDULT EL: nulla halott 2500 tick alatt.');
+    console.log('     A determinizmus-kapu ettől még zöld — az ácsorgás is reprodukálható.');
+    console.log('     Nézd meg a `harc.js` hatótáv-vizsgálatát és a `HATOTAV` táblát.');
+    bukas++;
+  }
+}
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -601,6 +672,9 @@ sor('5) v0.2 parancs-felület',
 sor('6) v0.3 gazdaság',
   ketV03.ok ? (kevertV03.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV03.tick + ')')
     : 'BUKOTT (tick ' + ketV03.tick + ')');
+sor('7) v0.4 harc',
+  ketV04.ok ? (kevertV04.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV04.tick + ')')
+    : 'BUKOTT (tick ' + ketV04.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

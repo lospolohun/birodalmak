@@ -62,9 +62,20 @@ export class Kijeloles {
     l.length = 0;
   }
 
+  /**
+   * Él-e még az egység? v0.4 óta a halott slot megmarad, de nem jelölhető ki —
+   * különben a játékos hullákra adna parancsot, és nem értené, miért nem
+   * történik semmi.
+   */
+  _el(i) {
+    const h = this.sim.harc;
+    return !h || h.elo[i] === 1;
+  }
+
   /** Egyetlen egység hozzáadása (ismétlés nélkül). */
   hozzaad(i) {
     if (i < 0 || i >= this.sim.egysegek.db) return;
+    if (!this._el(i)) return;
     if (this.benne[i]) return;
     this.benne[i] = 1;
     this.lista.push(i);
@@ -77,7 +88,7 @@ export class Kijeloles {
     let ir = 0;
     for (let k = 0; k < l.length; k++) {
       const i = l[k];
-      if (i < db && this.sim.egysegek.csapat[i] === this.sajatCsapat) l[ir++] = i;
+      if (i < db && this.sim.egysegek.csapat[i] === this.sajatCsapat && this._el(i)) l[ir++] = i;
       else this.benne[i] = 0;
     }
     l.length = ir;

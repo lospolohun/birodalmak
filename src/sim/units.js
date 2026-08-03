@@ -83,6 +83,18 @@ export class Egysegek {
 
     /** Újrahasznosított kimenő objektum — hogy ne szemeteljünk tickenként. */
     this._ir = { x: 0, y: 0 };
+
+    /**
+     * v0.4 — élet-jelző, a `Harc` rétegtől (`Uint8Array`, 1 = él). A `Sim` köti
+     * be. Ha nincs (csupasz szonda, v0.3 és korábbi mentés), MINDENKI élőnek
+     * számít, és a mozgás-mag a v0.1 viselkedését adja.
+     *
+     * MIÉRT ITT ÉS NEM MÁSHOL: a halottat EGYETLEN helyen kell kivenni a
+     * világból — a térbeli hasítótáblából. Onnan olvas a szeparáció ÉS a
+     * célkeresés is, tehát egy feltétellel egyszerre szűnik meg lökdösődni és
+     * célponttá válni. Ha külön-külön szűrnénk, előbb-utóbb az egyik kimaradna.
+     */
+    this.elo = null;
   }
 
   /**
@@ -157,9 +169,12 @@ export class Egysegek {
     const cm = this.hCella;
     const szam = this._hSzam;
     const elem = this._hElem;
+    const elo = this.elo;
     szam.fill(0);
-    // 1. menet: hány elem esik egy vödörbe
+    // 1. menet: hány elem esik egy vödörbe. A HALOTTAK kimaradnak — így sem
+    // lökdösik a többieket, sem célponttá nem válnak (lásd az `elo` mezőt).
     for (let i = 0; i < db; i++) {
+      if (elo && elo[i] === 0) continue;
       let gx = (this.px[i] / cm) | 0;
       let gy = (this.py[i] / cm) | 0;
       if (gx < 0) gx = 0; else if (gx >= szel) gx = szel - 1;
@@ -173,6 +188,7 @@ export class Egysegek {
     const kurzor = this._hKurzor || (this._hKurzor = new Int32Array(szel * szel));
     kurzor.set(szam.subarray(0, szel * szel));
     for (let i = 0; i < db; i++) {
+      if (elo && elo[i] === 0) continue;
       let gx = (this.px[i] / cm) | 0;
       let gy = (this.py[i] / cm) | 0;
       if (gx < 0) gx = 0; else if (gx >= szel) gx = szel - 1;

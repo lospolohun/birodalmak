@@ -28,16 +28,20 @@
 // `Sim.allapotHash()` részei — egy elcsúszott célpont ugyanúgy desync, mint egy
 // elcsúszott koordináta, tehát a szondának látnia kell.
 //
-// ── AMIT A v0.2 SZÁNDÉKOSAN NEM CSINÁL ────────────────────────────────────
-// NINCS SEBZÉS. A harcrendszer a v0.4 (páncéltípusok, lövedékek, ellensúlyok),
-// és nem akartuk félig előrehozni — egy ideiglenes sebzés-modell a v0.9-es
-// balanszot mérgezné meg. A v0.2 addig visz, hogy az egység a parancs hatására
-// MEGTALÁLJA az ellenfelét, odamegy, megáll előtte és ránéz. Ez pont az, ami az
-// irányítás helyességéhez ellenőrizhető; a többi a v0.4 dolga.
+// ── EZ A RÉTEG NEM SEBEZ ──────────────────────────────────────────────────
+// Itt dől el, KIRE támad az egység és MEDDIG megy el érte; hogy MENNYIT sebez,
+// az a `harc.js` dolga (v0.4 óta), és a tickben közvetlenül ezután fut. A két
+// kérdés szétvágva marad kezelhető: a célzás a térbeli hasítótáblával és az
+// állásokkal dolgozik, a sebzés a páncél- és ellensúly-táblákkal.
+//
+// A hatótávolság viszont KÖZÖS: a `harc.js` `HATOTAV` tábláját olvassuk, mert
+// ha a megállási küszöb és a sebzési hatótáv elcsúszna, az íjász vagy túl közel
+// menne, vagy lőtávon kívül állna meg.
 
 import { fxHossz, fxAtan2 } from './fx.js';
 import { ALLAPOT } from './units.js';
 import { ALAKZAT } from './alakzat.js';
+import { HATOTAV } from './harc.js';
 
 /** Mit csinál éppen az egység — a PARANCS szintjén (nem a mozgás szintjén). */
 export const PARANCS = {
@@ -71,11 +75,34 @@ export const ALLAS_NEV = ['agresszív', 'védekező', 'tartás', 'tűzszünet'];
  *   R = 4,1 → 3 gyűrű → 7×7 = 49 vödör   (majdnem kétszeres költség!)
  * A 3,9 pont a küszöb alatt van. Ha ezt emeled, a vödör-szám UGRIK — előbb mérd.
  */
-const LATOTAV = 3.9;
-/** Ennél közelebb az egység „harcérintkezésben" van: megáll és szembefordul. */
-const TAMADO_TAV = 1.15;
-/** A már megszerzett célt ennél messzebb engedjük el (hiszterézis a csapkodás ellen). */
-const ELENGED_TAV = 6.2;
+const LATOTAV_ALAP = 3.9;
+
+/**
+ * LÁTÓTÁV TÍPUSONKÉNT (v0.4). Az íjász hatótávja 6,0 — ha a látótáv maradt
+ * volna egységesen 3,9, az íjász SOSEM szerzett volna célt a saját lőtávján
+ * belül: odasétált volna 3,9-re, ahol viszont már a lándzsás is eléri.
+ *
+ * ⚠️ A vödör-költség a sugárral UGRIK (lásd fent): 3,9 → 25 vödör, 6,8 → 81.
+ * Ezért CSAK az íjász kap nagy sugarat; a többi marad a 25-ösön. Az átlag így
+ * ~39 vödör egységenként, és a 4/5-ös fázis-eltolással ez tickenként a sereg
+ * ötödére jut. Ha új távolsági egység jön, itt kell mérlegelni, nem a
+ * `HATOTAV`-nál.
+ */
+const LATOTAV = [LATOTAV_ALAP, LATOTAV_ALAP, 6.8, LATOTAV_ALAP];
+/**
+ * Hiszterézis: a megszerzett célt ennyiszer messzebbig tartjuk, mint amekkorán
+ * megszereztük. Enélkül a látótáv peremén tickenként rá-le kapcsolna.
+ */
+const ELENGED = [LATOTAV_ALAP * 1.6, LATOTAV_ALAP * 1.6, 6.8 * 1.35, LATOTAV_ALAP * 1.6];
+/**
+ * Ennél közelebb az egység „harcérintkezésben" van: megáll és szembefordul.
+ *
+ * ⚠️ v0.4 ÓTA TÍPUSFÜGGŐ, és a `harc.js` `HATOTAV` táblájából jön — EGY forrás,
+ * két olvasó. Ha a célzás küszöbe és a sebzés hatótávja elcsúszna egymástól, az
+ * íjász vagy odasétálna a lándzsás orra elé (és meghalna), vagy megállna
+ * lőtávon kívül (és nem csinálna semmit). A `_tav()` a típus szerint felel.
+ */
+function tamadoTav(tipus) { return HATOTAV[tipus]; }
 /** A védekező állás kötélhossza az őrhelytől. */
 const KOTELEK = 7.0;
 /**
@@ -157,8 +184,13 @@ export class ParancsAllapot {
     const e = this.egysegek;
     const db = e.db;
     const px = e.px, py = e.py, csapat = e.csapat;
+    // v0.4 — a halott nem célpont. A hasítótáblából már kimaradt, de a MÁR
+    // MEGSZERZETT célt is el kell engedni, különben az egység egy hullára
+    // meredve állna a csata végéig.
+    const elo = e.elo;
 
     for (let i = 0; i < db; i++) {
+      if (elo && elo[i] === 0) continue;
       const allas = this.allas[i];
 
       // ── Tűzszünet: se célt nem tart, se újat nem keres ──────────────
@@ -175,11 +207,11 @@ export class ParancsAllapot {
       // amekkorán megszereztük. Enélkül a látótáv peremén álló ellenségre
       // tickenként rá-le kapcsolna, és az egység remegne.
       if (cel >= 0) {
-        if (cel >= db || csapat[cel] === csapat[i]) {
+        if (cel >= db || csapat[cel] === csapat[i] || (elo && elo[cel] === 0)) {
           cel = -1;
         } else {
           const d = fxHossz(px[cel] - x, py[cel] - y);
-          if (d > ELENGED_TAV) cel = -1;
+          if (d > ELENGED[e.tipus[i]]) cel = -1;
         }
         if (cel < 0) this.celEgyseg[i] = -1;
       }
@@ -188,7 +220,7 @@ export class ParancsAllapot {
       if (cel < 0 && ((tick + i) % CELZAS_PERIODUS) === 0) {
         // Tartás-állásban csak arra reagálunk, aki BELÉP a hatósugárba —
         // vagyis a keresés sugara maga a harcérintkezés távolsága.
-        const sugar = allas === ALLAS.TARTAS ? TAMADO_TAV : LATOTAV;
+        const sugar = allas === ALLAS.TARTAS ? tamadoTav(e.tipus[i]) : LATOTAV[e.tipus[i]];
         // A tűzszünetet fent már kizártuk; a menet-parancs viszont
         // szándékosan VAK: aki `menet`-et kapott, az megy, nem harcol.
         if (this.parancs[i] !== PARANCS.MENET) {
@@ -202,7 +234,7 @@ export class ParancsAllapot {
         const dx = px[cel] - x, dy = py[cel] - y;
         const d = fxHossz(dx, dy);
 
-        if (d <= TAMADO_TAV) {
+        if (d <= tamadoTav(e.tipus[i])) {
           // Harcérintkezés: megáll és SZEMBEFORDUL. A sebességet a
           // `units.js` nullázza minden nem-MEGY állapotra.
           e.allapot[i] = ALLAPOT.HARCOL;
@@ -222,7 +254,7 @@ export class ParancsAllapot {
 
         if (uldoz) {
           // Egyenes vonalú üldözés, áramlási mező NÉLKÜL. Ez szándékos: a cél
-          // legfeljebb `ELENGED_TAV` távol van, arra a mező-számítás (egy teljes
+          // legfeljebb az elengedési távolságon belül van, arra a mező-számítás (egy teljes
           // Dijkstra) pazarlás lenne — pont az a hiba, ami a v0.1-ben 40 ms-os
           // tickeket okozott. Ha akadály kerül közé, a `units.js` fal-csúsztatása
           // viszi tovább, és a következő célkeresés úgyis újraértékel.
@@ -272,7 +304,7 @@ export class ParancsAllapot {
     // TARTÁS parancs, vagy nincs parancs.
     if (this.allas[i] === ALLAS.VEDEKEZO) {
       const hd = fxHossz(x - this.horgonyX[i], y - this.horgonyY[i]);
-      if (hd > TAMADO_TAV) {
+      if (hd > tamadoTav(e.tipus[i])) {
         // Vissza az őrhelyre. Rövid táv, tehát itt is egyenes vonal elég.
         e.celX[i] = this.horgonyX[i];
         e.celY[i] = this.horgonyY[i];
