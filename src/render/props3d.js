@@ -68,6 +68,9 @@ export class Diszlet3D {
     this.jelenet = feloldJelenet(jelenet);
     if (!this.jelenet) throw new Error('[props3d] nincs jelenet');
     this.racs = sim.racs;
+    // v0.3 — a nyersanyag-cellák kizárásához (lásd `_epitFak`). Elhagyható:
+    // ha nincs (régi mentés, csupasz szonda), a réteg a v0.1 viselkedését adja.
+    this._eroforrasok = sim.eroforrasok || null;
     this._n = this.racs.n;
     this._kamera = feloldKamera(opciok.kamera) || aktivKamera();
     this._celFa = opciok.faDb ?? CEL_FA;
@@ -218,6 +221,17 @@ export class Diszlet3D {
     // sem járható — nem akarunk fát a kristály belsejébe.
     const tiltott = new Uint8Array(cellaDb);
     for (let k = 0; k < racs.kristalyok.length; k++) tiltott[racs.kristalyok[k]] = 1;
+
+    // v0.3 — a NYERSANYAG-cellák is tiltottak. Ez a réteg díszfát rak ki, a
+    // gazdasági erdőt/bokrot/kőfejtőt viszont a `gazdasag3d.js` rajzolja, mert
+    // azok VALÓDI sim-objektumok (kitermelhetők, és eltűnnek, ha kimerülnek).
+    // Ha itt is raknánk rájuk fát, a kitermelt erdő helyén ottmaradna egy
+    // díszfa — a játékos pedig azt látná, hogy a fa ott van, csak nem lehet
+    // kivágni. A dísz és a nyersanyag SOSEM keveredhet.
+    const ef = this._eroforrasok;
+    if (ef) {
+      for (let i = 0; i < ef.db; i++) tiltott[ef.cella[i]] = 1;
+    }
 
     let fuDb = 0;
     for (let i = 0; i < cellaDb; i++) if (ter[i] === TEREP.FU && !tiltott[i]) fuDb++;

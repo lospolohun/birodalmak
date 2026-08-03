@@ -77,6 +77,13 @@ const EGYSEG = ervSzam('egyseg', CEL_EGYSEG); // 1600
  * ticken belül kiütközik — a hosszú futás a v0.1 magjára van fenntartva.
  */
 const V02_TICKEK = ervSzam('v02tick', 4000);
+/**
+ * A v0.3 gazdasági kör HOSSZABB, mint a v0.2-es. Nem a kód mérete miatt, hanem
+ * mert a gazdaság lassú folyamat: a korszakváltás 400-600 tick, egy lelőhely
+ * kimerülése több ezer, és épp a KIMERÜLÉS a legkockázatosabb ág (ott változik
+ * a pálya járhatósága futás közben). Rövid körrel az sosem futna le.
+ */
+const V03_TICKEK = ervSzam('v03tick', 6000);
 
 let bukas = 0;
 const sor = (a, b, c) => console.log('  ' + String(a).padEnd(34) + String(b).padEnd(14) + (c ?? ''));
@@ -244,6 +251,7 @@ function halad(t, osszes) {
 const FORGATOKONYVEK = {
   v01: { nev: 'v0.1 menet-parancs', tickek: TICKEK, fut: (sim) => sim.szondaParancs() },
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
+  v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
 };
 
 /** Friss sim, felállítva. A `Sim` konstruktora MINDENT újraépít (rács, mező). */
@@ -507,6 +515,80 @@ if (ketV02.ok) {
   bukas++;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 6) v0.3 GAZDASÁG
+// ════════════════════════════════════════════════════════════════════════════
+//
+// MIÉRT A LEGKOCKÁZATOSABB KÖR: itt VÁLTOZIK A PÁLYA futás közben. A kimerült
+// erdő cellája megnyílik, a lerakott raktáré bezárul — és az áramlási mezők a
+// járhatóságból épülnek, gyorsítótárból. Ha az érvénytelenítés akár egy ticket
+// késik, a két futás ugyanazt a hibát csinálja (tehát nem itt bukik), de a
+// lockstepben egy MÁSIK gép, ami épp más ütemben ért oda, mást lát.
+//
+// A második veszélyforrás a munkás-óra: a gyűjtés nem egész sebességű, és ha
+// lebegőpontos akkumulátorral számolnánk, tízezer tick alatt gépenként más
+// maradék jönne ki. Ezért egész számláló — és ezért van benne a hashben.
+cim('6) v0.3 GAZDASÁG — gyűjtés, építés, korszakváltás, két friss Sim');
+const t6 = Date.now();
+const ketV03 = ketFutas(FORGATOKONYVEK.v03);
+let kevertV03 = { ok: false, tick: 0, a: 0, b: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v03.nev);
+sor('parancsok', 'gyűjtés (4 nyersanyag) · raktár-építés · korszakváltás · félbeszakítás');
+sor('lefutott tick', ketV03.tick, '(' + ((Date.now() - t6) / 1000).toFixed(1) + ' mp)');
+if (ketV03.ok) {
+  sor('két futás', 'AZONOS', (V03_TICKEK / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV03.hashek.get(V03_TICKEK).toString(16).padStart(8, '0'));
+  kevertV03 = kevertFutas(ketV03.hashek, FORGATOKONYVEK.v03);
+  if (kevertV03.ok) {
+    sor('kevert futás', 'AZONOS', 'a tiszta futás sorozatával');
+    console.log('\n  ✓ A gazdaság is determinisztikus: a gyűjtés, a lelőhely-kimerülés,');
+    console.log('    az építés és a korszakváltás bitre reprodukálható — a futás közben');
+    console.log('    változó járhatóság mellett is.');
+  } else {
+    console.log('\n  ⛔ ELTÉRÉS a(z) ' + kevertV03.tick + '. ticken a KEVERT futásban:');
+    console.log('       tiszta: 0x' + (kevertV03.a >>> 0).toString(16).padStart(8, '0'));
+    console.log('       kevert: 0x' + (kevertV03.b >>> 0).toString(16).padStart(8, '0'));
+    bukas++;
+  }
+} else {
+  console.log('\n  ⛔ DESYNC a(z) ' + ketV03.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV03.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV03.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     ELSŐNEK NÉZD MEG: a `Sim._mezoErvenytelenites()`-t (a járhatóság');
+  console.log('     futás közbeni változása), a `munkas.js` egész gyűjtő-óráját, és az');
+  console.log('     `eroforras.js` keresésének döntetlen-szabályát. Ez a három hely');
+  console.log('     nyúl olyasmihez, ami tickenként és gépenként elcsúszhat.');
+  bukas++;
+}
+
+// A gazdaság ELINDULT-e egyáltalán? Egy zöld determinizmus-kapu semmit nem ér,
+// ha a munkások közben egy szem fát sem hoztak be — az is „reprodukálható".
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  s.szondaFelallas(EGYSEG);
+  for (let t = 1; t <= 3000; t++) {
+    if ((t % PARANCS_KOZ) === 0) s.szondaParancsV03((t / PARANCS_KOZ) | 0);
+    s.lep();
+  }
+  const g0 = s.gazdasag.allapot(0), g1 = s.gazdasag.allapot(1);
+  const be = s.gazdasag.osszegyujtott;
+  const ossz = be[0] + be[1] + be[2] + be[3] + be[4] + be[5] + be[6] + be[7];
+  console.log('');
+  sor('3000 tick alatt begyűjtve', ossz, 'étel/fa/kő/kristály, mindkét csapat');
+  sor('csapat 0 készlete', g0.etel + ' / ' + g0.fa + ' / ' + g0.ko + ' / ' + g0.kristaly,
+    'korszak: ' + g0.korszak + (g0.valtasHatra ? ' (vált, ' + g0.valtasHatra + ' tick)' : ''));
+  sor('csapat 1 készlete', g1.etel + ' / ' + g1.fa + ' / ' + g1.ko + ' / ' + g1.kristaly,
+    'korszak: ' + g1.korszak + (g1.valtasHatra ? ' (vált, ' + g1.valtasHatra + ' tick)' : ''));
+  sor('épület', s.epuletek.db, 'kezdő központ csapatonként + épített raktárak');
+  if (ossz === 0) {
+    console.log('\n  ⛔ A GAZDASÁG NEM INDULT EL: nulla nyersanyag jött be 3000 tick alatt.');
+    console.log('     A determinizmus-kapu ettől még zöld lehet — a semmittevés is');
+    console.log('     tökéletesen reprodukálható. Nézd meg a `munkas.js` állapotgépét.');
+    bukas++;
+  }
+}
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -516,6 +598,9 @@ sor('   parancs-tüske', k.parancsMs.toFixed(0) + ' ms', '(útkeresés regresszi
 sor('5) v0.2 parancs-felület',
   ketV02.ok ? (kevertV02.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV02.tick + ')')
     : 'BUKOTT (tick ' + ketV02.tick + ')');
+sor('6) v0.3 gazdaság',
+  ketV03.ok ? (kevertV03.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV03.tick + ')')
+    : 'BUKOTT (tick ' + ketV03.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

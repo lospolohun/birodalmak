@@ -19,6 +19,13 @@
 //   { fajta:'tartas',       egysegek:[…] }
 //   { fajta:'allas',        egysegek:[…], allas }
 //   { fajta:'alakzat',      egysegek:[…], alakzat }
+//   { fajta:'gyujt',        egysegek:[…], x, y, nyers? }     ← v0.3
+//   { fajta:'epit',         csapat, tipus, x, y }            ← v0.3
+//   { fajta:'korszak',      csapat }                         ← v0.3
+//
+// ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
+// hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
+// minden gyűjtés csendben étel-gyűjtéssé válna.
 //
 // Az `egysegek` INDEX-tömb. Hogy ki van kijelölve, az a kliens dolga (lásd
 // `src/ui/kijeloles.js`) — a sim csak indexeket lát, és sosem tudja meg, hogy
@@ -31,9 +38,10 @@
 // mindenki ugyanabból a közös mezőből olvassa.
 
 import { fxAtan2 } from './fx.js';
-import { ALLAPOT } from './units.js';
+import { ALLAPOT, TIPUS } from './units.js';
 import { ALAKZAT } from './alakzat.js';
 import { PARANCS, ALLAS } from './parancsallapot.js';
+import { EP_AR, EP_MERET } from './epuletek.js';
 
 /**
  * Egy parancs végrehajtása. A `Sim._vegrehajt` delegál ide.
@@ -48,6 +56,9 @@ export function vegrehajt(sim, p) {
     case 'tartas': return tartas(sim, p);
     case 'allas': return allasBeallit(sim, p);
     case 'alakzat': return alakzatBeallit(sim, p);
+    case 'gyujt': return gyujt(sim, p);
+    case 'epit': return epit(sim, p);
+    case 'korszak': return korszak(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -114,6 +125,10 @@ function menet(sim, p, tamado) {
     pa.horgonyX[i] = cx;
     pa.horgonyY[i] = cy;
     pa.celEgyseg[i] = -1;
+    // v0.3: a menetparancs FELMOND. Ha egy gyűjtő munkást elküldünk valahova,
+    // az ne menjen vissza magától a bányához a következő tickben — a játékos
+    // parancsa erősebb, mint a munkás-AI köre.
+    sim.munkasok.elenged(i);
   }
 }
 
@@ -138,6 +153,7 @@ function allj(sim, p) {
     pa.vegY[i] = e.py[i];
     pa.vegMezo[i] = -1;
     pa.horgonyz(i);
+    sim.munkasok.elenged(i);
   }
 }
 
@@ -183,4 +199,103 @@ function alakzatBeallit(sim, p) {
   let a = p.alakzat | 0;
   if (a < 0 || a > ALAKZAT.SZORT) a = ALAKZAT.NEGYZET;
   for (let k = 0; k < idk.length; k++) pa.alakzat[idk[k]] = a;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// v0.3 — GAZDASÁG
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GYŰJTÉS. A kijelölt munkások nekiállnak a kattintott lelőhelynek.
+ *
+ * ── A KÉT DOLOG, AMIT ITT JÓL KELL CSINÁLNI ──────────────────────────────
+ * 1. **EGY áramlási mező az egész csoportnak.** Ugyanaz a szabály, mint a
+ *    menetnél: a mezőt a kattintás körüli JÁRHATÓ cellára kérjük, és mindenki
+ *    azt kapja. A saját lelőhelye csak a végpontja. Munkásonként külön mező a
+ *    v0.1-es 40 ms-os tick visszatérése lenne.
+ * 2. **Szétosztás a fürtön.** Nem mindenki a legközelebbi fát kapja, hanem
+ *    körbeosztjuk a közeli lelőhelyeket — különben egy cellára tolonganának.
+ *
+ * A nem-munkás egységeket csendben kihagyjuk: a `gyujt` rájuk értelmetlen, és
+ * egy hibaüzenetnek a sim nem a helye.
+ *
+ * @param {{egysegek:number[], x:number, y:number, fajta?:number}} p
+ */
+function gyujt(sim, p) {
+  const e = sim.egysegek;
+  const ef = sim.eroforrasok;
+  const idk = p.egysegek;
+  if (!idk || idk.length === 0) return;
+
+  // Melyik nyersanyagot gyűjtjük? Ha a parancs nem mondja meg, a kattintott
+  // lelőhelyből következik — ez az, amit a játékos csinál egérrel.
+  //
+  // ⚠️ A mező neve `nyers`, NEM `fajta`. A `fajta` a PARANCS típusa ('gyujt'),
+  // és ha a nyersanyagot is annak hívnánk, a `p.fajta | 0` a 'gyujt' stringből
+  // csendben 0-t (étel) csinálna — minden gyűjtés étel lenne, hibaüzenet nélkül.
+  let nyers = p.nyers === undefined ? -1 : (p.nyers | 0);
+  if (nyers < 0) {
+    const alatta = ef.keres(-1, p.x, p.y, 6);
+    if (alatta < 0) return;
+    nyers = ef.fajta[alatta];
+  }
+
+  const jeloltek = sim._gyujtJeloltek || (sim._gyujtJeloltek = []);
+  jeloltek.length = 0;
+  ef.kornyek(nyers, p.x, p.y, jeloltek);
+  if (jeloltek.length === 0) return;
+
+  // A CSOPORT közös mezője: a kattintás körüli járható cellára. A lelőhely
+  // maga gyakran járhatatlan (erdő, kő, kristály), abból nem lehet mezőt kérni.
+  const kozel = sim._jarhatoKozel(p.x, p.y);
+  const ci = sim.racs.idx(kozel.x | 0, kozel.y | 0);
+  const mezoId = (ci >= 0 && sim.racs.jarhato[ci] === 1) ? sim.mezoTar.kerj(ci, sim.tick) : -1;
+
+  let n = 0;
+  for (let k = 0; k < idk.length; k++) {
+    const i = idk[k];
+    if (i >= e.db || e.tipus[i] !== TIPUS.MUNKAS) continue;
+    // Körbeosztás: a k-adik munkás a k-adik lelőhelyet kapja, körbefordulva.
+    sim.munkasok.megbiz(i, jeloltek[n % jeloltek.length], mezoId);
+    // A gyűjtés a parancs-réteg szempontjából „nincs parancs": a munkás-AI
+    // vezeti, nem a menet-logika. Így a `_parancsFolytat` nem rángatja vissza.
+    sim.parancsAllapot.parancs[i] = PARANCS.NINCS;
+    sim.parancsAllapot.celEgyseg[i] = -1;
+    n++;
+  }
+}
+
+/**
+ * ÉPÍTÉS. Az árat AZONNAL levonjuk, az épület viszont idővel készül el.
+ *
+ * A `x, y` az épület KÖZEPE (oda kattint a játékos); a bal-felső cellát ebből
+ * számoljuk. Ha a hely foglalt vagy nem telik, a parancs csendben elvész — a
+ * visszajelzés a kliens dolga, a simé az, hogy soha ne kerüljön félkész
+ * állapotba (levont ár épület nélkül).
+ *
+ * @param {{csapat:number, tipus:number, x:number, y:number}} p
+ */
+function epit(sim, p) {
+  const tipus = p.tipus | 0;
+  if (tipus < 0 || tipus >= EP_AR.length) return;
+  const csapat = p.csapat | 0;
+  const m = EP_MERET[tipus];
+  const bx = (p.x | 0) - (m >> 1);
+  const by = (p.y | 0) - (m >> 1);
+  if (!sim.epuletek.lerakhato(tipus, bx, by)) return;
+  // ⚠️ ELŐBB a hely, UTÁNA a pénz. Fordított sorrendben egy foglalt helyre
+  // adott parancs levonná az árat, és nem adna érte semmit.
+  if (!sim.gazdasag.levon(csapat, EP_AR[tipus])) return;
+  const i = sim.epuletek.lerak(tipus, bx, by, csapat, false);
+  if (i < 0) {
+    // Nem sikerült (betelt a tömb) — az árat visszaadjuk, hogy a gazdaság
+    // egyirányúsága ne sérüljön a másik irányba sem.
+    const ar = EP_AR[tipus];
+    for (let f = 0; f < 4; f++) sim.gazdasag.keszlet[csapat * 4 + f] += ar[f];
+  }
+}
+
+/** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */
+function korszak(sim, p) {
+  sim.gazdasag.korszakIndit(p.csapat | 0);
 }

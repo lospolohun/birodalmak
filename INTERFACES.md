@@ -1,4 +1,4 @@
-# AGE OF THE CRYSTALS — interfész-szerződés (v0.2 irányítás)
+# AGE OF THE CRYSTALS — interfész-szerződés (v0.3 gazdaság)
 
 Ez a fájl az **igazságforrás** arról, hogy a rétegek hogyan kapcsolódnak.
 
@@ -50,7 +50,15 @@ sim.parancs({ fajta: 'allj',         egysegek: idk });
 sim.parancs({ fajta: 'tartas',       egysegek: idk });
 sim.parancs({ fajta: 'allas',        egysegek: idk, allas: ALLAS.VEDEKEZO });
 sim.parancs({ fajta: 'alakzat',      egysegek: idk, alakzat: ALAKZAT.VONAL });
+// v0.3
+sim.parancs({ fajta: 'gyujt',        egysegek: idk, x, y, nyers: NYERS.FA });  // `nyers`, NEM `fajta`!
+sim.parancs({ fajta: 'epit',         csapat: 0, tipus: EPULET.RAKTAR, x, y });
+sim.parancs({ fajta: 'korszak',      csapat: 0 });
 ```
+
+⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
+hívjuk: névütközésnél a `p.fajta | 0` a `'gyujt'` stringből csendben 0-t (étel)
+csinálna, és minden gyűjtés étel-gyűjtés lenne, hibaüzenet nélkül.
 
 Ismeretlen `fajta` csendben elvész (nem dob). A `menet`/`tamado_menet` szintén
 csendben elvész, ha a célcella nem járható — a kliens dolga járható pontot adni
@@ -80,6 +88,34 @@ céloz ugyanaz a katona, az ugyanúgy desync, mint egy elmozdult koordináta.
 ⚠️ **A v0.2-ben NINCS SEBZÉS.** A harcrendszer a v0.4. A támadó menet addig visz,
 hogy az egység megtalálja az ellenfelét, odamegy, megáll előtte (`ALLAPOT.HARCOL`)
 és szembefordul vele.
+
+## Gazdaság — `src/sim/` (v0.3)
+
+Négy nyersanyag: `NYERS.ETEL | FA | KO | KRISTALY`.
+
+- `sim.eroforrasok` (`eroforras.js`) — lelőhelyek SoA-ban: `cella, fajta,
+  keszlet, x, y`, plusz `cellaNode` (cella → lelőhely). `keres()` és `kornyek()`
+  spirálisan, `allohely(i, ki, valtozat)` a munkás állóhelyét adja.
+- `sim.epuletek` (`epuletek.js`) — `KOZPONT` (3×3) és `RAKTAR` (2×2), mindkettő
+  lerakat. `epulHatra` a hátralévő építési tick.
+- `sim.gazdasag` (`gazdasag.js`) — `keszlet[csapat*4 + fajta]` **egészben**,
+  `korszak`, `korszakHatra`. Négy korszak: sötét → hajnal → kristály → fény.
+- `sim.munkasok` (`munkas.js`) — állapotgép: `MUNKA.NINCS →
+  MEGY_LELOHELYRE → GYUJT → MEGY_LERAKATRA → …`
+
+⚠️ **A készlet `Int32Array`, nem lebegőpontos.** A gyűjtés részmennyiségeket
+adna, és lebegőpontos akkumulátorból tízezer tick alatt gépenként más maradék
+jönne. Minden munkásnak egész „óra"-számlálója van; ez is a hashben van.
+
+⚠️ **A pálya futás közben VÁLTOZIK** — kimerült erdő megnyílik, lerakott raktár
+bezárul. A `Sim._mezoErvenytelenites()` ilyenkor eldobja a gyorsítótárazott
+áramlási mezőket. Ha ez elmarad, a mezők egy már nem létező akadályt kerültetnek
+meg, vagy átvezetnek egy frissen épült falon.
+
+⚠️ **Az állóhelyeknek `valtozat` paraméterük van, és ez nem díszítés.** Ha minden
+munkás ugyanazt az egy cellát kapná célnak, a szeparáció szétlökné őket és
+egyikük sem érne oda — mérve 400-ból 285 ragadt be. A `valtozat` (jellemzően a
+munkás indexe) körbeosztja a jelölteket.
 
 ## Kliens-oldal — `src/ui/` (v0.2)
 
@@ -145,7 +181,7 @@ window.__aoc = {
   reteg(nev, be),                  // 'terep'|'props'|'egysegek'|'viz'|'ui' ki/be
   meres(masodperc) -> Promise<{fps, kepkocka, atlagMs, p95Ms, simMs, renderMs, haromszog, rajzhivas}>,
   simHash(),                       // sim.allapotHash()
-  verzio: '0.2.0',
+  verzio: '0.3.0',
 
   // ── v0.2 ────────────────────────────────────────────────────────────
   kijeloles(),                     // a kijelölt indexek MÁSOLATA

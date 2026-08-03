@@ -10,7 +10,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 |---|---|---|
 | **v0.1** | **Motor-szonda.** 1600 animált egység, áramlási mező, ütközés-kerülés, fix-tickes determinisztikus sim, determinizmus-szonda, réteg-bontó FPS-mérés. **GO/NO-GO döntés.** | **kész — GO** (`qa/V0.1_EREDMENY.md`) |
 | **v0.2** | Irányítás: keret-kijelölés, Ctrl-csoportok, attack-move, alakzatok, állás-parancsok — mind a parancs-soron át | **kész** (`qa/V0.2_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
-| v0.3 | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | |
+| **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | v0.4 | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | |

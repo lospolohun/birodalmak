@@ -30,6 +30,7 @@ import { Terep3D } from './render/terrain3d.js';
 import { Diszlet3D } from './render/props3d.js';
 import { Egysegek3D } from './render/units3d.js';
 import { Kijeloles3D } from './render/kijeloles3d.js';
+import { Gazdasag3D } from './render/gazdasag3d.js';
 import { Bevitel } from './ui/bevitel.js';
 
 /** Egy tick hossza másodpercben — a `sim/sim.js` TICK_HZ-ével egyezik. */
@@ -68,6 +69,7 @@ class Jatek {
       terep: new Terep3D(szinter, this.sim, opciok),
       props: new Diszlet3D(szinter, this.sim, opciok),
       egysegek: new Egysegek3D(szinter, this.sim, opciok),
+      gazdasag: new Gazdasag3D(szinter, this.sim),
       kijeloles: new Kijeloles3D(szinter, this.sim, { kijeloles: this.bevitel.kijeloles }),
     };
 
@@ -162,9 +164,10 @@ class Jatek {
       '  ·  tick: ' + this.sim.tick +
       '  ·  sim ' + this._simMs.toFixed(2) + ' ms / render ' + this._renderMs.toFixed(2) + ' ms' +
       '  ·  △ ' + (info.triangles / 1000).toFixed(0) + 'k / ' + info.calls + ' hívás' +
+      '\n' + this.bevitel.gazdasagSzoveg() +
       '\n' + this.bevitel.hudSzoveg() +
-      '\nbal: kijelölés · jobb: menet · Shift+jobb / T: támadó menet · X: állj · '
-      + 'H: tartás · F: alakzat · G: állás · Ctrl+1..0: csoport';
+      '\nbal: kijelölés · jobb: menet vagy gyűjtés · Shift+jobb / T: támadó menet · '
+      + 'X: állj · H: tartás · F: alakzat · G: állás · B: raktár · K: korszak · Ctrl+1..0: csoport';
   }
 
   // ── A szonda felülete ────────────────────────────────────────────────

@@ -35,10 +35,19 @@
 //   G                 állás léptetése     (agresszív → védekező → tartás → tűzszünet)
 //   1..9, 0           csoport előhívása   (kétszer gyorsan: kamera oda)
 //   Ctrl + 1..9, 0    csoport mentése
+//   B                 raktár lerakása a kurzor alá        (v0.3)
+//   K                 korszakváltás indítása              (v0.3)
+//
+// A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
+// nyersanyagra kattintva gyűjtés, minden más esetben menet.
 
 import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
 import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
 import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
+import { NYERS_NEV } from '../sim/eroforras.js';
+import { EPULET } from '../sim/epuletek.js';
+import { KORSZAK_NEV } from '../sim/gazdasag.js';
+import { TIPUS } from '../sim/units.js';
 
 /** Ezen belül két csoport-gombnyomás dupla kattintásnak számít (ms). */
 const DUPLA_MS = 350;
@@ -201,15 +210,59 @@ export class Bevitel {
     return this._pont;
   }
 
+  /**
+   * A jobb kattintás értelmezése. Egyetlen gomb, két jelentés — a KATTINTOTT
+   * DOLOG dönt, ahogy a műfajban megszokott:
+   *
+   *   nyersanyagra + van kijelölt munkás → gyűjtés
+   *   minden más esetben                 → menet / támadó menet
+   *
+   * A „van-e ott nyersanyag" kérdést a sim válaszolja meg (`eroforrasok.keres`),
+   * nem a render — így a kattintás ugyanazt találja el, amit a szimuláció lát,
+   * és nem a kamera-távolságtól függő látványt.
+   */
   _menetParancs(x, y, tamado) {
     if (!this.kijeloles.db) return;
     const p = this._celPont(x, y);
     if (!p) return;
+
+    if (!tamado) {
+      const node = this.sim.eroforrasok.keres(-1, p.x, p.y, 3);
+      if (node >= 0 && this._vanMunkas()) {
+        this._ad({
+          fajta: 'gyujt',
+          egysegek: this._masolat(),
+          x: this.sim.eroforrasok.x[node],
+          y: this.sim.eroforrasok.y[node],
+          nyers: this.sim.eroforrasok.fajta[node],
+        });
+        return;
+      }
+    }
+
     this._ad({
       fajta: tamado ? 'tamado_menet' : 'menet',
       egysegek: this._masolat(),
       x: p.x, y: p.y,
       alakzat: this.alakzat,
+    });
+  }
+
+  /** Van-e munkás a kijelölésben? A gyűjtés csak rájuk értelmes. */
+  _vanMunkas() {
+    const l = this.kijeloles.lista;
+    const e = this.sim.egysegek;
+    for (let k = 0; k < l.length; k++) if (e.tipus[l[k]] === TIPUS.MUNKAS) return true;
+    return false;
+  }
+
+  /** Raktár lerakása a kurzor alá. Az árat és a helyet a sim ellenőrzi. */
+  _epitParancs() {
+    const p = this._celPont(this._mostX, this._mostY);
+    if (!p) return;
+    this._ad({
+      fajta: 'epit', csapat: this.kijeloles.sajatCsapat,
+      tipus: EPULET.RAKTAR, x: p.x, y: p.y,
     });
   }
 
@@ -269,6 +322,12 @@ export class Bevitel {
           this._ad({ fajta: 'allas', egysegek: this._masolat(), allas: this.allas });
         }
         break;
+      case 'KeyB':
+        this._epitParancs();
+        break;
+      case 'KeyK':
+        this._ad({ fajta: 'korszak', csapat: this.kijeloles.sajatCsapat });
+        break;
       default:
         return;
     }
@@ -322,6 +381,20 @@ export class Bevitel {
       + ' · alakzat: ' + ALAKZAT_NEV[this.alakzat]
       + ' · állás: ' + ALLAS_NEV[this.allas]
       + (this.tamadoMod ? ' · TÁMADÓ MENET' : '');
+  }
+
+  /** A gazdaság sora a HUD-nak (v0.3). */
+  gazdasagSzoveg() {
+    const cs = this.kijeloles.sajatCsapat;
+    const a = this.sim.gazdasag.allapot(cs);
+    const m = this.sim.munkasok.osszesites(cs);
+    return NYERS_NEV[0] + ' ' + a.etel
+      + ' · ' + NYERS_NEV[1] + ' ' + a.fa
+      + ' · ' + NYERS_NEV[2] + ' ' + a.ko
+      + ' · ' + NYERS_NEV[3] + ' ' + a.kristaly
+      + '  |  ' + KORSZAK_NEV[a.korszak]
+      + (a.valtasHatra ? ' → vált (' + Math.ceil(a.valtasHatra / 20) + ' mp)' : '')
+      + '  |  dolgozó munkás: ' + m.dolgozik;
   }
 
   /** Újrafelállás után a kijelölés és a csoportok takarítása. */

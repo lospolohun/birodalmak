@@ -29,6 +29,10 @@ import { mulberry32 } from './rng.js';
 import { AlakzatSzamolo, ALAKZAT } from './alakzat.js';
 import { ParancsAllapot, PARANCS, ALLAS } from './parancsallapot.js';
 import { vegrehajt } from './parancsok.js';
+import { Eroforrasok, NYERS } from './eroforras.js';
+import { Epuletek, EPULET, EP_MERET } from './epuletek.js';
+import { Gazdasag, KORSZAK } from './gazdasag.js';
+import { Munkasok, MUNKA } from './munkas.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -46,6 +50,11 @@ export class Sim {
 
     this.tick = 0;
     this.racs = new Racs(this.n, this.seed);
+    // ⚠️ A NYERSANYAGOK A MEZŐ-TÁR ELŐTT. Az erdő és a kőfejtő ZÁRJA a celláját,
+    // tehát a `racs.jarhato` csak ezután végleges — és az áramlási mezők arra
+    // épülnek. Fordított sorrendben az első kiszámolt mező még a nyersanyagok
+    // nélküli pályát látná, és a sereg átsétálna az erdőn.
+    this.eroforrasok = new Eroforrasok(this.racs, this.seed);
     this.mezoTar = new MezoTar(this.racs, 8);
     this.egysegek = new Egysegek(this.maxEgyseg, this.racs, this.mezoTar);
     /** A meccs-RNG. MINDEN véletlen ebből jön, sosem a `Math.random`-ból. */
@@ -56,6 +65,21 @@ export class Sim {
     // hogy egy 1600 fős menetparancs se allokáljon.
     this.alakzatSzamolo = new AlakzatSzamolo(this.maxEgyseg);
     this.parancsAllapot = new ParancsAllapot(this.maxEgyseg, this.egysegek);
+
+    // ── v0.3: a gazdaság rétege ─────────────────────────────────────────
+    this.epuletek = new Epuletek(this.racs);
+    this.gazdasag = new Gazdasag(2);
+    this.munkasok = new Munkasok(this.maxEgyseg, this);
+
+    /**
+     * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
+     * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
+     * ugyanott: a parancs-állapot (célzás, állás) és a munkás-AI. Zárvány
+     * tickenkénti gyártása allokáció lenne a forró úton.
+     */
+    this._tickHorog = {
+      lep: (t) => { this.parancsAllapot.lep(t); this.munkasok.lep(t); },
+    };
 
     /** tick → parancsok. Kulcs szerint kérdezzük, sosem iteráljuk. */
     this._sor = new Map();
@@ -80,8 +104,31 @@ export class Sim {
       for (let i = 0; i < lista.length; i++) this._vegrehajt(lista[i]);
       this._sor.delete(this.tick);
     }
-    this.egysegek.lep(this.tick, this.parancsAllapot);
+    this.epuletek.lep();
+    this.gazdasag.lep();
+    this.egysegek.lep(this.tick, this._tickHorog);
+    this._mezoErvenytelenites();
     this.tick++;
+  }
+
+  /**
+   * A PÁLYA MEGVÁLTOZOTT — el kell dobni a gyorsítótárazott áramlási mezőket.
+   *
+   * Ez a v0.3 egyetlen igazán alattomos pontja. A `MezoTar` a járhatóságból
+   * számol, és a mezőket cellára gyorsítótárazza. Ha egy erdő kimerül (a cella
+   * megnyílik) vagy egy raktár lekerül (a cella bezárul), a régi mező HAZUDIK:
+   * megkerültet egy nem létező akadállyal, vagy átvezet egy frissen épült falon.
+   *
+   * A `cel = -1` annyit jelent, hogy a következő kérés ÚJRASZÁMOL. A már úton
+   * lévő egységek egy-két tickig még a régi irányokat olvassák — ez viszont
+   * MINDEN gépen ugyanúgy történik, tehát nem desync, és a `units.js` 15
+   * tickenkénti szabad-egyenes vizsgálata magától helyre is teszi.
+   */
+  _mezoErvenytelenites() {
+    if (!this.eroforrasok.jarhatosagValtozott && !this.epuletek.jarhatosagValtozott) return;
+    this.eroforrasok.jarhatosagValtozott = false;
+    this.epuletek.jarhatosagValtozott = false;
+    for (let i = 0; i < this.mezoTar.mezok.length; i++) this.mezoTar.mezok[i].cel = -1;
   }
 
   /**
@@ -103,6 +150,40 @@ export class Sim {
     e.db = 0;
     const racs = this.racs;
     const n = this.n;
+
+    // ── v0.3: a gazdaság visszaállítása ─────────────────────────────────
+    // SORREND: előbb az épületek (visszaadják a celláikat), utána a
+    // nyersanyagok (újra lezárják a sajátjukat). Fordítva egy épület alatti
+    // erdő-cella járhatóként maradna ott, ahol erdő van.
+    this.epuletek.nullaz();
+    this.eroforrasok.nullaz();
+    this.gazdasag.nullaz();
+    this.munkasok.nullaz();
+
+    // Minden csapat kap egy KÉSZ központot — ez a kezdő lerakat. Az egységek
+    // ELŐTT rakjuk le, hogy a felállás ne tegyen senkit az épület alá.
+    //
+    // ⚠️ A KÖZPONT ELTOLVA ÁLL A SEREG KÖZEPÉTŐL, ÉS EZ NEM KOZMETIKA.
+    // Először a bázispontra került, vagyis pont a sereg sűrűjébe — és onnan
+    // egyetlen munkás sem tudott elindulni. Mérve: 800 egység szorult egy 25×25
+    // cellás dobozba (612 járható cellára), és a szeparációs nyomás a
+    // szomszédoktól (79 egység 2 egység sugarú körben) NAGYOBB volt, mint a cél
+    // iránya — a munkások az épület falának préselődtek, sebességük befelé
+    // mutatott, a `_mozgat` fal-csúsztatása pedig csak oldalazni engedte őket.
+    // 800 tick alatt 0,01 világegységet haladtak.
+    //
+    // A `KOZPONT_ELTOLAS` a pálya közepe felé tolja az épületet, ki a tömegből.
+    // A sereg így szabadon szétterülhet, a munkásoknak pedig valódi útjuk van a
+    // lerakathoz. (A szeparáció felső korlát nélküli összegzése maga is
+    // megérne egy vizsgálatot, de az a `units.js` mozgás-magja — a v0.1 mért
+    // alapja —, ezért nem ebben a körben nyúlunk hozzá.)
+    const KOZPONT_ELTOLAS = 22;
+    for (let csapat = 0; csapat < 2; csapat++) {
+      const bx = ((csapat === 0 ? n * 0.22 + KOZPONT_ELTOLAS : n * 0.78 - KOZPONT_ELTOLAS)) | 0;
+      const by = (n * 0.5) | 0;
+      const hely = this._szabadEpuletHely(EPULET.KOZPONT, bx, by);
+      if (hely) this.epuletek.lerak(EPULET.KOZPONT, hely.x, hely.y, csapat, true);
+    }
     const felenkent = osszDb >> 1;
     const tipusok = [TIPUS.LANDZSAS, TIPUS.IJASZ, TIPUS.LOVAG, TIPUS.MUNKAS];
 
@@ -130,7 +211,41 @@ export class Sim {
     // INDEXRE mutat, és a felállás újrahasznosítja az indexeket. Enélkül egy
     // korábbi futás célpontja egy vadidegen egységre mutatna tovább.
     this.parancsAllapot.nullaz(e.db);
+
+    // A munkás nem katona: alapból TŰZSZÜNETBEN áll. Enélkül az agresszív
+    // alapállás miatt az első ellenség láttán otthagyná a bányát és rohanna
+    // harcolni — ami a v0.3 gazdaságát tesztelhetetlenné tenné. (A célzás-réteg
+    // a tűzszünetes egységeket érintetlenül hagyja, tehát a munkás-AI-é a
+    // teljes irányítás fölöttük.)
+    for (let i = 0; i < e.db; i++) {
+      if (e.tipus[i] === TIPUS.MUNKAS) this.parancsAllapot.allas[i] = ALLAS.TUZSZUNET;
+    }
+    // A felállás és a lerakás is nyúlt a járhatósághoz — a mezők mehetnek.
+    this._mezoErvenytelenites();
     return e.db;
+  }
+
+  /**
+   * Szabad hely egy épületnek egy célpont körül, spirálban keresve.
+   * @returns {{x:number,y:number}|null} a BAL-FELSŐ cella
+   */
+  _szabadEpuletHely(tipus, kx, ky) {
+    const m = EP_MERET[tipus];
+    // A célpontot az alapterület KÖZEPÉNEK vesszük, ezért told el a sarokra.
+    const ox = kx - (m >> 1), oy = ky - (m >> 1);
+    if (this.epuletek.lerakhato(tipus, ox, oy)) return { x: ox, y: oy };
+    for (let r = 1; r < 40; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+          if (ax !== r && ay !== r) continue;
+          if (this.epuletek.lerakhato(tipus, ox + dx, oy + dy)) {
+            return { x: ox + dx, y: oy + dy };
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -239,6 +354,85 @@ export class Sim {
     }
   }
 
+  /**
+   * v0.3 SZONDA-FORGATÓKÖNYV — a gazdaság determinizmus-próbája.
+   *
+   * A v0.2-es kör a hadsereget járatja, ez a gazdaságot: gyűjtés mind a négy
+   * nyersanyagból, raktár-építés (ami MENET KÖZBEN zárja le a cellákat, tehát
+   * áramlási mezőt érvénytelenít), korszakváltás, és a munkások félbeszakítása
+   * menetparanccsal.
+   *
+   * Az utolsó kettő a lényeg: a járhatóság futás közbeni változása és a
+   * félbeszakított munkás-állapotgép a v0.3 két legkockázatosabb ága.
+   *
+   * @param {number} kor hányadik parancs-kör
+   */
+  szondaParancsV03(kor) {
+    const e = this.egysegek;
+    const munkasok = [[], []];
+    for (let i = 0; i < e.db; i++) {
+      if (e.tipus[i] === TIPUS.MUNKAS) munkasok[e.csapat[i]].push(i);
+    }
+
+    for (let cs = 0; cs < 2; cs++) {
+      const mk = munkasok[cs];
+      if (mk.length === 0) continue;
+      const bx = cs === 0 ? this.n * 0.22 : this.n * 0.78;
+      const by = this.n * 0.5;
+
+      switch (kor & 3) {
+        case 0: {
+          // Mind a négy nyersanyagra küldünk egy negyedet. Így a gyűjtés
+          // minden ága fut: a bokor (járható lelőhely) és a három záró is.
+          for (let f = 0; f < 4; f++) {
+            const resz = mk.filter((_, k) => (k & 3) === f);
+            if (resz.length === 0) continue;
+            const node = this.eroforrasok.keres(f, bx, by, 90);
+            if (node < 0) continue;
+            this.parancs({
+              fajta: 'gyujt', egysegek: resz,
+              x: this.eroforrasok.x[node], y: this.eroforrasok.y[node], nyers: f,
+            });
+          }
+          break;
+        }
+        case 1: {
+          // Raktár a fa mellé. Ez ZÁRJA a celláit → mező-érvénytelenítés
+          // MENET KÖZBEN, miközben munkások tartanak arra. Pont ezt akarjuk.
+          const node = this.eroforrasok.keres(NYERS.FA, bx, by, 90);
+          if (node >= 0) {
+            this.parancs({
+              fajta: 'epit', csapat: cs, tipus: EPULET.RAKTAR,
+              x: (this.eroforrasok.x[node] | 0) + 3, y: (this.eroforrasok.y[node] | 0) + 3,
+            });
+          }
+          break;
+        }
+        case 2:
+          this.parancs({ fajta: 'korszak', csapat: cs });
+          break;
+        default: {
+          // Félbeszakítás: a munkások fele menetparancsot kap (fel kell mondania
+          // a gyűjtésnek), a másik fele visszaáll dolgozni.
+          const fel = mk.filter((_, k) => (k & 1) === 0);
+          const mas = mk.filter((_, k) => (k & 1) === 1);
+          const kozep = this._jarhatoKozel(this.n * 0.5, this.n * 0.5);
+          if (fel.length) this.parancs({ fajta: 'menet', egysegek: fel, x: kozep.x, y: kozep.y });
+          if (mas.length) {
+            const node = this.eroforrasok.keres(NYERS.KRISTALY, bx, by, 90);
+            if (node >= 0) {
+              this.parancs({
+                fajta: 'gyujt', egysegek: mas,
+                x: this.eroforrasok.x[node], y: this.eroforrasok.y[node],
+              });
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -286,6 +480,37 @@ export class Sim {
       h = fnvSzam(h, pa.allas[i]);
       h = fnvSzam(h, pa.celEgyseg[i]);
     }
+
+    // v0.3 — a gazdaság is a szimuláció állapota. Egyetlen fával több az egyik
+    // gépen ugyanúgy szétviszi a meccset, mint egy elmozdult koordináta: abból
+    // más lesz a korszakváltás ideje, abból más a hadsereg, és onnan már nincs
+    // visszaút. A munkás-óra (`ora`) is benne van, mert az dönti el, MELYIK
+    // ticken esik le a következő egységnyi nyersanyag.
+    const mu = this.munkasok;
+    for (let i = 0; i < db; i++) {
+      h = fnvSzam(h, mu.allapot[i]);
+      h = fnvSzam(h, mu.celNode[i]);
+      h = fnvSzam(h, mu.cipelDb[i]);
+      h = fnvSzam(h, mu.ora[i]);
+      h = fnvSzam(h, mu.probal[i]);
+    }
+    const g = this.gazdasag;
+    for (let k = 0; k < g.keszlet.length; k++) h = fnvSzam(h, g.keszlet[k]);
+    for (let cs = 0; cs < g.csapatDb; cs++) {
+      h = fnvSzam(h, g.korszak[cs]);
+      h = fnvSzam(h, g.korszakHatra[cs]);
+    }
+    const ep = this.epuletek;
+    h = fnvSzam(h, ep.db);
+    for (let i = 0; i < ep.db; i++) {
+      h = fnvSzam(h, ep.cx[i]);
+      h = fnvSzam(h, ep.cy[i]);
+      h = fnvSzam(h, ep.tipus[i]);
+      h = fnvSzam(h, ep.csapat[i]);
+      h = fnvSzam(h, ep.epulHatra[i]);
+    }
+    const ef = this.eroforrasok;
+    for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
     return h >>> 0;
   }
 }
@@ -322,4 +547,4 @@ function kSin(x) {
     s * (-1.984126984126984e-4 + s * (2.7557319223985893e-6 + s * -2.505210838544172e-8)))));
 }
 
-export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS };
+export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA };

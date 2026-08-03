@@ -68,9 +68,17 @@ közöttük — azt előbb olvasd el, mint a kódot.
 
 A determinizmus-szonda nem magától találja meg az új kódot: forgatókönyvekből
 dolgozik. A v0.1-es kör (`szondaParancs`) csak a `menet`-et járatja, a v0.2-es
-(`szondaParancsV02`) a teljes irányítás-felületet. **Ha új parancsot adsz hozzá,
-vedd bele a forgatókönyvbe is** — különben a legfrissebb, tehát legkockázatosabb
-kód marad a kapun kívül, és a zöld szonda hamis biztonságérzetet ad.
+(`szondaParancsV02`) a teljes irányítás-felületet, a v0.3-as
+(`szondaParancsV03`) a gazdaságot. **Ha új parancsot adsz hozzá, vedd bele a
+forgatókönyvbe is** — különben a legfrissebb, tehát legkockázatosabb kód marad a
+kapun kívül, és a zöld szonda hamis biztonságérzetet ad.
+
+⚠️ **A determinizmus-kapu nem működés-kapu.** A semmittevés is tökéletesen
+reprodukálható: a v0.3 első változatában mind a hat vizsgálat zöld volt,
+miközben 400 munkásból 285 beragadt és a gazdaság alig termelt. Ezért van a
+6. vizsgálat végén egy külön ellenőrzés arra, hogy jött-e be egyáltalán
+nyersanyag. Új alrendszernél mindig kérdezd meg: mi az a szám, ami elárulja,
+hogy tényleg CSINÁL is valamit?
 
 A v0.1-es forgatókönyv SOSEM változhat: az a motor-mag regresszió-őre, és a
 `qa/V0.1_EREDMENY.md` számai ahhoz vannak kötve.
