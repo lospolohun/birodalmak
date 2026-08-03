@@ -30,12 +30,17 @@ import { szabadVonal } from './flowfield.js';
 export const DT = 0.05;
 
 export const ALLAPOT = { ALL: 0, MEGY: 1, HARCOL: 2 };
-export const TIPUS = { MUNKAS: 0, LANDZSAS: 1, IJASZ: 2, LOVAG: 3 };
+export const TIPUS = { MUNKAS: 0, LANDZSAS: 1, IJASZ: 2, LOVAG: 3, OSTROMGEP: 4 };
 
-/** Világegység / másodperc. */
-const SEBESSEG = [3.2, 3.6, 3.4, 5.4];
+/**
+ * Világegység / másodperc.
+ *
+ * Az ostromgép LASSÚ (1,9) — ez a fő ellensúlya. Nagy sebzést visz az
+ * épületekre, de kísérni kell, mert magától nem menekül el semmi elől.
+ */
+const SEBESSEG = [3.2, 3.6, 3.4, 5.4, 1.9];
 /** Ütközési sugár — ebből jön a szeparáció ereje is. */
-const SUGAR = [0.30, 0.34, 0.32, 0.42];
+const SUGAR = [0.30, 0.34, 0.32, 0.42, 0.62];
 
 /** Ennél közelebb a célhoz megérkezettnek számít. */
 const ERKEZES = 0.55;

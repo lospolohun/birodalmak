@@ -11,7 +11,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.1** | **Motor-szonda.** 1600 animált egység, áramlási mező, ütközés-kerülés, fix-tickes determinisztikus sim, determinizmus-szonda, réteg-bontó FPS-mérés. **GO/NO-GO döntés.** | **kész — GO** (`qa/V0.1_EREDMENY.md`) |
 | **v0.2** | Irányítás: keret-kijelölés, Ctrl-csoportok, attack-move, alakzatok, állás-parancsok — mind a parancs-soron át | **kész** (`qa/V0.2_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
 | **v0.3** | Gazdaság: 4 nyersanyag (étel, fa, kő, **kristály**), munkás-AI, lerakatok, korszakváltás | **kész** (`qa/V0.3_EREDMENY.md`) — FPS-mérés az iMac-en még hátravan |
-| **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **részben kész** — lásd alább |
+| **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
@@ -30,14 +30,20 @@ A verzió szakaszokra van bontva, és a kész szakaszok külön-külön is megá
 | v0.4/2 | repülési idejű lövedékek | **kész** |
 | v0.4/3 | épület-életerő, épületek elleni harc | **kész** |
 | v0.4/4 | fal és kapu | **kész** (a kapu még nem csapatfüggő) |
-| v0.4/6 | ostrom-EGYSÉG (új egységtípus) | hátravan |
+| v0.4/6 | ostrom-EGYSÉG (új egységtípus) | **kész** |
 | v0.4/5 | beszállásolás | **kész** (a bent lévő még nem lő ki) |
 
 Az épület-oldal kész: az épületnek van életereje, a támadó menetben lévő sereg
 célba veszi az ellenséges épületeket (élő katona MINDIG előbbre való), a fal
-zárja a celláit, a kapu nyitható. Az ostrom-EGYSÉG viszont még hiányzik — ahhoz
-új egységtípus kell, ami a `units3d.js` figura-építését is érinti, tehát nem
-puszta adatsor.
+zárja a celláit, a kapu nyitható.
+
+Az ostromgép saját páncélosztályt kapott (`PANCEL.OSTROM`), és saját render-
+réteget (`ostrom3d.js`) — a `units3d.js` `& 3`-mal maszkol, tehát ott az ötödik
+típus a munkásra esne vissza, és emberi alakot sem érdemes építeni egy faltörő
+kosnak. A számok: 240 életerő, 360 sebzés épületre, viszont **4 sebzés élő
+egységre** 3 másodpercenként. Ellene közelharcot kell küldeni (vágó 150 %), a
+nyíl szinte lepattan róla (40 %). Mérve: 20 gép 237 tick alatt bont le egy 900
+életerejű falat.
 
 ⚠️ **A kapu még nem csapatfüggő:** nyitva MINDENKINEK nyitva van. Ennek oka
 szerkezeti — az áramlási mező a `racs.jarhato` EGY közös rétegéből épül, és a

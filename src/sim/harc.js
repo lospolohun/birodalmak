@@ -31,21 +31,32 @@ import { TIPUS, ALLAPOT } from './units.js';
 /** Támadástípusok — ezekhez tartozik az ellensúly-tábla egy SORA. */
 export const TAMADAS = { VAGO: 0, SZURO: 1, NYIL: 2, OSTROM: 3 };
 /** Páncéltípusok — ezekhez tartozik egy OSZLOPA. */
-export const PANCEL = { GYALOGOS: 0, TAVOLSAGI: 1, LOVAS: 2, EPULET: 3 };
+export const PANCEL = { GYALOGOS: 0, TAVOLSAGI: 1, LOVAS: 2, EPULET: 3, OSTROM: 4 };
 
 export const TAMADAS_NEV = ['vágó', 'szúró', 'nyíl', 'ostrom'];
-export const PANCEL_NEV = ['gyalogos', 'távolsági', 'lovas', 'épület'];
+export const PANCEL_NEV = ['gyalogos', 'távolsági', 'lovas', 'épület', 'ostrom'];
 
 // ── EGYSÉG-ADATOK (index = `TIPUS.*`) ────────────────────────────────────
-// MUNKAS · LANDZSAS · IJASZ · LOVAG
-const MAX_HP = [40, 55, 35, 100];
-const ALAP_SEBZES = [3, 6, 5, 10];
-const TAMADAS_TIPUS = [TAMADAS.VAGO, TAMADAS.SZURO, TAMADAS.NYIL, TAMADAS.VAGO];
-const PANCEL_TIPUS = [PANCEL.GYALOGOS, PANCEL.GYALOGOS, PANCEL.TAVOLSAGI, PANCEL.LOVAS];
+// MUNKAS · LANDZSAS · IJASZ · LOVAG · OSTROMGEP
+//
+// Az OSTROMGÉP a v0.4/6. Az adatsora egyetlen dolgot mond: falbontásra való,
+// másra nem. 90 alapsebzés × 400 % épületre = 360 egy csapásra, viszont élő
+// egység ellen a 70 %-os szorzó és a lassú ütem szinte használhatatlanná teszi.
+// SAJÁT páncélosztálya van (`PANCEL.OSTROM`), és ez mért döntés: először az
+// épületek oszlopát kapta, de ott minden szorzó 30-70 % (mert az épületnek
+// 400-1200 életereje van), és így egy lovag 4 sebzéssel ütötte a 240 életerejű
+// gépet — 48 MÁSODPERC egyetlen ostromgépre. Saját oszloppal a vágó 150 %-ot
+// visz rá (15 sebzés, ~15 mp), a nyíl viszont csak 40 %-ot: az ostromgép fából
+// van, nem húsból. Ellene KÖZELHARCOT kell küldeni, és pont ez a helye a
+// kő-papír-ollóban.
+const MAX_HP = [40, 55, 35, 100, 240];
+const ALAP_SEBZES = [3, 6, 5, 10, 90];
+const TAMADAS_TIPUS = [TAMADAS.VAGO, TAMADAS.SZURO, TAMADAS.NYIL, TAMADAS.VAGO, TAMADAS.OSTROM];
+const PANCEL_TIPUS = [PANCEL.GYALOGOS, PANCEL.GYALOGOS, PANCEL.TAVOLSAGI, PANCEL.LOVAS, PANCEL.OSTROM];
 /** Lapos páncél: ennyivel csökken MINDEN beérkező csapás (legalább 1 megy át). */
-const PANCEL_ERTEK = [0, 1, 0, 2];
-/** Két csapás közti tickek. 20 tick = 1 másodperc. */
-const UTEM = [25, 15, 20, 16];
+const PANCEL_ERTEK = [0, 1, 0, 2, 2];
+/** Két csapás közti tickek. 20 tick = 1 másodperc. Az ostromgép LASSAN üt. */
+const UTEM = [25, 15, 20, 16, 60];
 
 /**
  * HATÓTÁVOLSÁG világegységben — eddig ér el az egység a célpontjához.
@@ -55,7 +66,7 @@ const UTEM = [25, 15, 20, 16];
  * a lándzsás orra elé (és meghalna), vagy megállna lőtávon kívül (és nem
  * csinálna semmit). Egy forrás, két olvasó.
  */
-export const HATOTAV = [1.15, 1.45, 6.0, 1.25];
+export const HATOTAV = [1.15, 1.45, 6.0, 1.25, 3.2];
 
 /**
  * Távolsági-e? A távolsági egység nem azonnal sebez, hanem LÖVEDÉKET indít
@@ -63,7 +74,7 @@ export const HATOTAV = [1.15, 1.45, 6.0, 1.25];
  * játékmechanika: ettől lehet „túllőni" egy visszavonulót, és ezért éri meg a
  * lovasnak berohanni az íjászok közé.
  */
-const TAVOLSAGI = [0, 0, 1, 0];
+const TAVOLSAGI = [0, 0, 1, 0, 0];
 
 /**
  * ELLENSÚLY-TÁBLA: `SZORZO[támadástípus][páncéltípus]` SZÁZALÉKBAN.
@@ -75,11 +86,15 @@ const TAVOLSAGI = [0, 0, 1, 0];
  * és a visszairányok mind 100 % alatt vannak.
  */
 const SZORZO = [
-  // gyalogos, távolsági, lovas, épület
-  [100, 150, 100, 60],   // VAGO
-  [80, 90, 220, 40],     // SZURO
-  [130, 100, 70, 30],    // NYIL
-  [70, 70, 70, 400],     // OSTROM
+  // gyalogos, távolsági, lovas, épület, ostrom
+  [100, 150, 100, 60, 150],   // VAGO
+  [80, 90, 220, 40, 100],     // SZURO
+  [130, 100, 70, 30, 40],     // NYIL
+  // ⚠️ AZ ÉLŐ CELOK ELLEN SZÁNDÉKOSAN NEVETSÉGESEN GYENGE. Először 70 % volt,
+  // és a 90-es alapsebzésből 62 lett — vagyis az ostromgép EGY csapásra megölt
+  // egy lándzsást (55 életerő). A faltörő kos nem fegyver a gyalogság ellen; a
+  // 6 %-kal 4 sebzést visz 3 másodpercenként, ami nagyjából nulla.
+  [6, 6, 6, 400, 100],        // OSTROM
 ];
 
 export class Harc {

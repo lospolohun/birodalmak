@@ -258,13 +258,20 @@ const FORGATOKONYVEK = {
   v01: { nev: 'v0.1 menet-parancs', tickek: TICKEK, fut: (sim) => sim.szondaParancs() },
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
   v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
-  v04: { nev: 'v0.4 harc', tickek: V04_TICKEK, fut: (sim, kor) => sim.szondaParancsV04(kor) },
+  v04: {
+    nev: 'v0.4 harc', tickek: V04_TICKEK,
+    // Csapatonként 30 ostromgép — enélkül a v0.4/6 ága ki sem futna.
+    felallas: { ostrom: 30 },
+    fut: (sim, kor) => sim.szondaParancsV04(kor),
+  },
 };
 
 /** Friss sim, felállítva. A `Sim` konstruktora MINDENT újraépít (rács, mező). */
-function ujSim() {
+function ujSim(fk) {
   const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
-  const db = s.szondaFelallas(EGYSEG);
+  // A forgatókönyv megadhat FELÁLLÁS-beállítást. A v0.1-é üres marad: az a
+  // motor-mag regresszió-őre, és a mérési alapja sem változhat.
+  const db = s.szondaFelallas(EGYSEG, fk && fk.felallas);
   return { sim: s, db };
 }
 
@@ -274,7 +281,7 @@ function ujSim() {
  * @returns {{ok:boolean, tick:number, a:number, b:number, hashek:Map<number,number>}}
  */
 function ketFutas(fk) {
-  const A = ujSim(), B = ujSim();
+  const A = ujSim(fk), B = ujSim(fk);
   const hashek = new Map();
   hashek.set(0, A.sim.allapotHash());
   if (A.sim.allapotHash() !== B.sim.allapotHash()) {
@@ -302,7 +309,7 @@ function ketFutas(fk) {
  * @param {Map<number,number>} vart a tiszta futás hash-sorozata
  */
 function kevertFutas(vart, fk) {
-  const { sim } = ujSim();
+  const { sim } = ujSim(fk);
   let szemet = 0;   // hogy a JIT ne optimalizálja ki az idegen munkát
   const zavar = (t) => {
     const tomb = new Float64Array(20000);
@@ -641,7 +648,7 @@ if (ketV04.ok) {
 {
   const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
   const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
-  const kezdo = s.szondaFelallas(EGYSEG);
+  const kezdo = s.szondaFelallas(EGYSEG, { ostrom: 30 });
   for (let t = 1; t <= 2500; t++) {
     if ((t % PARANCS_KOZ) === 0) s.szondaParancsV04((t / PARANCS_KOZ) | 0);
     s.lep();
@@ -663,6 +670,18 @@ if (ketV04.ok) {
     if (s.epuletek.tipus[i] === 3) kapuDb++;
   }
   sor('épület', epAll + ' áll / ' + epRom + ' rom', epSerult + ' sérült · fal: ' + falDb + ' · kapu: ' + kapuDb);
+  let ostromElo = 0, ostromOssz = 0;
+  for (let i = 0; i < s.egysegek.db; i++) {
+    if (s.egysegek.tipus[i] !== 4) continue;
+    ostromOssz++;
+    if (s.harc.elo[i]) ostromElo++;
+  }
+  sor('ostromgép', ostromElo + ' él / ' + ostromOssz, 'a felállás 30-at ad csapatonként');
+  if (ostromOssz === 0) {
+    console.log('\n  ⛔ NINCS OSTROMGÉP: a v0.4/6 ága ki sem futott.');
+    console.log('     A forgatókönyv `felallas: { ostrom: N }` beállítását nézd meg.');
+    bukas++;
+  }
   sor('beszállásolás', s.beszallas.beDb + ' be / ' + s.beszallas.kiDb + ' ki',
     'kumulatív · a kör végén bent: ' + (s.beszallas.osszesites(0) + s.beszallas.osszesites(1)));
   if (s.beszallas.beDb === 0) {

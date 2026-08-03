@@ -28,7 +28,7 @@ const SZEGMENS = 16;
 const MAGASSAG = 0.07;
 
 /** Egység-típusonkénti gyűrű-sugár — a `units.js` SUGAR tömbjéhez igazítva. */
-const SUGAR = [0.42, 0.46, 0.44, 0.56];
+const SUGAR = [0.42, 0.46, 0.44, 0.56, 0.78];
 
 const SZIN_ALL = 0x54e07a;
 const SZIN_MEGY = 0xe8d24a;

@@ -89,12 +89,12 @@ const LATOTAV_ALAP = 3.9;
  * ötödére jut. Ha új távolsági egység jön, itt kell mérlegelni, nem a
  * `HATOTAV`-nál.
  */
-const LATOTAV = [LATOTAV_ALAP, LATOTAV_ALAP, 6.8, LATOTAV_ALAP];
+const LATOTAV = [LATOTAV_ALAP, LATOTAV_ALAP, 6.8, LATOTAV_ALAP, LATOTAV_ALAP];
 /**
  * Hiszterézis: a megszerzett célt ennyiszer messzebbig tartjuk, mint amekkorán
  * megszereztük. Enélkül a látótáv peremén tickenként rá-le kapcsolna.
  */
-const ELENGED = [LATOTAV_ALAP * 1.6, LATOTAV_ALAP * 1.6, 6.8 * 1.35, LATOTAV_ALAP * 1.6];
+const ELENGED = [LATOTAV_ALAP * 1.6, LATOTAV_ALAP * 1.6, 6.8 * 1.35, LATOTAV_ALAP * 1.6, LATOTAV_ALAP * 1.6];
 /**
  * Ennél közelebb az egység „harcérintkezésben" van: megáll és szembefordul.
  *

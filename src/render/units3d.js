@@ -1146,7 +1146,10 @@ export class Egysegek3D {
       // v0.4: a HALOTT egység nem rajzolódik. A `vis = 0` ág már létezett a
       // távolság- és frusztum-vágáshoz (nulla skálájú mátrix), tehát a halál
       // ugyanazon az úton megy ki a képből — nem kellett új mechanizmus.
-      let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1)) ? 0 : 2;
+      // v0.4/6: az OSTROMGÉP (típus 4) nem figura — saját rétege van
+      // (`ostrom3d.js`). Ez a réteg `& 3`-mal maszkol, tehát az ötödik típus
+      // itt a munkásra esne vissza; ezért zárjuk ki, nem pedig bővítjük.
+      let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1) || e.tipus[i] > 3) ? 0 : 2;
       if (kam && vis !== 0) {
         if (fixSzint >= 0) {
           vis = fixSzint;

@@ -169,8 +169,12 @@ export class Sim {
    * A `Math.random` helyett a meccs-RNG-t használja, tehát seedből
    * reprodukálható.
    * @param {number} osszDb összes egység
+   * @param {{ostrom?:number}} [opciok] csapatonként ennyi egység OSTROMGÉP lesz
+   *   (alap: 0). Külön kapcsoló, mert a v0.1 mérési felállása NEM változhat —
+   *   az az FPS-lépcsők összehasonlítási alapja, és egy ötödik egységtípus a
+   *   render-mixet is átrendezné.
    */
-  szondaFelallas(osszDb) {
+  szondaFelallas(osszDb, opciok) {
     const e = this.egysegek;
     e.db = 0;
     const racs = this.racs;
@@ -236,8 +240,6 @@ export class Sim {
     // INDEXRE mutat, és a felállás újrahasznosítja az indexeket. Enélkül egy
     // korábbi futás célpontja egy vadidegen egységre mutatna tovább.
     this.parancsAllapot.nullaz(e.db);
-    // Az életerő a TÍPUSBÓL jön, ezért csak a felállás után adható meg.
-    this.harc.nullaz(e.db);
     this.lovedekek.nullaz();
     this.beszallas.nullaz();
 
@@ -249,6 +251,29 @@ export class Sim {
     for (let i = 0; i < e.db; i++) {
       if (e.tipus[i] === TIPUS.MUNKAS) this.parancsAllapot.allas[i] = ALLAS.TUZSZUNET;
     }
+
+    // ── v0.4/6: ostromgépek ─────────────────────────────────────────────
+    // Csapatonként az UTOLSÓ néhány egységet alakítjuk ostromgéppé. Azért a
+    // végéről, mert az elejét a felállás típus-ciklusa (`elhelyezve & 3`)
+    // egyenletesen keveri — a végéről vágva a többi fegyvernem aránya nem
+    // torzul. Az életerőt a `harc.nullaz()` ELŐTT állítjuk, hogy az az ÚJ
+    // típusból számoljon.
+    const ostromDb = (opciok && opciok.ostrom) | 0;
+    if (ostromDb > 0) {
+      for (let csapat = 0; csapat < 2; csapat++) {
+        let atalakitva = 0;
+        for (let i = e.db - 1; i >= 0 && atalakitva < ostromDb; i--) {
+          if (e.csapat[i] !== csapat) continue;
+          e.tipus[i] = TIPUS.OSTROMGEP;
+          atalakitva++;
+        }
+      }
+    }
+    // A felállás és a lerakás is nyúlt a járhatósághoz — a mezők mehetnek.
+    // Az életerő a TÍPUSBÓL jön, ezért CSAK az ostromgép-átalakítás UTÁN
+    // adható meg — különben a gép a munkás 40 életerejével indulna. (Ez a
+    // sorrend egyszer már el is csúszott: a gépek 0 életerővel születtek.)
+    this.harc.nullaz(e.db);
     // A felállás és a lerakás is nyúlt a járhatósághoz — a mezők mehetnek.
     this._mezoErvenytelenites();
     return e.db;
@@ -288,7 +313,7 @@ export class Sim {
    * @param {number} db
    * @returns {number} a ténylegesen elhelyezett egységek száma
    */
-  ujraFelallas(db) {
+  ujraFelallas(db, opciok) {
     this.tick = 0;
     this._sor.clear();
     this.rng = mulberry32(this.seed ^ 0xa5a5a5a5);
@@ -296,7 +321,7 @@ export class Sim {
     // szolgálnák ki az újat, és alábecsülnénk az útkeresés költségét.
     for (const m of this.mezoTar.mezok) { m.cel = -1; m.utoljara = 0; }
     this.mezoTar.szamitasok = 0;
-    return this.szondaFelallas(db);
+    return this.szondaFelallas(db, opciok);
   }
 
   /**
