@@ -79,10 +79,19 @@ export class Sim {
     if (p.fajta === 'menet') {
       const e = this.egysegek;
       const idk = p.egysegek;
-      // Alakzat-szerű szórás a cél körül: ha 200 egység UGYANARRA a pontra
-      // menne, egymást tolnák örökké. Négyzetrácsos elrendezés a célpont
-      // körül — a v0.2-ben ezt váltja a valódi alakzat-rendszer.
       const db = idk.length;
+      if (db === 0) return;
+
+      // EGY mező az egész csoportnak. Ez az áramlási mező teljes lényege: a
+      // költséges Dijkstra egyszer fut, és bármennyi egység ingyen olvassa.
+      const ci = this.racs.idx(p.x | 0, p.y | 0);
+      if (ci < 0 || this.racs.jarhato[ci] === 0) return;
+      const mezoId = this.mezoTar.kerj(ci, this.tick);
+
+      // Alakzat-szerű szórás a cél KÖRÜL: ha 800 egység ugyanarra a pontra
+      // menne, a szeparáció örökre tolná őket egymáson. Négyzetrácsos
+      // elrendezés — a v0.2-ben ezt váltja a valódi alakzat-rendszer.
+      // Ez CSAK az egység végpontja; az odáig vezető utat a közös mező adja.
       const oldal = Math.ceil(Math.sqrt(db));
       const koz = 0.95;
       for (let k = 0; k < db; k++) {
@@ -91,7 +100,7 @@ export class Sim {
         let cx = p.x + sx * koz;
         let cy = p.y + sy * koz;
         if (!this.racs.jarhatoPont(cx, cy)) { cx = p.x; cy = p.y; }
-        e.menetparancs(idk[k], cx, cy, this.tick);
+        e.menetparancs(idk[k], cx, cy, mezoId);
       }
     }
   }
@@ -131,6 +140,28 @@ export class Sim {
       }
     }
     return e.db;
+  }
+
+  /**
+   * Teljes újrafelállás UGYANAZON a pályán, adott egységszámmal.
+   *
+   * A szonda ezt hívja a 100 / 400 / 800 / 1600-as lépcsők között. Szándékosan
+   * NEM új `Sim`-et gyártunk: így a terep, a rács és a mezők bitre azonosak
+   * maradnak, és a mérés egyetlen változót mozgat — az egységszámot. Új
+   * példánynál a terep-generálás ideje és a memória-elrendezés is beleszólna,
+   * és a lépcsők nem lennének összehasonlíthatók.
+   * @param {number} db
+   * @returns {number} a ténylegesen elhelyezett egységek száma
+   */
+  ujraFelallas(db) {
+    this.tick = 0;
+    this._sor.clear();
+    this.rng = mulberry32(this.seed ^ 0xa5a5a5a5);
+    // A mező-gyorstárat is ürítjük, különben az előző lépcső mezői „ingyen"
+    // szolgálnák ki az újat, és alábecsülnénk az útkeresés költségét.
+    for (const m of this.mezoTar.mezok) { m.cel = -1; m.utoljara = 0; }
+    this.mezoTar.szamitasok = 0;
+    return this.szondaFelallas(db);
   }
 
   /**

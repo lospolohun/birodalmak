@@ -105,19 +105,30 @@ export class Egysegek {
   }
 
   /**
-   * Menetparancs egy egységnek. A mezőt a `MezoTar` adja — ha többen kapják
-   * ugyanazt a célt, EGY mező szolgálja ki mindet.
+   * Menetparancs egy egységnek.
+   *
+   * ⚠️ A `mezoId`-t a HÍVÓ adja, és a CSOPORT közös céljára szól — NEM az
+   * egység saját alakzat-helyére. Ez a különbség dönti el, hogy működik-e
+   * egyáltalán az áramlási mező:
+   *
+   *   rosszul  — minden egység a saját alakzat-helyére kér mezőt → 800 egység
+   *              = 800 külön mező, a 8 elemű gyorstár azonnal csapkod, és a
+   *              tick-idő 40 ms-re ugrik. (Ez a hiba MEGTÖRTÉNT, mérve.)
+   *   jól      — EGY mező a csoport céljára, mind a 800 azt olvassa; a saját
+   *              alakzat-helyére csak a becsatlakozás végén, a szabad-egyenes
+   *              rövidítéssel áll rá.
+   *
+   * @param {number} i egység
+   * @param {number} celX az egység SAJÁT végpontja (alakzat-hely)
+   * @param {number} celY
+   * @param {number} mezoId a CSOPORT közös áramlási mezője
    */
-  menetparancs(i, celX, celY, tick) {
-    const racs = this.racs;
-    const cx = celX | 0, cy = celY | 0;
-    const ci = racs.idx(cx, cy);
-    if (ci < 0 || racs.jarhato[ci] === 0) return;
+  menetparancs(i, celX, celY, mezoId) {
     this.celX[i] = celX;
     this.celY[i] = celY;
-    this.mezoId[i] = this.mezoTar.kerj(ci, tick);
+    this.mezoId[i] = mezoId;
     this.allapot[i] = ALLAPOT.MEGY;
-    this.egyenes[i] = szabadVonal(racs, this.px[i], this.py[i], celX, celY) ? 1 : 0;
+    this.egyenes[i] = szabadVonal(this.racs, this.px[i], this.py[i], celX, celY) ? 1 : 0;
   }
 
   /** Egy szimulációs tick. */
