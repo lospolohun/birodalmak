@@ -31,7 +31,7 @@ A verzió szakaszokra van bontva, és a kész szakaszok külön-külön is megá
 | v0.4/3 | épület-életerő, épületek elleni harc | **kész** |
 | v0.4/4 | fal és kapu | **kész** (a kapu még nem csapatfüggő) |
 | v0.4/6 | ostrom-EGYSÉG (új egységtípus) | hátravan |
-| v0.4/5 | beszállásolás | hátravan |
+| v0.4/5 | beszállásolás | **kész** (a bent lévő még nem lő ki) |
 
 Az épület-oldal kész: az épületnek van életereje, a támadó menetben lévő sereg
 célba veszi az ellenséges épületeket (élő katona MINDIG előbbre való), a fal
@@ -44,8 +44,11 @@ szerkezeti — az áramlási mező a `racs.jarhato` EGY közös rétegéből ép
 csapatonként eltérő járhatóság csapatonként külön mezőkészletet igényelne. Ez a
 v0.5 dolga, a roster mellett.
 
-A beszállásolás az `elo` jelzőre épülhet: a beszállásolt egység ugyanúgy kiesik
-a hasítótáblából, mint a halott, csak visszahozhatóan.
+A beszállásolás kész: a bent lévő egység él, de nincs a világban (nem lökdös,
+nem célozható, nem látszik), és az épület pusztulása megöli. **Amit még nem
+tud:** a beszállásolt íjász nem lő ki az épületből. Az önálló mechanika
+(célkeresés az épület pozíciójából, saját ütemmel), és a v0.5 tornyával együtt
+érdemes megcsinálni.
 
 **Ismert adósság a v0.5 felé:** a halott slot nem szabadul fel. Amint egységet
 képezni is lehet, kell a slot-újrahasznosítás, ahhoz pedig **generációs

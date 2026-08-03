@@ -196,7 +196,9 @@ export class Harc {
     // Az épület a PANCEL.EPULET oszlopba esik — itt fejti ki az ostrom-támadás
     // a 400 %-át, és itt bünteti a nyíl a 30 %-ával azt, aki íjásszal ostromol.
     const seb = this.sebzesEpuletre(t);
-    ep.sebez(cel, seb);
+    // A beszállásolás VÉDELMET ad (a bent lévő nem célozható), és ennek ez az
+    // ára: az épülettel a benne állók is odavesznek.
+    if (ep.sebez(cel, seb)) sim.beszallas.epuletPusztult(cel);
     this.osszSebzes[e.csapat[i] & 1] += seb;
     this.utemHatra[i] = UTEM[t];
   }

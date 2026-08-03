@@ -95,6 +95,14 @@ export class Egysegek {
      * célponttá válni. Ha külön-külön szűrnénk, előbb-utóbb az egyik kimaradna.
      */
     this.elo = null;
+
+    /**
+     * v0.4 — BESZÁLLÁSOLT jelző (`Uint8Array`, 1 = épületben van). Ugyanaz a
+     * kivétel, mint a halálnál, csak VISSZAFORDÍTHATÓ — ezért külön tömb, nem
+     * az `elo` átírása: a kiszállás különben feltámasztásnak látszana a
+     * harcrendszer felől.
+     */
+    this.bent = null;
   }
 
   /**
@@ -170,11 +178,13 @@ export class Egysegek {
     const szam = this._hSzam;
     const elem = this._hElem;
     const elo = this.elo;
+    const bent = this.bent;
     szam.fill(0);
     // 1. menet: hány elem esik egy vödörbe. A HALOTTAK kimaradnak — így sem
     // lökdösik a többieket, sem célponttá nem válnak (lásd az `elo` mezőt).
     for (let i = 0; i < db; i++) {
       if (elo && elo[i] === 0) continue;
+      if (bent && bent[i] === 1) continue;
       let gx = (this.px[i] / cm) | 0;
       let gy = (this.py[i] / cm) | 0;
       if (gx < 0) gx = 0; else if (gx >= szel) gx = szel - 1;
@@ -189,6 +199,7 @@ export class Egysegek {
     kurzor.set(szam.subarray(0, szel * szel));
     for (let i = 0; i < db; i++) {
       if (elo && elo[i] === 0) continue;
+      if (bent && bent[i] === 1) continue;
       let gx = (this.px[i] / cm) | 0;
       let gy = (this.py[i] / cm) | 0;
       if (gx < 0) gx = 0; else if (gx >= szel) gx = szel - 1;
@@ -204,8 +215,9 @@ export class Egysegek {
     const n = racs.n;
     const ir = this._ir;
 
+    const bent2 = this.bent;
     for (let i = 0; i < db; i++) {
-      if (this.allapot[i] !== ALLAPOT.MEGY) {
+      if (this.allapot[i] !== ALLAPOT.MEGY || (bent2 && bent2[i] === 1)) {
         this.vx[i] = 0; this.vy[i] = 0;
         continue;
       }

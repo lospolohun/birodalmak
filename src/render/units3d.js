@@ -1063,6 +1063,7 @@ export class Egysegek3D {
     const aPajzs = this._aPajzs, aFegyver = this._aFegyver;
     const elozoX = this._elozoX, elozoY = this._elozoY, elozoSzog = this._elozoSzog;
     const elo = e.elo;
+    const bent = e.bent;
     const mostX = this._mostX, mostY = this._mostY, mostSzog = this._mostSzog;
 
     /** A SIM órája — nem `performance.now()`, tehát képkocka-független. */
@@ -1145,7 +1146,7 @@ export class Egysegek3D {
       // v0.4: a HALOTT egység nem rajzolódik. A `vis = 0` ág már létezett a
       // távolság- és frusztum-vágáshoz (nulla skálájú mátrix), tehát a halál
       // ugyanazon az úton megy ki a képből — nem kellett új mechanizmus.
-      let vis = (elo && elo[i] === 0) ? 0 : 2;
+      let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1)) ? 0 : 2;
       if (kam && vis !== 0) {
         if (fixSzint >= 0) {
           vis = fixSzint;

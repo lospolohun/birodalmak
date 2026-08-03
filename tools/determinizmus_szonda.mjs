@@ -652,6 +652,30 @@ if (ketV04.ok) {
   sor('2500 tick alatt elesett', osszHalott, 'csapat 0: ' + o.halottak[0] + ' · csapat 1: ' + o.halottak[1]);
   sor('élő létszám', o.elo[0] + ' / ' + o.elo[1], '(indulás: ' + kezdo + ' összesen)');
   sor('okozott sebzés', o.sebzes[0] + ' / ' + o.sebzes[1]);
+  // A v0.4/3-5 ágai: épület-rombolás, fal/kapu, beszállásolás. Mindegyikhez
+  // kell egy szám, ami elárulja, hogy TÖRTÉNT-e — a determinizmus-kapu erre
+  // sosem felel (lásd a v0.3 tanulságát).
+  let epAll = 0, epRom = 0, epSerult = 0, kapuDb = 0, falDb = 0;
+  for (let i = 0; i < s.epuletek.db; i++) {
+    if (s.epuletek.elo[i]) { epAll++; if (s.epuletek.hp[i] < s.epuletek.maxHp[i]) epSerult++; }
+    else epRom++;
+    if (s.epuletek.tipus[i] === 2) falDb++;
+    if (s.epuletek.tipus[i] === 3) kapuDb++;
+  }
+  sor('épület', epAll + ' áll / ' + epRom + ' rom', epSerult + ' sérült · fal: ' + falDb + ' · kapu: ' + kapuDb);
+  sor('beszállásolás', s.beszallas.beDb + ' be / ' + s.beszallas.kiDb + ' ki',
+    'kumulatív · a kör végén bent: ' + (s.beszallas.osszesites(0) + s.beszallas.osszesites(1)));
+  if (s.beszallas.beDb === 0) {
+    console.log('\n  ⛔ SENKI NEM SZÁLLT BE: a v0.4/5 ága ki sem futott.');
+    console.log('     A pillanatnyi létszám nem bizonyít — ezért kumulatív a számláló.');
+    bukas++;
+  }
+  if (falDb === 0) {
+    console.log('\n  ⛔ NEM ÉPÜLT FAL: a v0.4/4 ága ki sem futott.');
+    console.log('     Nézd meg a `szondaParancsV04` építés-körét és a fal árát —');
+    console.log('     ha nem telik rá, a parancs CSENDBEN elvész, és a kód a kapun kívül marad.');
+    bukas++;
+  }
   if (osszHalott === 0) {
     console.log('\n  ⛔ A HARC NEM INDULT EL: nulla halott 2500 tick alatt.');
     console.log('     A determinizmus-kapu ettől még zöld — az ácsorgás is reprodukálható.');

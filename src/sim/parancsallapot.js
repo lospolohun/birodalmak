@@ -49,6 +49,7 @@ export const PARANCS = {
   MENET: 1,          // menet egy pontra, ellenséggel nem foglalkozik
   TAMADO_MENET: 2,   // menet egy pontra, útközben ellenséget keres
   TARTAS: 3,         // helyben marad, csak a hatósugarába lépőre reagál
+  BESZALLAS: 4,      // egy saját épület felé tart, hogy beszálljon (v0.4)
 };
 
 /**
@@ -206,8 +207,20 @@ export class ParancsAllapot {
     // meredve állna a csata végéig.
     const elo = e.elo;
 
+    const bent = e.bent;
     for (let i = 0; i < db; i++) {
       if (elo && elo[i] === 0) continue;
+      // A beszállásolt egység nincs a világban: se nem céloz, se nem mozog.
+      if (bent && bent[i] === 1) continue;
+
+      // ── BESZÁLLÁSOLÁS: külön ág, MINDEN más elé ─────────────────────
+      // Aki épületbe tart, az nem áll meg harcolni útközben. Ez szándékos: a
+      // beszállásolás jellemzően MENEKÜLÉS, és ha a katona a kapu előtt
+      // megfordulna verekedni, a parancs pont a lényegét veszítené el.
+      if (this.parancs[i] === PARANCS.BESZALLAS) {
+        if (this._beszallasLep(i)) continue;
+      }
+
       const allas = this.allas[i];
 
       // ── Tűzszünet: se célt nem tart, se újat nem keres ──────────────
@@ -302,6 +315,37 @@ export class ParancsAllapot {
       // ── 4. Cél nélkül: vissza a parancs szerinti dolgunkra ──────────
       this._parancsFolytat(i, x, y);
     }
+  }
+
+  /**
+   * Beszállásolás felé tartó egység egy tickje.
+   * @returns {boolean} igaz, ha az ág elintézte az egységet
+   */
+  _beszallasLep(i) {
+    const sim = this.sim;
+    const e = this.egysegek;
+    if (!sim) return false;
+    const ep = this.celEpulet[i];
+    // Az épület elpusztult, elfogyott a férőhely, vagy nem a miénk → a parancs
+    // értelmét vesztette; visszaesünk a szokásos viselkedésre.
+    if (ep < 0 || !sim.epuletek.kesz(ep) || !sim.beszallas.ferohely(ep)) {
+      this.parancs[i] = PARANCS.NINCS;
+      this.celEpulet[i] = -1;
+      return false;
+    }
+    if (sim.beszallas.belephet(i, ep)) {
+      sim.beszallas.be(i, ep);
+      this.parancs[i] = PARANCS.NINCS;
+      this.celEpulet[i] = -1;
+      return true;
+    }
+    // Még úton: a végpontot minden tickben ráigazítjuk az épületre. Rövid táv,
+    // ezért egyenes vonal — mint az üldözésnél.
+    e.celX[i] = sim.epuletek.x[ep];
+    e.celY[i] = sim.epuletek.y[ep];
+    e.egyenes[i] = 1;
+    e.allapot[i] = ALLAPOT.MEGY;
+    return true;
   }
 
   /**

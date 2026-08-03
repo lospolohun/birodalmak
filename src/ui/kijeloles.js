@@ -69,7 +69,11 @@ export class Kijeloles {
    */
   _el(i) {
     const h = this.sim.harc;
-    return !h || h.elo[i] === 1;
+    if (h && h.elo[i] === 0) return false;
+    // A beszállásolt egység sincs a világban — nem jelölhető ki, mert a
+    // játékos nem látja, és nem értené, mire adott parancsot.
+    const b = this.sim.beszallas;
+    return !b || b.bent[i] === 0;
   }
 
   /** Egyetlen egység hozzáadása (ismétlés nélkül). */

@@ -23,6 +23,8 @@
 //   { fajta:'epit',         csapat, tipus, x, y }            ← v0.3
 //   { fajta:'korszak',      csapat }                         ← v0.3
 //   { fajta:'kapu',         csapat, epulet, nyit }           ← v0.4
+//   { fajta:'beszallas',    egysegek:[…], epulet }           ← v0.4
+//   { fajta:'kiszallas',    csapat, epulet }                 ← v0.4
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -61,6 +63,8 @@ export function vegrehajt(sim, p) {
     case 'epit': return epit(sim, p);
     case 'korszak': return korszak(sim, p);
     case 'kapu': return kapu(sim, p);
+    case 'beszallas': return beszallas(sim, p);
+    case 'kiszallas': return kiszallas(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -319,6 +323,38 @@ function kapu(sim, p) {
   if (!sim.epuletek.el(i)) return;
   if (sim.epuletek.csapat[i] !== (p.csapat | 0)) return;
   sim.epuletek.kapu(i, !!p.nyit);
+}
+
+/**
+ * BESZÁLLÁSOLÁS. Az egységek elindulnak a saját épületük felé, és amint
+ * odaérnek, belépnek. A parancs NEM azonnali: az odajutás a lényeg — a
+ * beszállásolás jellemzően menekülés, és annak van ideje.
+ * @param {{egysegek:number[], epulet:number}} p
+ */
+function beszallas(sim, p) {
+  const ep = p.epulet | 0;
+  if (!sim.epuletek.kesz(ep)) return;
+  const e = sim.egysegek;
+  const pa = sim.parancsAllapot;
+  const idk = p.egysegek;
+  for (let k = 0; k < idk.length; k++) {
+    const i = idk[k];
+    if (i >= e.db) continue;
+    if (sim.epuletek.csapat[ep] !== e.csapat[i]) continue;
+    if (sim.beszallas.bent[i] === 1) continue;
+    pa.parancs[i] = PARANCS.BESZALLAS;
+    pa.celEpulet[i] = ep;
+    pa.celEgyseg[i] = -1;
+    sim.munkasok.elenged(i);
+  }
+}
+
+/** KISZÁLLÁS: mindenki ki egy saját épületből, körbeosztott állóhelyekre. */
+function kiszallas(sim, p) {
+  const ep = p.epulet | 0;
+  if (!sim.epuletek.el(ep)) return;
+  if (sim.epuletek.csapat[ep] !== (p.csapat | 0)) return;
+  sim.beszallas.mindKi(ep);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

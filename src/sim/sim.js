@@ -35,6 +35,7 @@ import { Gazdasag, KORSZAK } from './gazdasag.js';
 import { Munkasok, MUNKA } from './munkas.js';
 import { Harc, TAMADAS, PANCEL } from './harc.js';
 import { Lovedekek } from './lovedek.js';
+import { Beszallas } from './beszallas.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -81,6 +82,10 @@ export class Sim {
     // A lövedék-tár felső korlátja bőven a valós csúcs fölött van; ha betelne,
     // a lövés elvész, nem allokálunk (lásd `lovedek.js`).
     this.lovedekek = new Lovedekek(this.maxEgyseg, this);
+    // A beszállásolás ugyanazon az EGY helyen veszi ki az egységet a világból,
+    // mint a halál (a térbeli hasítótáblából) — csak visszafordíthatóan.
+    this.beszallas = new Beszallas(this.maxEgyseg, this);
+    this.egysegek.bent = this.beszallas.bent;
 
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
@@ -234,6 +239,7 @@ export class Sim {
     // Az életerő a TÍPUSBÓL jön, ezért csak a felállás után adható meg.
     this.harc.nullaz(e.db);
     this.lovedekek.nullaz();
+    this.beszallas.nullaz();
 
     // A munkás nem katona: alapból TŰZSZÜNETBEN áll. Enélkül az agresszív
     // alapállás miatt az első ellenség láttán otthagyná a bányát és rohanna
@@ -526,6 +532,36 @@ export class Sim {
     const alakB = (kor & 1) ? ALAKZAT.NEGYZET : ALAKZAT.VONAL;
     this.parancs({ fajta: 'tamado_menet', egysegek: a, x: celA.x, y: celA.y, alakzat: alakA });
     this.parancs({ fajta: 'tamado_menet', egysegek: b, x: celB.x, y: celB.y, alakzat: alakB });
+
+    // ── BESZÁLLÁSOLÁS ───────────────────────────────────────────────────
+    // ⚠️ A SORREND ITT SZÁMÍT, ÉS EZ MÉRT TANULSÁG. Az első változatban ez a
+    // blokk a támadó menet ELŐTT állt, és a beszállásolás SOSEM futott le: a
+    // menetparancs ugyanabban a körben felülírta, a következő kör pedig 250
+    // tickenként újra — mire a katona a központhoz ért volna, már rég másfelé
+    // masírozott. A kumulatív számláló (`beDb`) mutatta ki; a pillanatnyi
+    // létszám végig 0 volt, és a determinizmus-kapu zölden hallgatott.
+    //
+    // Ezért a blokk a menet UTÁN van (a később beadott parancs nyer), és csak
+    // a központ KÖZELÉBEN álló egységeket küldi be — akik 250 ticken belül
+    // tényleg odaérnek.
+    if ((kor & 1) === 0) {
+      for (let cs = 0; cs < 2; cs++) {
+        let kozp = -1;
+        for (let k = 0; k < this.epuletek.db; k++) {
+          if (this.epuletek.csapat[k] === cs && this.epuletek.kesz(k)
+            && this.epuletek.tipus[k] === EPULET.KOZPONT) { kozp = k; break; }
+        }
+        if (kozp < 0) continue;
+        const kx = this.epuletek.x[kozp], ky = this.epuletek.y[kozp];
+        const kozel = (cs === 0 ? a : b).filter((i) => {
+          const dx = e.px[i] - kx, dy = e.py[i] - ky;
+          return dx * dx + dy * dy < 900;   // 30 világegység sugarú kör
+        });
+        if (kozel.length) this.parancs({ fajta: 'beszallas', egysegek: kozel, epulet: kozp });
+        // A KÖVETKEZŐ körben ugyanez a kapu nyílik ki: a kiszállás is fut.
+        if ((kor & 3) === 2) this.parancs({ fajta: 'kiszallas', csapat: cs, epulet: kozp });
+      }
+    }
   }
 
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
@@ -580,6 +616,8 @@ export class Sim {
       h = fnvSzam(h, this.harc.hp[i]);
       h = fnvSzam(h, this.harc.elo[i]);
       h = fnvSzam(h, this.harc.utemHatra[i]);
+      h = fnvSzam(h, this.beszallas.bent[i]);
+      h = fnvSzam(h, this.beszallas.hol[i]);
     }
 
     // v0.3 — a gazdaság is a szimuláció állapota. Egyetlen fával több az egyik
@@ -664,3 +702,4 @@ function kSin(x) {
 }
 
 export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA, TAMADAS, PANCEL };
+export { Beszallas };
