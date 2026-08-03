@@ -21,7 +21,8 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
 | v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
-| v1.0 | Kiadási kapu, i18n (hu/en/de), PWA, deploy | |
+| v0.14 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |
+| v1.0 | Kiadási kapu, i18n (hu/en/de), PWA | |
 
 ## A v0.4 állása
 
@@ -86,6 +87,22 @@ kizárólag azzal foglalkozik, hogy a meglévő tényleg működik-e: teljes
 determinizmus-kör, FPS-mérés minden lépcsőn, balansz-átnézés (a v0.9 nyolc
 civje), UX-végigjátszás és hibalista. A `qa/` mappa eddigi jelentései ennek az
 előfutárai.
+
+**v0.14 — kirakás SkyNetre.** A cél `https://skynet.lospolo.hu/aotc`.
+
+A build STATIKUS (`vite build` → `dist/`), tehát a SkyNet PHP-s kiszolgálója
+tökéletesen elég hozzá — nem kell futó Node-processz.
+
+⚠️ **Az alkönyvtár a buktató.** A `vite.config.js`-ben `base: '/aotc/'` kell,
+különben a `dist/index.html` gyökérből (`/assets/…`) hivatkozza a JS-t és a
+CSS-t, a `/aotc/` alatt pedig az 404. Ez az a hiba, ami helyi `vite preview`-val
+SOSEM jön elő, csak élesben — a preview a gyökérből szolgál ki.
+
+⚠️ **A v0.8 relay-szerver NEM fér el itt.** A netcode külön futó Node-processzt
+igényel (lásd „Őszinte kockázatok"), a SkyNet viszont PHP-t szolgál ki. A
+kirakott build tehát EGYJÁTÉKOS marad, amíg a relay nem kap saját helyet (VPS
+vagy állandó portot adó szolgáltatás). Ezt a v0.14-nek nem kell megoldania, de
+tudni kell róla, hogy ne az élesben derüljön ki.
 
 ## Miért ebben a sorrendben
 
