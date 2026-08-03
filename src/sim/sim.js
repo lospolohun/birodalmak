@@ -222,7 +222,18 @@ export class Sim {
       if (hely) this.epuletek.lerak(EPULET.KOZPONT, hely.x, hely.y, csapat, true);
     }
     const felenkent = osszDb >> 1;
-    const tipusok = [TIPUS.LANDZSAS, TIPUS.IJASZ, TIPUS.LOVAG, TIPUS.MUNKAS];
+    const harcosok = [TIPUS.LANDZSAS, TIPUS.IJASZ, TIPUS.LOVAG];
+    /**
+     * Minden hányadik egység legyen MUNKÁS. Az alapérték 4 — pontosan azt a
+     * sorrendet adja vissza, amit a korábbi `tipusok[elhelyezve & 3]` ciklus,
+     * tehát a v0.1 regresszió-őre bitre változatlan marad.
+     *
+     * A v0.5 köre 2-vel fut: mérve a negyedelés ott TÚL KEVÉS munkást adott
+     * (csapatonként 7), és a gazdaság sosem gyűjtött annyi fát, hogy a piac
+     * (175) felépüljön — piac nélkül pedig se kő, se torony, vagyis a v0.5/3
+     * mindkét új alrendszere a kapun kívül maradt volna.
+     */
+    const munkasMinden = ((opciok && opciok.munkasMinden) | 0) || 4;
 
     for (let csapat = 0; csapat < 2; csapat++) {
       const bazisX = csapat === 0 ? n * 0.22 : n * 0.78;
@@ -238,7 +249,10 @@ export class Sim {
         const x = bazisX + kSin(a + 1.5707963267948966) * r;
         const y = bazisY + kSin(a) * r;
         if (racs.jarhatoPont(x, y)) {
-          e.hozzaad(x, y, tipusok[elhelyezve & 3], csapat);
+          const tip = (elhelyezve % munkasMinden) === munkasMinden - 1
+            ? TIPUS.MUNKAS
+            : harcosok[((elhelyezve - (elhelyezve / munkasMinden | 0)) % 3)];
+          e.hozzaad(x, y, tip, csapat);
           elhelyezve++;
         }
         if ((orseg & 255) === 0) sugar += 1.5;
@@ -639,7 +653,8 @@ export class Sim {
    * futna. Ez ugyanaz a csapda, mint a v0.4-es falnál: ha a parancs csendben
    * elvész, a legfrissebb kód marad a kapun kívül.
    *
-   * A kör: gyűjtés → ház (népesség) → laktanya → képzés. Ez egyben a
+   * A kör: gyűjtés → piaci csere → támadás → képzés, MELLETTE pedig minden
+   * körben végigfut a teljes építési sor (`_szondaEpitsor`). Ez egyben a
    * legegyszerűbb valódi build order is, tehát a v0.6 AI-jának mintája.
    *
    * @param {number} kor
@@ -647,8 +662,8 @@ export class Sim {
   szondaParancsV05(kor) {
     const e = this.egysegek;
     for (let cs = 0; cs < 2; cs++) {
-      const bx = cs === 0 ? this.n * 0.22 : this.n * 0.78;
-      const by = this.n * 0.5;
+      const bx = (cs === 0 ? this.n * 0.22 : this.n * 0.78) | 0;
+      const by = (this.n * 0.5) | 0;
       let kozp = -1;
       for (let k = 0; k < this.epuletek.db; k++) {
         if (this.epuletek.csapat[k] === cs && this.epuletek.el(k)
@@ -656,17 +671,47 @@ export class Sim {
       }
       if (kozp < 0) continue;
 
+      // ÉPÍTÉSI SOR MINDEN KÖRBEN — nem körönként EGY tétel.
+      //
+      // Az első változat körönként egy épületet próbált (ház → laktanya →
+      // íjászda → piac → torony), és mérve elakadt: a 175 fás íjászda a
+      // körfordulat elején elvitte a fát, a piac pedig csak nyolc körrel később
+      // került sorra, amikorra megint nem volt miből. Így SOSEM épült piac, a
+      // piac nélkül nem volt kő, kő nélkül nem volt torony — a v0.5/3 két új
+      // alrendszere együtt maradt a kapun kívül.
+      //
+      // Az `epit` parancs csendben elutasít, ha nem telik. Ezért a teljes sort
+      // minden körben újra beadhatjuk: ami már áll, azt a hely-ütközés dobja,
+      // amire nem telik, az elutasításba fut, és a legelső megfizethető tétel
+      // épül meg. Ez egyben a v0.6 AI-jának mintája is.
+      this._szondaEpitsor(cs, bx, by, kozp);
+
+      // PIACI CSERE fa → kő (v0.5/3) — szintén MINDEN körben, az építési sor
+      // UTÁN, tehát a maradékból. A kő ebben a körben nem gyűjthető: a piac az
+      // EGYETLEN forrása, és a torony 125-öt kér. Ha ez néma marad, a torony
+      // ága sem fut ki — pont ezt őrzi a 8. vizsgálat.
+      //
+      // A készlet-feltétel nem óvatoskodás: a 200-as vak tétel mérve MINDIG
+      // elutasításba futott (a fa sosem gyűlt 140 fölé), a negyedelt körönkénti
+      // beadásból pedig 6000 tick alatt összesen EGY csere lett — egyetlen
+      // balszerencsés futás elég lett volna, hogy nulla legyen.
+      if (this.gazdasag.keszlet[cs * 4 + NYERS.FA] >= 80
+        && this.gazdasag.keszlet[cs * 4 + NYERS.KO] < 260) {
+        this.parancs({ fajta: 'csere', csapat: cs, ad: NYERS.FA, kap: NYERS.KO, mennyiseg: 60 });
+      }
+
       const munkasok = [];
       for (let i = 0; i < e.db; i++) {
         if (e.csapat[i] === cs && e.tipus[i] === TIPUS.MUNKAS && this.harc.elo[i]) munkasok.push(i);
       }
 
-      switch (kor % 5) {
+      switch (kor % 3) {
         case 0: {
-          // Gyűjtés: fele ételre, fele fára — a ház és a laktanya fából van,
-          // a képzés viszont ételt is kér.
-          const etel = munkasok.filter((_, k) => (k & 1) === 0);
-          const fa = munkasok.filter((_, k) => (k & 1) === 1);
+          // Gyűjtés: EGYHARMAD ételre, KÉTHARMAD fára. A felezés mérve rossz
+          // arány volt: 6000 tick alatt 720 étel jött be 460 fa mellett, holott
+          // az egész építési sor fából megy. Az étel csak a képzést eteti.
+          const etel = munkasok.filter((_, k) => (k % 3) === 0);
+          const fa = munkasok.filter((_, k) => (k % 3) !== 0);
           for (const [resz, ny] of [[etel, NYERS.ETEL], [fa, NYERS.FA]]) {
             if (!resz.length) continue;
             const node = this.eroforrasok.keres(ny, bx, by, 90);
@@ -679,42 +724,150 @@ export class Sim {
           }
           break;
         }
-        case 1:
-          // Négy ház: +40 népesség. Enélkül nincs mit képezni.
-          for (let k = 0; k < 4; k++) {
-            this.parancs({
-              fajta: 'epit', csapat: cs, tipus: EPULET.HAZ,
-              x: (bx | 0) + 6 + k * 3, y: (by | 0) - 8,
-            });
+        case 1: {
+          // RITKA, KIS PORTYA az ellenséges torony felé — a tornyok csak akkor
+          // lőnek, ha van kire. A gazdaságnak viszont TÚL KELL ÉLNIE: ez a kör
+          // nem harc-szonda, az a 7. vizsgálat dolga.
+          //
+          // Két mérés írta a két számot. Először a TELJES sereg ment: 3000 tick
+          // alatt a 0. csapat mind a 35 egysége elesett, a központja is
+          // elhullott, és onnantól sem gyűjtött, sem épített, sem képzett.
+          // Utána hat egység ment, de MINDEN harmadik körben — 16 portya 12 000
+          // tick alatt, vagyis a teljes hadsereg többszöröse a darálóba. Az
+          // egyik fél mindig elfogyott, és a MÁSIK tornya sosem kapott
+          // célpontot: 1 torony állt, 0 sortűzzel.
+          //
+          // Kilenc körönként egy portya viszont mindkét oldalnak hagy időt
+          // újratermelni, tehát a torony végig kap kire lőni.
+          if ((kor % 9) !== 1) { this._szondaKepez(cs); break; }
+          const PORTYA = 4;
+          const katonak = [];
+          // A toronyban ÁLLÓ katona nem megy portyázni: a menetparancs kirántaná
+          // az őrséget, és a sortűz-bónusz ága megint kiüresedne. (A v0.4-ben
+          // pont ez történt fordítva: a menetparancs írta felül a beszállást.)
+          for (let i = 0; i < e.db && katonak.length < PORTYA; i++) {
+            if (e.csapat[i] !== cs || e.tipus[i] === TIPUS.MUNKAS) continue;
+            if (!this.harc.elo[i] || this.beszallas.bent[i] === 1) continue;
+            katonak.push(i);
           }
-          break;
-        case 2:
-          this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.LAKTANYA, x: (bx | 0) + 7, y: (by | 0) + 7 });
-          break;
-        case 3:
-          this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.IJASZDA, x: (bx | 0) - 7, y: (by | 0) + 7 });
-          break;
-        default: {
-          // KÉPZÉS minden képző épületben. A `Kepzes` dönt arról, telik-e és
-          // van-e népesség — a parancs csak sorba állít.
-          for (let k = 0; k < this.epuletek.db; k++) {
-            if (this.epuletek.csapat[k] !== cs || !this.epuletek.kesz(k)) continue;
-            const t = this.epuletek.tipus[k];
-            let egyseg = -1;
-            if (t === EPULET.KOZPONT) egyseg = TIPUS.MUNKAS;
-            else if (t === EPULET.LAKTANYA) egyseg = TIPUS.LANDZSAS;
-            else if (t === EPULET.IJASZDA) egyseg = TIPUS.IJASZ;
-            if (egyseg < 0) continue;
-            for (let n = 0; n < 3; n++) {
-              this.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg });
-            }
+          if (katonak.length) {
+            // A cél az ELLENSÉGES TORONY helye — nem a bázisa. A két portya így
+            // egymást találja meg a senkiföldjén, mindkét torony hatótávján
+            // belül, a gyűjtő munkások pedig kimaradnak a harcból.
+            const t = this.szondaToronyHely(1 - cs);
+            const c = this._jarhatoKozel(t.x, t.y);
+            this.parancs({ fajta: 'tamado_menet', egysegek: katonak, x: c.x, y: c.y });
           }
           break;
         }
+        default:
+          this._szondaKepez(cs);
+          break;
       }
     }
   }
 
+  /**
+   * KÉPZÉS minden képző épületben. A `Kepzes` dönt arról, telik-e és van-e
+   * népesség — a parancs csak sorba állít, az elutasítást a szonda számolja.
+   *
+   * ⚠️ FA-TARTALÉK. A katona-képzés és az építési sor UGYANABBÓL a fából él (a
+   * lándzsás 25-öt kér), és mérve a képzés felfalta a piacra szánt 175-öt: 12
+   * 000 tick alatt 65 elutasított sorbaállás mellett egyetlen piac sem épült
+   * meg, tehát se kő, se torony. A MUNKÁS kivétel — az csak ételbe kerül, és a
+   * gazdaságot épp ő növeli.
+   */
+  _szondaKepez(cs) {
+    const FA_TARTALEK = 220;
+    const vanFa = this.gazdasag.keszlet[cs * 4 + NYERS.FA] >= FA_TARTALEK;
+    for (let k = 0; k < this.epuletek.db; k++) {
+      if (this.epuletek.csapat[k] !== cs || !this.epuletek.kesz(k)) continue;
+      const t = this.epuletek.tipus[k];
+      if (t !== EPULET.KOZPONT && !vanFa) continue;
+      let egyseg = -1;
+      if (t === EPULET.KOZPONT) egyseg = TIPUS.MUNKAS;
+      else if (t === EPULET.LAKTANYA) egyseg = TIPUS.LANDZSAS;
+      else if (t === EPULET.IJASZDA) egyseg = TIPUS.IJASZ;
+      if (egyseg < 0) continue;
+      for (let n = 0; n < 3; n++) {
+        this.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg });
+      }
+    }
+  }
+
+  /**
+   * A v0.5 szonda ÉPÍTÉSI SORA — minden körben végigmegy rajta.
+   *
+   * A sorrend prioritás, nem ütemterv: a ház adja a népességet (enélkül nincs
+   * képzés), a piac a követ, a kő a tornyot, a laktanya pedig a katonát. A
+   * helyek FIXEK, tehát a második beadás ugyanoda ütközik és elvész — nem
+   * duplázódik.
+   *
+   * ⚠️ ÍJÁSZDA NINCS BENNE, és ez mérés eredménye: a sor összköltsége 175 fával
+   * több lett volna, mint amennyit a kör gazdasága 6000 tick alatt egyáltalán
+   * kitermel. Az íjászda ott állt a piac ELŐTT, elvitte a fát, és a piac soha
+   * nem épült meg — piac nélkül pedig nincs kő, kő nélkül nincs torony. A
+   * képzéshez a laktanya is elég; az íjászt a v0.4 harc-köre járatja.
+   *
+   * A torony az ellenség FELÉ tolva áll a központtól, hogy a betörő sereg
+   * tényleg a hatótávjába érjen. Enélkül a sortűz-ág soha nem futna ki, és a
+   * zöld determinizmus-kapu egy néma tornyot igazolna.
+   */
+  _szondaEpitsor(cs, bx, by, kozp) {
+    for (let k = 0; k < 4; k++) {
+      this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.HAZ, x: bx + 6 + k * 3, y: by - 8 });
+    }
+    this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.PIAC, x: bx + 7, y: by - 13 });
+    this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.LAKTANYA, x: bx + 7, y: by + 7 });
+    const t = this.szondaToronyHely(cs);
+    this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.TORONY, x: t.x, y: t.y });
+    this._szondaToronyOrseg(cs);
+  }
+
+  /**
+   * ŐRSÉG A TORONYBA (v0.5/3). A torony 1 + a bent állók számával lő — enélkül
+   * a sortűz mindig PONTOSAN egy nyilat adna, és a beszállásolási bónusz ága
+   * sosem futna le. Mérve pontosan ez történt: 91 sortűz, 91 nyíl.
+   *
+   * Legfeljebb `ORSEG` katona megy be, és csak akkor, ha a torony még nem
+   * telt — a kiszállásra itt nincs szükség, a bónuszt a bent maradás adja.
+   */
+  _szondaToronyOrseg(cs) {
+    const ORSEG = 3;
+    let torony = -1;
+    for (let k = 0; k < this.epuletek.db; k++) {
+      if (this.epuletek.csapat[k] === cs && this.epuletek.kesz(k)
+        && this.epuletek.tipus[k] === EPULET.TORONY) { torony = k; break; }
+    }
+    if (torony < 0 || this.beszallas.letszam[torony] >= ORSEG) return;
+    const e = this.egysegek;
+    const kell = ORSEG - this.beszallas.letszam[torony];
+    const kik = [];
+    for (let i = 0; i < e.db && kik.length < kell; i++) {
+      if (e.csapat[i] !== cs || e.tipus[i] === TIPUS.MUNKAS) continue;
+      if (!this.harc.elo[i] || this.beszallas.bent[i] === 1) continue;
+      kik.push(i);
+    }
+    if (kik.length) this.parancs({ fajta: 'beszallas', egysegek: kik, epulet: torony });
+  }
+
+  /**
+   * A v0.5 szonda TORONY-HELYE: a pálya közepén, a saját oldalon, hat cellával
+   * a senkiföldje közepétől. A portyák is oda mennek — így a torony hatótávja
+   * (8,0) biztosan lefedi a találkozási pontot.
+   *
+   * ⚠️ MIÉRT NEM A BÁZISNÁL ÁLL. Először a központ mellé került, a portya pedig
+   * az ellenséges bázisra ment. Mérve ez tette tönkre az egész kört: a hat
+   * portyázó egység a GYŰJTŐ MUNKÁSOK közé érkezett (a munkás tűzszünetben áll,
+   * tehát vissza sem üt), 12 000 tick alatt MINDKÉT központ elhullott, és a
+   * gazdaság a 2000. tick után egyetlen egységnyi nyersanyagot sem termelt.
+   * Senkiföldjén viszont a két portya EGYMÁST találja meg, a bázis békében
+   * dolgozik, a torony pedig végig kap célpontot.
+   */
+  szondaToronyHely(cs) {
+    const kx = (this.n * 0.5) | 0;
+    return { x: kx + (cs === 0 ? -6 : 6), y: (this.n * 0.5) | 0 };
+  }
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -804,6 +957,7 @@ export class Sim {
       h = fnvSzam(h, ep.hp[i]);
       h = fnvSzam(h, ep.elo[i]);
       h = fnvSzam(h, ep.nyitva[i]);
+      h = fnvSzam(h, ep.lovesHatra[i]);
       // v0.5 — a képzési sor is a világ állapota: eldönti, mikor és mi születik.
       h = fnvSzam(h, this.kepzes.sorDb[i]);
       h = fnvSzam(h, this.kepzes.hatra[i]);

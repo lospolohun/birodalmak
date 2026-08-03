@@ -27,6 +27,7 @@
 // hivatkozás ELKAPHATÓ legyen, ne csak elromoljon.
 
 import { TIPUS, ALLAPOT } from './units.js';
+import { EPULET } from './epuletek.js';
 
 /** Támadástípusok — ezekhez tartozik az ellensúly-tábla egy SORA. */
 export const TAMADAS = { VAGO: 0, SZURO: 1, NYIL: 2, OSTROM: 3 };
@@ -76,6 +77,15 @@ export const HATOTAV = [1.15, 1.45, 6.0, 1.25, 3.2];
  */
 const TAVOLSAGI = [0, 0, 1, 0, 0];
 
+// ── TORONY (v0.5/3) ──────────────────────────────────────────────────────
+// A torony az EGYETLEN épület, ami magától lő. Hosszabb a hatótávja, mint az
+// íjászé (8,0 vs 6,0) — ettől lesz értelme védműnek: a támadónak be kell
+// mennie a tűzbe, hogy egyáltalán viszonozhassa.
+const TORONY_HATOTAV = 8.0;
+const TORONY_SEBZES = 6;
+/** Két sortűz közti tickek. */
+const TORONY_UTEM = 30;
+
 /**
  * ELLENSÚLY-TÁBLA: `SZORZO[támadástípus][páncéltípus]` SZÁZALÉKBAN.
  *
@@ -117,6 +127,13 @@ export class Harc {
     /** Statisztika a jelentéseknek. */
     this.halottak = [0, 0];
     this.osszSebzes = [0, 0];
+    /**
+     * HALMOZOTT torony-sortűz csapatonként (v0.5/3). Szándékosan halmozott, nem
+     * pillanatnyi: a v0.4 beszállásolásánál pont az bukott meg, hogy a
+     * pillanatnyi szám nullát mutatott akkor is, amikor az ág lefutott.
+     */
+    this.toronySortuz = [0, 0];
+    this.toronyNyil = [0, 0];
   }
 
   /** Teljes visszaállítás — a felállás hívja, a típusok ismeretében. */
@@ -128,6 +145,8 @@ export class Harc {
     this.utemHatra.fill(0);
     this.halottak[0] = 0; this.halottak[1] = 0;
     this.osszSebzes[0] = 0; this.osszSebzes[1] = 0;
+    this.toronySortuz[0] = 0; this.toronySortuz[1] = 0;
+    this.toronyNyil[0] = 0; this.toronyNyil[1] = 0;
     for (let i = 0; i < db; i++) {
       const t = e.tipus[i];
       this.maxHp[i] = MAX_HP[t];
@@ -187,6 +206,79 @@ export class Harc {
       }
       this.utemHatra[i] = UTEM[t];
     }
+
+    this._tornyokLonek();
+  }
+
+  /**
+   * A TORNYOK sortüze (v0.5/3).
+   *
+   * Minden benne álló egység EGGYEL több nyilat ad — ez váltja be a v0.4-ben
+   * felírt adósságot, hogy a beszállásolás ne csak bújás legyen. A torony
+   * MAGÁTÓL is lő egyet, tehát üresen sem haszontalan, csak gyenge.
+   *
+   * A célt a térbeli hasítótáblából keressük, ugyanazzal a döntetlen-szabállyal,
+   * mint az egységeknél (kisebb index nyer). Tornyból kevés van, és a sortűz
+   * 30 tickenként megy — a 9×9-es vödör-bejárás így elhanyagolható.
+   */
+  _tornyokLonek() {
+    const sim = this.sim;
+    const ep = sim.epuletek;
+    for (let k = 0; k < ep.db; k++) {
+      if (ep.tipus[k] !== EPULET.TORONY || !ep.kesz(k)) continue;
+      if (ep.lovesHatra[k] > 0) { ep.lovesHatra[k]--; continue; }
+
+      const cel = this._pontKeres(ep.x[k], ep.y[k], ep.csapat[k], TORONY_HATOTAV);
+      if (cel < 0) continue;
+
+      // 1 alap nyíl + a bent állók. A `letszam` a beszállásolás nyilvántartása.
+      const nyilak = 1 + sim.beszallas.letszam[k];
+      const e = sim.egysegek;
+      const seb = ((TORONY_SEBZES * SZORZO[TAMADAS.NYIL][PANCEL_TIPUS[e.tipus[cel]]]) / 100) | 0;
+      for (let n = 0; n < nyilak; n++) {
+        sim.lovedekek.lo(ep.x[k], ep.y[k], cel, seb < 1 ? 1 : seb,
+          ep.csapat[k], e.generacio[cel]);
+      }
+      ep.lovesHatra[k] = TORONY_UTEM;
+      const cs = ep.csapat[k];
+      if (cs < 2) { this.toronySortuz[cs]++; this.toronyNyil[cs] += nyilak; }
+    }
+  }
+
+  /**
+   * A legközelebbi ELLENSÉGES élő egység egy PONT körül. Az egység-alapú
+   * kereséstől (`parancsallapot._keres`) az különbözteti meg, hogy nincs
+   * „önmagam" kizárás — az épületnek nincs egység-indexe.
+   * @returns {number} egység-index vagy -1
+   */
+  _pontKeres(x, y, csapat, sugar) {
+    const e = this.sim.egysegek;
+    const szel = e.hSzel, cm = e.hCella;
+    const szam = e._hSzam, elem = e._hElem;
+    let gx = (x / cm) | 0, gy = (y / cm) | 0;
+    if (gx < 0) gx = 0; else if (gx >= szel) gx = szel - 1;
+    if (gy < 0) gy = 0; else if (gy >= szel) gy = szel - 1;
+    const gyuru = Math.ceil(sugar / cm) | 0;
+    let legjobb = -1, legjobbD2 = sugar * sugar;
+    for (let oy = -gyuru; oy <= gyuru; oy++) {
+      const ny = gy + oy;
+      if (ny < 0 || ny >= szel) continue;
+      for (let ox = -gyuru; ox <= gyuru; ox++) {
+        const nx = gx + ox;
+        if (nx < 0 || nx >= szel) continue;
+        const vodor = ny * szel + nx;
+        for (let t = szam[vodor]; t < szam[vodor + 1]; t++) {
+          const j = elem[t];
+          if (e.csapat[j] === csapat) continue;
+          const dx = e.px[j] - x, dy = e.py[j] - y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < legjobbD2 || (d2 === legjobbD2 && legjobb >= 0 && j < legjobb)) {
+            legjobbD2 = d2; legjobb = j;
+          }
+        }
+      }
+    }
+    return legjobb;
   }
 
   /**

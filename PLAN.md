@@ -61,6 +61,11 @@ tud:** a beszállásolt íjász nem lő ki az épületből. Az önálló mechani
 (célkeresés az épület pozíciójából, saját ütemmel), és a v0.5 tornyával együtt
 érdemes megcsinálni.
 
+**Ez az adósság is KIFIZETVE** (v0.5/3): a torony 30 tickenként sortüzet ad, és
+`1 + a bent állók száma` nyilat lő ki. A beszállásolás tehát végre TÖBB a
+bújásnál. A szonda 8. vizsgálata külön bukik, ha minden sortűz pontosan egy
+nyíl — az ugyanis azt jelenti, hogy a bónusz-ág ki sem futott.
+
 **Ez az adósság KIFIZETVE** (a v0.5 első szakasza): a halott slot felszabadul,
 és minden slothoz tartozik egy generáció, ami felszabaduláskor lép. A
 hivatkozások (`celEgyseg`, `lovedek.cel`) az indexet ÉS a generációt tárolják,
@@ -75,7 +80,7 @@ céljával vagy rakományával születne meg.
 |---|---|---|
 | v0.5/1 | slot-újrahasznosítás generációs számlálóval | **kész** |
 | v0.5/2 | egység-képzés (laktanya, sorbanállás, népesség) | **kész** |
-| v0.5/3 | épület-roster | **részben** — 9 épülettípus áll, a torony és a piac hátravan |
+| v0.5/3 | épület-roster | **kész** — 11 épülettípus, torony (sortűz + őrség-bónusz), piac (csere) |
 | v0.5/4 | technológiafa | hátravan |
 
 A képzés épületenkénti SORRAL megy, nem globálisan — ettől lesz valódi döntés,

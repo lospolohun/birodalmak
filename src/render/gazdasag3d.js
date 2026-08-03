@@ -23,7 +23,7 @@
 
 import { THREE } from './core3d.js';
 import { NYERS } from '../sim/eroforras.js';
-import { EP_MERET } from '../sim/epuletek.js';
+import { EP_MERET, EP_MAGASSAG } from '../sim/epuletek.js';
 
 /** A talaj fölé emelés, hogy a modell ne süllyedjen a terepbe. */
 const ULES = 0.05;
@@ -155,7 +155,7 @@ export class Gazdasag3D {
     for (let i = 0; i < ep.db; i++) {
       const m = EP_MERET[ep.tipus[i]];
       // A készültség a MAGASSÁGBAN látszik: a doboz a földből nő ki.
-      const teljes = m * 0.8;
+      const teljes = m * 0.8 * EP_MAGASSAG[ep.tipus[i]];
       const arany = ep.epulHatra[i] === 0 ? 1 : Math.max(0.12, 1 - ep.epulHatra[i] / 200);
       const mag = teljes * arany;
       const talp = racs.magassagPont(ep.x[i], ep.y[i]) + ULES;

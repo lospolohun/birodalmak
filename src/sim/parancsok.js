@@ -26,6 +26,7 @@
 //   { fajta:'beszallas',    egysegek:[…], epulet }           ← v0.4
 //   { fajta:'kiszallas',    csapat, epulet }                 ← v0.4
 //   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
+//   { fajta:'csere',        csapat, ad, kap, mennyiseg }     ← v0.5 (piac kell hozzá)
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -45,7 +46,7 @@ import { fxAtan2 } from './fx.js';
 import { ALLAPOT, TIPUS } from './units.js';
 import { ALAKZAT } from './alakzat.js';
 import { PARANCS, ALLAS } from './parancsallapot.js';
-import { EP_AR, EP_MERET } from './epuletek.js';
+import { EP_AR, EP_MERET, EPULET } from './epuletek.js';
 
 /**
  * Egy parancs végrehajtása. A `Sim._vegrehajt` delegál ide.
@@ -67,6 +68,7 @@ export function vegrehajt(sim, p) {
     case 'beszallas': return beszallas(sim, p);
     case 'kiszallas': return kiszallas(sim, p);
     case 'kepzes': return kepzes(sim, p);
+    case 'csere': return csere(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -369,6 +371,21 @@ function kepzes(sim, p) {
   if (!sim.epuletek.kesz(ep)) return;
   if (sim.epuletek.csapat[ep] !== (p.csapat | 0)) return;
   sim.kepzes.sorba(ep, p.egyseg | 0);
+}
+
+/**
+ * PIACI CSERE. Kell hozzá egy KÉSZ piac — enélkül a parancs elvész.
+ * @param {{csapat:number, ad:number, kap:number, mennyiseg:number}} p
+ */
+function csere(sim, p) {
+  const cs = p.csapat | 0;
+  let vanPiac = false;
+  for (let i = 0; i < sim.epuletek.db; i++) {
+    if (sim.epuletek.csapat[i] === cs && sim.epuletek.kesz(i)
+      && sim.epuletek.tipus[i] === EPULET.PIAC) { vanPiac = true; break; }
+  }
+  if (!vanPiac) return;
+  sim.gazdasag.csere(cs, p.ad | 0, p.kap | 0, p.mennyiseg | 0);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

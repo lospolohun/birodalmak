@@ -25,14 +25,23 @@ export const EPULET = {
   KOZPONT: 0, RAKTAR: 1, FAL: 2, KAPU: 3,
   // v0.5 — a képző épületek és a ház
   HAZ: 4, LAKTANYA: 5, IJASZDA: 6, ISTALLO: 7, OSTROMMUHELY: 8,
+  // v0.5/3 — a védmű és a kereskedelem
+  TORONY: 9, PIAC: 10,
 };
 export const EPULET_NEV = ['központ', 'raktár', 'fal', 'kapu',
-  'ház', 'laktanya', 'íjászda', 'istálló', 'ostromműhely'];
+  'ház', 'laktanya', 'íjászda', 'istálló', 'ostromműhely', 'torony', 'piac'];
 
 /** Alapterület cellában (négyzet). */
-export const EP_MERET = [3, 2, 1, 1, 2, 3, 3, 3, 3];
+export const EP_MERET = [3, 2, 1, 1, 2, 3, 3, 3, 3, 2, 3];
+/**
+ * MAGASSÁG-SZORZÓ a rendernek. A sim SEMMIT nem kezd vele — az alapterületből
+ * dolgozik —, csak a doboz kinézetét állítja: a torony 2×2-es alapon áll, de
+ * ha az alapterületből nőne a magassága is, alacsonyabb lenne a laktanyánál, és
+ * a játékos pont azt nem látná rajta, amiért megépítette. A fal viszont lapos.
+ */
+export const EP_MAGASSAG = [1, 1, 0.75, 0.75, 1, 1, 1, 1, 1, 2.4, 0.9];
 /** Építési idő tickben (20 Hz → a központ 10 mp, a raktár 5 mp, a fal 1,5 mp). */
-const EP_IDO = [200, 100, 30, 60, 100, 250, 250, 250, 300];
+const EP_IDO = [200, 100, 30, 60, 100, 250, 250, 250, 300, 160, 240];
 /** Ára: [étel, fa, kő, kristály]. A központ indulásnál INGYEN jár. */
 export const EP_AR = [
   [0, 250, 100, 0],
@@ -44,15 +53,17 @@ export const EP_AR = [
   [0, 175, 0, 0],     // IJASZDA
   [0, 175, 0, 0],     // ISTALLO
   [0, 200, 100, 0],   // OSTROMMUHELY
+  [0, 50, 125, 0],    // TORONY
+  [0, 175, 0, 0],     // PIAC
 ];
 /** Lerakat-e? Csak a központ és a raktár. */
-const LERAKO = [1, 1, 0, 0, 0, 0, 0, 0, 0];
+const LERAKO = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 /**
  * ÉLETERŐ. A fal sokat bír, de az ostrom-támadás 400 %-ot üt rá (lásd
  * `harc.js` ellensúly-táblája) — a fal tehát nem áttörhetetlen, csak drága
  * módon áttörhető. Pont ez a szerepe.
  */
-const EP_HP = [1200, 400, 900, 700, 550, 800, 800, 800, 800];
+const EP_HP = [1200, 400, 900, 700, 550, 800, 800, 800, 800, 1000, 700];
 
 /**
  * NÉPESSÉG-FÉRŐHELY épületenként (v0.5).
@@ -61,7 +72,7 @@ const EP_HP = [1200, 400, 900, 700, 550, 800, 800, 800, 800];
  * népesség-korlát valódi döntés: aki katonát akar, annak házat is kell
  * építenie, tehát fát költ, amit nem költött laktanyára.
  */
-export const EP_NEPESSEG = [10, 0, 0, 0, 10, 0, 0, 0, 0];
+export const EP_NEPESSEG = [10, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0];
 
 export class Epuletek {
   /**
@@ -98,6 +109,14 @@ export class Epuletek {
      * a roster mellett; addig a kapu egy kézzel nyitható átjáró.
      */
     this.nyitva = new Uint8Array(maxDb);
+    /**
+     * TORONY: hátralévő tick a következő sortűzig (v0.5/3).
+     *
+     * Az épület ugyanúgy „üt", mint egy egység, csak nem mozog — ezért a
+     * számláló ITT van, nem a `harc.js`-ben: az épület saját tulajdonsága,
+     * és az épület-tömbökkel együtt kell nulláznia.
+     */
+    this.lovesHatra = new Int32Array(maxDb);
 
     this.jarhatosagValtozott = false;
   }
@@ -146,6 +165,7 @@ export class Epuletek {
     this.hp[i] = EP_HP[tipus];
     this.elo[i] = 1;
     this.nyitva[i] = 0;
+    this.lovesHatra[i] = 0;
     for (let dy = 0; dy < m; dy++) {
       for (let dx = 0; dx < m; dx++) {
         this.racs.jarhato[this.racs.idx(bx + dx, by + dy)] = 0;
@@ -176,6 +196,7 @@ export class Epuletek {
     this.maxHp.fill(0);
     this.elo.fill(0);
     this.nyitva.fill(0);
+    this.lovesHatra.fill(0);
     this.jarhatosagValtozott = true;
   }
 

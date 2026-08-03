@@ -42,6 +42,9 @@
 //   J                 íjászda  (íjász)                    (v0.5)
 //   I                 istálló  (lovag)                    (v0.5)
 //   O                 ostromműhely (ostromgép)            (v0.5)
+//   Y                 torony   (magától lő, őrséggel többet)  (v0.5/3)
+//   P                 piac     (nyersanyag-csere)          (v0.5/3)
+//   M                 piaci csere: 100 fa → 70 kő          (v0.5/3)
 //   C                 KÉPZÉS a kurzorhoz legközelebbi saját épületben (v0.5)
 //
 // A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
@@ -52,6 +55,7 @@ import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
 import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
 import { NYERS_NEV } from '../sim/eroforras.js';
 import { EPULET, EPULET_NEV } from '../sim/epuletek.js';
+import { NYERS } from '../sim/eroforras.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
 import { TIPUS } from '../sim/units.js';
 
@@ -306,6 +310,26 @@ export class Bevitel {
   }
 
   /**
+   * PIACI CSERE (v0.5/3) — egyetlen billentyűvel: 100 fa → 70 kő.
+   *
+   * Szándékosan a legegyszerűbb változat, mert a v0.5-ben még nincs épület-
+   * panel, ahol fajtát és mennyiséget lehetne választani; az a v0.7 UI-köréé.
+   * Enélkül viszont a piac a JÁTÉKOS számára halott épület lenne: a szonda
+   * járatja, de kézzel senki nem tudná használni.
+   */
+  _csereParancs() {
+    const cs = this.kijeloles.sajatCsapat;
+    let piac = -1;
+    const ep = this.sim.epuletek;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.csapat[i] === cs && ep.kesz(i) && ep.tipus[i] === EPULET.PIAC) { piac = i; break; }
+    }
+    if (piac < 0) { this._uzenet = 'nincs kész piac — a csere elveszne'; return; }
+    this._ad({ fajta: 'csere', csapat: cs, ad: NYERS.FA, kap: NYERS.KO, mennyiseg: 100 });
+    this._uzenet = 'piac: 100 fa → 70 kő';
+  }
+
+  /**
    * A parancsba a kijelölés MÁSOLATA megy, nem maga a tömb. MIÉRT: a parancs
    * `KESLELTETES` tickig a sorban ül, és ha közben átjelölök, a végrehajtás már
    * az ÚJ kijelölésre futna le. Ez a fajta hiba játékban „szellem-parancsként"
@@ -367,6 +391,9 @@ export class Bevitel {
       case 'KeyJ': this._epitParancs(EPULET.IJASZDA); break;
       case 'KeyI': this._epitParancs(EPULET.ISTALLO); break;
       case 'KeyO': this._epitParancs(EPULET.OSTROMMUHELY); break;
+      case 'KeyY': this._epitParancs(EPULET.TORONY); break;
+      case 'KeyP': this._epitParancs(EPULET.PIAC); break;
+      case 'KeyM': this._csereParancs(); break;
       case 'KeyC': this._kepzesParancs(); break;
       case 'KeyK':
         this._ad({ fajta: 'korszak', csapat: this.kijeloles.sajatCsapat });

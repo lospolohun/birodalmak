@@ -38,6 +38,9 @@ export const KORSZAK_AR = [
 /** A váltás hossza tickben (20 Hz): 20, 25, 30 másodperc. */
 const KORSZAK_IDO = [400, 500, 600];
 
+/** A piaci csere aránya SZÁZALÉKBAN: 100 egységből ennyi lesz a másik fajtából. */
+const CSERE_ARANY = 70;
+
 /** Kezdőkészlet — annyi, hogy az első raktár azonnal lerakható legyen. */
 const KEZDO = [200, 200, 100, 0];
 
@@ -54,6 +57,14 @@ export class Gazdasag {
     this.korszakHatra = new Int32Array(this.csapatDb);
     /** Statisztika a jelentésekhez: összesen begyűjtött mennyiség fajtánként. */
     this.osszegyujtott = new Int32Array(this.csapatDb * 4);
+    /**
+     * HALMOZOTT piaci forgalom (v0.5/3): hány csere ment át, és mennyi jött be
+     * belőle. Halmozott, mert a pillanatnyi készlet nem árulja el, hogy a piac
+     * dolgozott-e — egy elköltött csere nyoma azonnal eltűnik a raktárban.
+     */
+    this.csereDb = new Int32Array(this.csapatDb);
+    this.csereKapott = new Int32Array(this.csapatDb);
+    this.csereElutasitva = new Int32Array(this.csapatDb);
 
     for (let cs = 0; cs < this.csapatDb; cs++) {
       for (let f = 0; f < 4; f++) this.keszlet[cs * 4 + f] = KEZDO[f];
@@ -66,6 +77,9 @@ export class Gazdasag {
     this.korszak.fill(0);
     this.korszakHatra.fill(0);
     this.osszegyujtott.fill(0);
+    this.csereDb.fill(0);
+    this.csereKapott.fill(0);
+    this.csereElutasitva.fill(0);
     for (let cs = 0; cs < this.csapatDb; cs++) {
       for (let f = 0; f < 4; f++) this.keszlet[cs * 4 + f] = KEZDO[f];
     }
@@ -149,6 +163,36 @@ export class Gazdasag {
       foglalt += EGYSEG_NEP[e.tipus[i]];
     }
     return { foglalt, max };
+  }
+
+  /**
+   * PIACI CSERE (v0.5/3): adok X-ből, kapok Y-ból — veszteséggel.
+   *
+   * A `CSERE_ARANY` 70 %, vagyis 100 fából 70 kő lesz. A veszteség NEM
+   * szépészet: enélkül a piac végtelen átváltó lenne, és a négy nyersanyag
+   * gyakorlatilag eggyé olvadna — a v0.9 balanszának pedig pont az a lényege,
+   * hogy a kristályt bányászni KELL, nem lehet fából megvenni.
+   *
+   * Egész osztás, tehát determinisztikus, és a lefelé kerekítés is a veszteség
+   * irányába visz — nem teremtünk nyersanyagot.
+   *
+   * @returns {number} a KAPOTT mennyiség, vagy 0 ha nem sikerült
+   */
+  csere(csapat, ad, kap, mennyiseg) {
+    if (csapat < 0 || csapat >= this.csapatDb) return 0;
+    if (ad === kap) return 0;
+    if (ad < 0 || ad > 3 || kap < 0 || kap > 3) return 0;
+    const m = mennyiseg | 0;
+    if (m <= 0) return 0;
+    const o = csapat * 4;
+    if (this.keszlet[o + ad] < m) { this.csereElutasitva[csapat]++; return 0; }
+    const kapott = ((m * CSERE_ARANY) / 100) | 0;
+    if (kapott <= 0) { this.csereElutasitva[csapat]++; return 0; }
+    this.keszlet[o + ad] -= m;
+    this.keszlet[o + kap] += kapott;
+    this.csereDb[csapat]++;
+    this.csereKapott[csapat] += kapott;
+    return kapott;
   }
 
   /** A `Sim` köti be magát, hogy a népesség-számolás elérje az épületeket. */

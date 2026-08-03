@@ -11,12 +11,15 @@
 // jelzőt írjuk át (az a harcé), hanem egy külön `bent` tömböt. Ha a kettőt
 // összevonnánk, a kiszállás feltámasztásnak látszana a harcrendszer felől.
 //
-// ── AMI A v0.4-BEN SZÁNDÉKOSAN NINCS ──────────────────────────────────────
-// A beszállásolt íjász NEM lő ki az épületből. A műfajban ez jár (a torony
-// „megtelik" nyilakkal), de az önálló mechanika: célkeresés az épület
-// pozíciójából, saját hatótávval, saját ütemmel. A v0.5 roster hozza a
-// tornyot, és ott lesz értelme egyben megcsinálni — félig előrehozva csak egy
-// második, párhuzamos harc-ág lenne.
+// ── A TORONY MEGTELIK NYILAKKAL (v0.5/3) ──────────────────────────────────
+// A v0.4-ben a beszállásolt egység semmit nem csinált. A v0.5/3 tornya ezt
+// beváltja: a TORONY magától is lő, és MINDEN benne álló egység EGGYEL több
+// nyilat ad a sortűzhöz (`harc.js` → `_tornyokLonek`). Ettől lesz a
+// beszállásolás valódi döntés, nem csak bújás.
+//
+// A többi épületben ülő egység továbbra sem lő ki — ott a beszállásolás tiszta
+// védelem. Ez szándékos: ha minden épület lőne, a falak mögé húzódás mindig
+// jobb lenne, mint a manőverezés.
 //
 // ── AZ ÉPÜLET PUSZTULÁSA MEGÖLI A BENT LÉVŐKET ────────────────────────────
 // Ez nem büntetés, hanem a mechanika ára: a beszállásolás védelmet ad (a bent
@@ -31,7 +34,7 @@ import { EPULET } from './epuletek.js';
  * abba nincs mit beszállásolni —, és az istállóba meg az ostromműhelybe sem
  * menekül gyalogos (ott nincs hova).
  */
-const KAPACITAS = [15, 5, 0, 0, 8, 10, 10, 0, 0];
+const KAPACITAS = [15, 5, 0, 0, 8, 10, 10, 0, 0, 5, 0];
 
 /** Ennél közelebb az egység már be tud lépni az épületbe. */
 const BELEPES_TAV = 2.4;

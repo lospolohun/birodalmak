@@ -259,8 +259,13 @@ const FORGATOKONYVEK = {
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
   v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
   v05: {
-    nev: 'v0.5 építkezés és egység-képzés', tickek: ervSzam('v05tick', 5000),
+    nev: 'v0.5 építkezés és egység-képzés', tickek: ervSzam('v05tick', 12000),
     egysegSzam: 60,
+    // Minden MÁSODIK egység munkás. A négyelt alapfelállás mérve csapatonként
+    // 7 munkást adott, és annyiból a piac (175 fa) sosem épült fel — piac
+    // nélkül nincs kő, kő nélkül nincs torony, vagyis a v0.5/3 két új
+    // alrendszere a determinizmus-kapun KÍVÜL maradt volna.
+    felallas: { munkasMinden: 2 },
     fut: (sim, kor) => sim.szondaParancsV05(kor),
   },
   v04: {
@@ -757,8 +762,13 @@ if (ketV05.ok) {
 {
   const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
   const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
-  const kezdo = s.szondaFelallas(FORGATOKONYVEK.v05.egysegSzam);
-  for (let t = 1; t <= 6000; t++) {
+  const kezdo = s.szondaFelallas(FORGATOKONYVEK.v05.egysegSzam, FORGATOKONYVEK.v05.felallas);
+  // UGYANANNYI TICK, mint a determinizmus-kör: ami itt lefut, annak ott is le
+  // KELL futnia. Ha a működés-szám hosszabb futásból jönne, épp azt a hamis
+  // biztonságot adná, ami ellen az egész vizsgálat szól — a torony és a piac
+  // „működik", de a kapu sosem látta őket.
+  const V05_TICK = FORGATOKONYVEK.v05.tickek;
+  for (let t = 1; t <= V05_TICK; t++) {
     if ((t % PARANCS_KOZ) === 0) s.szondaParancsV05((t / PARANCS_KOZ) | 0);
     s.lep();
   }
@@ -770,6 +780,52 @@ if (ketV05.ok) {
   sor('képző épület', k0.kepzo + ' / ' + k1.kepzo, 'épület összesen: ' + s.epuletek.db);
   sor('elutasított sorbaállás', s.kepzes.elutasitva[0] + ' / ' + s.kepzes.elutasitva[1],
     '(nem telik, tele a sor, vagy nincs népesség)');
+
+  // v0.5/3 — a torony és a piac SAJÁT működés-száma. Halmozott, nem
+  // pillanatnyi: a beszállásolásnál (v0.4) pont az bukott meg, hogy a
+  // pillanatnyi szám nullát mutatott akkor is, amikor az ág lefutott.
+  let tornyok = 0, piacok = 0;
+  for (let i = 0; i < s.epuletek.db; i++) {
+    if (!s.epuletek.kesz(i)) continue;
+    if (s.epuletek.tipus[i] === 9) tornyok++;
+    else if (s.epuletek.tipus[i] === 10) piacok++;
+  }
+  const sortuz = s.harc.toronySortuz[0] + s.harc.toronySortuz[1];
+  const nyil = s.harc.toronyNyil[0] + s.harc.toronyNyil[1];
+  const cserek = s.gazdasag.csereDb[0] + s.gazdasag.csereDb[1];
+  sor('kész torony / piac', tornyok + ' / ' + piacok, 'mindkét csapaté együtt');
+  sor('torony-sortűz', s.harc.toronySortuz[0] + ' / ' + s.harc.toronySortuz[1],
+    'kilőtt nyíl: ' + nyil + ' (üres torony = pontosan 1/sortűz)');
+  sor('piaci csere', s.gazdasag.csereDb[0] + ' / ' + s.gazdasag.csereDb[1],
+    'kapott nyersanyag: ' + (s.gazdasag.csereKapott[0] + s.gazdasag.csereKapott[1])
+    + ', elutasítva: ' + (s.gazdasag.csereElutasitva[0] + s.gazdasag.csereElutasitva[1]));
+
+  if (cserek === 0) {
+    console.log('\n  ⛔ EGYETLEN PIACI CSERE SEM MENT ÁT: a v0.5/3 piac-ága néma.');
+    console.log('     A csere adja a követ a toronyhoz — ha ez áll, minden utána is áll.');
+    console.log('     Nézd meg, épül-e a PIAC, és van-e elég fa a `csere` pillanatában.');
+    bukas++;
+  }
+  if (tornyok === 0) {
+    console.log('\n  ⛔ NEM ÉPÜLT TORONY: a kőre nem futotta, vagy a hely foglalt.');
+    bukas++;
+  } else if (sortuz === 0) {
+    console.log('\n  ⛔ A TORONY ÁLL, DE SOHA NEM LŐTT: a sortűz-ág ki sem futott.');
+    console.log('     A determinizmus-kapu ettől zöld — egy néma torony is');
+    console.log('     reprodukálható. Nézd meg a `TORONY_HATOTAV`-ot és azt, hogy');
+    console.log('     a támadó sereg tényleg a torony mellett megy-e el.');
+    bukas++;
+  } else if (nyil === sortuz) {
+    // PONTOSAN egy nyíl sortüzenként = a torony végig ÜRES volt. A lövés
+    // önmagában lefutott, de a v0.5/3 lényege — hogy a beszállásolás végre
+    // TÖBBET ad a bújásnál — nem. Egy szám különbsége, és a legfrissebb ág
+    // marad a kapun kívül.
+    console.log('\n  ⛔ MINDEN SORTŰZ PONTOSAN EGY NYÍL: a torony sosem volt megrakva,');
+    console.log('     tehát a beszállásolási bónusz ága ki sem futott.');
+    console.log('     Nézd meg a `_szondaToronyOrseg`-et és a `KAPACITAS[TORONY]`-t.');
+    bukas++;
+  }
+
   if (k0.keszult + k1.keszult === 0) {
     console.log('\n  \u26d4 NEM SZÜLETETT EGYSÉG: a v0.5 képzés-ága ki sem futott.');
     console.log('     A determinizmus-kapu ettől még zöld — a néma elutasítás is');
