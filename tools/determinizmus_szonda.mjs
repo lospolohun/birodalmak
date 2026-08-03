@@ -258,6 +258,11 @@ const FORGATOKONYVEK = {
   v01: { nev: 'v0.1 menet-parancs', tickek: TICKEK, fut: (sim) => sim.szondaParancs() },
   v02: { nev: 'v0.2 teljes parancs-felület', tickek: V02_TICKEK, fut: (sim, kor) => sim.szondaParancsV02(kor) },
   v03: { nev: 'v0.3 gazdaság', tickek: V03_TICKEK, fut: (sim, kor) => sim.szondaParancsV03(kor) },
+  v05: {
+    nev: 'v0.5 építkezés és egység-képzés', tickek: ervSzam('v05tick', 5000),
+    egysegSzam: 60,
+    fut: (sim, kor) => sim.szondaParancsV05(kor),
+  },
   v04: {
     nev: 'v0.4 harc', tickek: V04_TICKEK,
     // Csapatonként 30 ostromgép — enélkül a v0.4/6 ága ki sem futna.
@@ -271,7 +276,10 @@ function ujSim(fk) {
   const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
   // A forgatókönyv megadhat FELÁLLÁS-beállítást. A v0.1-é üres marad: az a
   // motor-mag regresszió-őre, és a mérési alapja sem változhat.
-  const db = s.szondaFelallas(EGYSEG, fk && fk.felallas);
+  // A forgatókönyv felülírhatja az egységszámot. A v0.5-nek KIS sereg kell:
+  // 1600 egység önmagában 800 népesség csapatonként, és ott a képzés MINDIG
+  // elutasításba futna — vagyis a legfrissebb kód maradna a kapun kívül.
+  const db = s.szondaFelallas((fk && fk.egysegSzam) || EGYSEG, fk && fk.felallas);
   return { sim: s, db };
 }
 
@@ -703,6 +711,77 @@ if (ketV04.ok) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 8) v0.5 ÉPÍTKEZÉS ÉS EGYSÉG-KÉPZÉS
+// ════════════════════════════════════════════════════════════════════════════
+//
+// MIÉRT KÜLÖN, ÉS MIÉRT KIS SEREGGEL: itt SZÜLETIK egység, tehát itt fut a
+// slot-újrahasznosítás és a generációs számláló. A v0.1 stressz-felállása 1600
+// egységet tesz ki (800 népesség csapatonként), ott a képzés MINDIG
+// elutasításba futna — a legfrissebb kód maradna a kapun kívül. Ezért ez a kör
+// 60 egységgel indul.
+//
+// A kör egyben a legegyszerűbb valódi BUILD ORDER is: gyűjtés → ház → laktanya
+// → képzés. A v0.6 AI-ja ezt a mintát fogja bővíteni.
+cim('8) v0.5 ÉPÍTKEZÉS ÉS EGYSÉG-KÉPZÉS — két friss Sim');
+const t8 = Date.now();
+const ketV05 = ketFutas(FORGATOKONYVEK.v05);
+let kevertV05 = { ok: false, tick: 0, a: 0, b: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v05.nev);
+sor('kezdő egységszám', FORGATOKONYVEK.v05.egysegSzam, '(a népesség-korlát miatt kicsi)');
+sor('lefutott tick', ketV05.tick, '(' + ((Date.now() - t8) / 1000).toFixed(1) + ' mp)');
+if (ketV05.ok) {
+  sor('két futás', 'AZONOS', (FORGATOKONYVEK.v05.tickek / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV05.hashek.get(FORGATOKONYVEK.v05.tickek).toString(16).padStart(8, '0'));
+  kevertV05 = kevertFutas(ketV05.hashek, FORGATOKONYVEK.v05);
+  if (kevertV05.ok) {
+    sor('kevert futás', 'AZONOS', 'a tiszta futás sorozatával');
+    console.log('\n  \u2713 A képzés is determinisztikus: a sorbanállás, a népesség-korlát');
+    console.log('    és a slot-újrahasznosítás bitre reprodukálható.');
+  } else {
+    console.log('\n  \u26d4 ELTÉRÉS a(z) ' + kevertV05.tick + '. ticken a KEVERT futásban.');
+    bukas++;
+  }
+} else {
+  console.log('\n  \u26d4 DESYNC a(z) ' + ketV05.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV05.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV05.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     ELSŐNEK NÉZD MEG: a `kepzes.js` sor-léptetését és a');
+  console.log('     `Egysegek.hozzaad()` szabad-lista sorrendjét. A slot-kiosztás');
+  console.log('     a halálok sorrendjéből következik — ha az elcsúszik, minden elcsúszik.');
+  bukas++;
+}
+
+// SZÜLETETT-E EGYÁLTALÁN EGYSÉG? A determinizmus-kapu erre sem felel: egy
+// néma, elutasításba futó képzés is tökéletesen reprodukálható.
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  const kezdo = s.szondaFelallas(FORGATOKONYVEK.v05.egysegSzam);
+  for (let t = 1; t <= 6000; t++) {
+    if ((t % PARANCS_KOZ) === 0) s.szondaParancsV05((t / PARANCS_KOZ) | 0);
+    s.lep();
+  }
+  const k0 = s.kepzes.osszesites(0), k1 = s.kepzes.osszesites(1);
+  const n0 = s.gazdasag.allapot(0), n1 = s.gazdasag.allapot(1);
+  console.log('');
+  sor('kiképzett egység', k0.keszult + ' / ' + k1.keszult, 'csapatonként (indulás: ' + kezdo + ' összesen)');
+  sor('népesség', n0.nepesseg + '/' + n0.nepessegMax + '  ·  ' + n1.nepesseg + '/' + n1.nepessegMax);
+  sor('képző épület', k0.kepzo + ' / ' + k1.kepzo, 'épület összesen: ' + s.epuletek.db);
+  sor('elutasított sorbaállás', s.kepzes.elutasitva[0] + ' / ' + s.kepzes.elutasitva[1],
+    '(nem telik, tele a sor, vagy nincs népesség)');
+  if (k0.keszult + k1.keszult === 0) {
+    console.log('\n  \u26d4 NEM SZÜLETETT EGYSÉG: a v0.5 képzés-ága ki sem futott.');
+    console.log('     A determinizmus-kapu ettől még zöld — a néma elutasítás is');
+    console.log('     reprodukálható. Nézd meg a népesség-korlátot és a nyersanyagot.');
+    bukas++;
+  }
+  if (k0.kepzo === 0 && k1.kepzo === 0) {
+    console.log('\n  \u26d4 NEM ÉPÜLT KÉPZŐ ÉPÜLET: a laktanya/íjászda ága ki sem futott.');
+    bukas++;
+  }
+}
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -718,6 +797,9 @@ sor('6) v0.3 gazdaság',
 sor('7) v0.4 harc',
   ketV04.ok ? (kevertV04.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV04.tick + ')')
     : 'BUKOTT (tick ' + ketV04.tick + ')');
+sor('8) v0.5 képzés',
+  ketV05.ok ? (kevertV05.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV05.tick + ')')
+    : 'BUKOTT (tick ' + ketV05.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

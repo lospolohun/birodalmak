@@ -36,6 +36,7 @@ import { Munkasok, MUNKA } from './munkas.js';
 import { Harc, TAMADAS, PANCEL } from './harc.js';
 import { Lovedekek } from './lovedek.js';
 import { Beszallas } from './beszallas.js';
+import { Kepzes } from './kepzes.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -87,6 +88,10 @@ export class Sim {
     this.beszallas = new Beszallas(this.maxEgyseg, this);
     this.egysegek.bent = this.beszallas.bent;
 
+    // ── v0.5: egység-képzés ─────────────────────────────────────────────
+    this.kepzes = new Kepzes(this.epuletek.maxDb, this);
+    this.gazdasag.kotSim(this);
+
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -131,6 +136,7 @@ export class Sim {
     }
     this.epuletek.lep();
     this.gazdasag.lep();
+    this.kepzes.lep();
     this.egysegek.lep(this.tick, this._tickHorog);
     this._mezoErvenytelenites();
     this.tick++;
@@ -244,6 +250,7 @@ export class Sim {
     this.parancsAllapot.nullaz(e.db);
     this.lovedekek.nullaz();
     this.beszallas.nullaz();
+    this.kepzes.nullaz();
 
     // A munkás nem katona: alapból TŰZSZÜNETBEN áll. Enélkül az agresszív
     // alapállás miatt az első ellenség láttán otthagyná a bányát és rohanna
@@ -623,6 +630,91 @@ export class Sim {
     }
   }
 
+  /**
+   * v0.5 SZONDA-FORGATÓKÖNYV — gazdaság + építkezés + EGYSÉG-KÉPZÉS.
+   *
+   * ⚠️ KIS KEZDŐSEREGGEL FUT (lásd a szonda `egysegSzam` beállítását). A v0.1
+   * stressz-felállása 1600 egységet tesz ki, ami önmagában 800 népesség
+   * csapatonként — a képzés ott MINDIG elutasításba futna, és a v0.5 ága ki sem
+   * futna. Ez ugyanaz a csapda, mint a v0.4-es falnál: ha a parancs csendben
+   * elvész, a legfrissebb kód marad a kapun kívül.
+   *
+   * A kör: gyűjtés → ház (népesség) → laktanya → képzés. Ez egyben a
+   * legegyszerűbb valódi build order is, tehát a v0.6 AI-jának mintája.
+   *
+   * @param {number} kor
+   */
+  szondaParancsV05(kor) {
+    const e = this.egysegek;
+    for (let cs = 0; cs < 2; cs++) {
+      const bx = cs === 0 ? this.n * 0.22 : this.n * 0.78;
+      const by = this.n * 0.5;
+      let kozp = -1;
+      for (let k = 0; k < this.epuletek.db; k++) {
+        if (this.epuletek.csapat[k] === cs && this.epuletek.el(k)
+          && this.epuletek.tipus[k] === EPULET.KOZPONT) { kozp = k; break; }
+      }
+      if (kozp < 0) continue;
+
+      const munkasok = [];
+      for (let i = 0; i < e.db; i++) {
+        if (e.csapat[i] === cs && e.tipus[i] === TIPUS.MUNKAS && this.harc.elo[i]) munkasok.push(i);
+      }
+
+      switch (kor % 5) {
+        case 0: {
+          // Gyűjtés: fele ételre, fele fára — a ház és a laktanya fából van,
+          // a képzés viszont ételt is kér.
+          const etel = munkasok.filter((_, k) => (k & 1) === 0);
+          const fa = munkasok.filter((_, k) => (k & 1) === 1);
+          for (const [resz, ny] of [[etel, NYERS.ETEL], [fa, NYERS.FA]]) {
+            if (!resz.length) continue;
+            const node = this.eroforrasok.keres(ny, bx, by, 90);
+            if (node >= 0) {
+              this.parancs({
+                fajta: 'gyujt', egysegek: resz,
+                x: this.eroforrasok.x[node], y: this.eroforrasok.y[node], nyers: ny,
+              });
+            }
+          }
+          break;
+        }
+        case 1:
+          // Négy ház: +40 népesség. Enélkül nincs mit képezni.
+          for (let k = 0; k < 4; k++) {
+            this.parancs({
+              fajta: 'epit', csapat: cs, tipus: EPULET.HAZ,
+              x: (bx | 0) + 6 + k * 3, y: (by | 0) - 8,
+            });
+          }
+          break;
+        case 2:
+          this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.LAKTANYA, x: (bx | 0) + 7, y: (by | 0) + 7 });
+          break;
+        case 3:
+          this.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.IJASZDA, x: (bx | 0) - 7, y: (by | 0) + 7 });
+          break;
+        default: {
+          // KÉPZÉS minden képző épületben. A `Kepzes` dönt arról, telik-e és
+          // van-e népesség — a parancs csak sorba állít.
+          for (let k = 0; k < this.epuletek.db; k++) {
+            if (this.epuletek.csapat[k] !== cs || !this.epuletek.kesz(k)) continue;
+            const t = this.epuletek.tipus[k];
+            let egyseg = -1;
+            if (t === EPULET.KOZPONT) egyseg = TIPUS.MUNKAS;
+            else if (t === EPULET.LAKTANYA) egyseg = TIPUS.LANDZSAS;
+            else if (t === EPULET.IJASZDA) egyseg = TIPUS.IJASZ;
+            if (egyseg < 0) continue;
+            for (let n = 0; n < 3; n++) {
+              this.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg });
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -712,6 +804,12 @@ export class Sim {
       h = fnvSzam(h, ep.hp[i]);
       h = fnvSzam(h, ep.elo[i]);
       h = fnvSzam(h, ep.nyitva[i]);
+      // v0.5 — a képzési sor is a világ állapota: eldönti, mikor és mi születik.
+      h = fnvSzam(h, this.kepzes.sorDb[i]);
+      h = fnvSzam(h, this.kepzes.hatra[i]);
+      for (let k = 0; k < this.kepzes.sorDb[i]; k++) {
+        h = fnvSzam(h, this.kepzes.sor[i * 8 + k]);
+      }
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);

@@ -25,6 +25,7 @@
 //   { fajta:'kapu',         csapat, epulet, nyit }           ← v0.4
 //   { fajta:'beszallas',    egysegek:[…], epulet }           ← v0.4
 //   { fajta:'kiszallas',    csapat, epulet }                 ← v0.4
+//   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -65,6 +66,7 @@ export function vegrehajt(sim, p) {
     case 'kapu': return kapu(sim, p);
     case 'beszallas': return beszallas(sim, p);
     case 'kiszallas': return kiszallas(sim, p);
+    case 'kepzes': return kepzes(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -355,6 +357,18 @@ function kiszallas(sim, p) {
   if (!sim.epuletek.el(ep)) return;
   if (sim.epuletek.csapat[ep] !== (p.csapat | 0)) return;
   sim.beszallas.mindKi(ep);
+}
+
+/**
+ * EGYSÉG-KÉPZÉS sorba állítása. A `Kepzes` dönt mindenről: képezheti-e az
+ * épület, van-e hely a sorban, van-e népesség-férőhely, és telik-e rá.
+ * @param {{csapat:number, epulet:number, egyseg:number}} p
+ */
+function kepzes(sim, p) {
+  const ep = p.epulet | 0;
+  if (!sim.epuletek.kesz(ep)) return;
+  if (sim.epuletek.csapat[ep] !== (p.csapat | 0)) return;
+  sim.kepzes.sorba(ep, p.egyseg | 0);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

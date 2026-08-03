@@ -21,28 +21,47 @@
 // hogy a hely szabad-e (`lerakhato`). Ez a játékos dolga, nem a simé — és így
 // nincs olyan ág, ami egységet mozgatna parancs nélkül.
 
-export const EPULET = { KOZPONT: 0, RAKTAR: 1, FAL: 2, KAPU: 3 };
-export const EPULET_NEV = ['központ', 'raktár', 'fal', 'kapu'];
+export const EPULET = {
+  KOZPONT: 0, RAKTAR: 1, FAL: 2, KAPU: 3,
+  // v0.5 — a képző épületek és a ház
+  HAZ: 4, LAKTANYA: 5, IJASZDA: 6, ISTALLO: 7, OSTROMMUHELY: 8,
+};
+export const EPULET_NEV = ['központ', 'raktár', 'fal', 'kapu',
+  'ház', 'laktanya', 'íjászda', 'istálló', 'ostromműhely'];
 
 /** Alapterület cellában (négyzet). */
-export const EP_MERET = [3, 2, 1, 1];
+export const EP_MERET = [3, 2, 1, 1, 2, 3, 3, 3, 3];
 /** Építési idő tickben (20 Hz → a központ 10 mp, a raktár 5 mp, a fal 1,5 mp). */
-const EP_IDO = [200, 100, 30, 60];
+const EP_IDO = [200, 100, 30, 60, 100, 250, 250, 250, 300];
 /** Ára: [étel, fa, kő, kristály]. A központ indulásnál INGYEN jár. */
 export const EP_AR = [
   [0, 250, 100, 0],
   [0, 90, 0, 0],
   [0, 0, 12, 0],
   [0, 20, 30, 0],
+  [0, 30, 0, 0],      // HAZ
+  [0, 150, 0, 0],     // LAKTANYA
+  [0, 175, 0, 0],     // IJASZDA
+  [0, 175, 0, 0],     // ISTALLO
+  [0, 200, 100, 0],   // OSTROMMUHELY
 ];
-/** Lerakat-e? A fal és a kapu nyilván nem. */
-const LERAKO = [1, 1, 0, 0];
+/** Lerakat-e? Csak a központ és a raktár. */
+const LERAKO = [1, 1, 0, 0, 0, 0, 0, 0, 0];
 /**
  * ÉLETERŐ. A fal sokat bír, de az ostrom-támadás 400 %-ot üt rá (lásd
  * `harc.js` ellensúly-táblája) — a fal tehát nem áttörhetetlen, csak drága
  * módon áttörhető. Pont ez a szerepe.
  */
-const EP_HP = [1200, 400, 900, 700];
+const EP_HP = [1200, 400, 900, 700, 550, 800, 800, 800, 800];
+
+/**
+ * NÉPESSÉG-FÉRŐHELY épületenként (v0.5).
+ *
+ * A ház az egyetlen, aminek CSAK ez a szerepe — és pont ettől lesz a
+ * népesség-korlát valódi döntés: aki katonát akar, annak házat is kell
+ * építenie, tehát fát költ, amit nem költött laktanyára.
+ */
+export const EP_NEPESSEG = [10, 0, 0, 0, 10, 0, 0, 0, 0];
 
 export class Epuletek {
   /**

@@ -85,7 +85,13 @@ közöttük — azt előbb olvasd el, mint a kódot.
 A determinizmus-szonda nem magától találja meg az új kódot: forgatókönyvekből
 dolgozik. A v0.1-es kör (`szondaParancs`) csak a `menet`-et járatja, a v0.2-es
 (`szondaParancsV02`) a teljes irányítás-felületet, a v0.3-as
-(`szondaParancsV03`) a gazdaságot. **Ha új parancsot adsz hozzá, vedd bele a
+(`szondaParancsV03`) a gazdaságot, a v0.4-es (`szondaParancsV04`) a harcot, az
+v0.5-ös (`szondaParancsV05`) az építkezést és a képzést.
+
+⚠️ A forgatókönyv a FELÁLLÁST is megszabhatja (`fk.egysegSzam`, `fk.felallas`).
+A v0.5-nek erre szüksége is van: a v0.1 stressz-felállása 1600 egységet tesz ki,
+ami 800 népesség csapatonként — ott a képzés MINDIG elutasításba futna, és az ág
+ki sem futna. **Ha új parancsot adsz hozzá, vedd bele a
 forgatókönyvbe is** — különben a legfrissebb, tehát legkockázatosabb kód marad a
 kapun kívül, és a zöld szonda hamis biztonságérzetet ad.
 

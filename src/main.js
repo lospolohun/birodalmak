@@ -171,7 +171,9 @@ class Jatek {
       '\n' + this.bevitel.gazdasagSzoveg() +
       '\n' + this.bevitel.hudSzoveg() +
       '\nbal: kijelölés · jobb: menet vagy gyűjtés · Shift+jobb / T: támadó menet · '
-      + 'X: állj · H: tartás · F: alakzat · G: állás · B: raktár · K: korszak · Ctrl+1..0: csoport';
+      + 'X: állj · H: tartás · F: alakzat · G: állás · K: korszak · Ctrl+1..0: csoport' +
+      '\népítés a kurzorhoz: B raktár · N ház · L laktanya · J íjászda · I istálló · O ostromműhely'
+      + '  ·  C: képzés a legközelebbi saját épületben';
   }
 
   // ── A szonda felülete ────────────────────────────────────────────────

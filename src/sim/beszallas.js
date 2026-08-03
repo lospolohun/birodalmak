@@ -28,9 +28,10 @@ import { EPULET } from './epuletek.js';
 
 /**
  * Hány egység fér be épülettípusonként. A fal és a kapu nem fogad senkit —
- * abba nincs mit beszállásolni.
+ * abba nincs mit beszállásolni —, és az istállóba meg az ostromműhelybe sem
+ * menekül gyalogos (ott nincs hova).
  */
-const KAPACITAS = [15, 5, 0, 0];
+const KAPACITAS = [15, 5, 0, 0, 8, 10, 10, 0, 0];
 
 /** Ennél közelebb az egység már be tud lépni az épületbe. */
 const BELEPES_TAV = 2.4;

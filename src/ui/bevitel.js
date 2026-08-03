@@ -37,6 +37,12 @@
 //   Ctrl + 1..9, 0    csoport mentése
 //   B                 raktár lerakása a kurzor alá        (v0.3)
 //   K                 korszakváltás indítása              (v0.3)
+//   N                 ház      (népesség +10)             (v0.5)
+//   L                 laktanya (lándzsás)                 (v0.5)
+//   J                 íjászda  (íjász)                    (v0.5)
+//   I                 istálló  (lovag)                    (v0.5)
+//   O                 ostromműhely (ostromgép)            (v0.5)
+//   C                 KÉPZÉS a kurzorhoz legközelebbi saját épületben (v0.5)
 //
 // A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
 // nyersanyagra kattintva gyűjtés, minden más esetben menet.
@@ -45,7 +51,7 @@ import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
 import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
 import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
 import { NYERS_NEV } from '../sim/eroforras.js';
-import { EPULET } from '../sim/epuletek.js';
+import { EPULET, EPULET_NEV } from '../sim/epuletek.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
 import { TIPUS } from '../sim/units.js';
 
@@ -256,14 +262,47 @@ export class Bevitel {
     return false;
   }
 
-  /** Raktár lerakása a kurzor alá. Az árat és a helyet a sim ellenőrzi. */
-  _epitParancs() {
+  /** Épület lerakása a kurzor alá. Az árat és a helyet a sim ellenőrzi. */
+  _epitParancs(tipus) {
     const p = this._celPont(this._mostX, this._mostY);
     if (!p) return;
     this._ad({
       fajta: 'epit', csapat: this.kijeloles.sajatCsapat,
-      tipus: EPULET.RAKTAR, x: p.x, y: p.y,
+      tipus, x: p.x, y: p.y,
     });
+    this._uzenet = EPULET_NEV[tipus] + ' — lerakva (ha telt rá és szabad a hely)';
+  }
+
+  /**
+   * KÉPZÉS a kurzorhoz legközelebbi SAJÁT, kész épületben.
+   *
+   * MIÉRT ÍGY, ÉS NEM ÉPÜLET-KIJELÖLÉSSEL: az épület-kijelölés önálló UI-réteg
+   * (kattintható épület, panel, gombsor), és az a v0.7-es rendes HUD dolga. Egy
+   * gombhoz kötött „a kurzor alatti épület képez" viszont MOST teszi
+   * kipróbálhatóvá a v0.5-öt — enélkül a képzés csak a szondából volna látható.
+   */
+  _kepzesParancs() {
+    const p = this._celPont(this._mostX, this._mostY);
+    if (!p) return;
+    const ep = this.sim.epuletek;
+    const cs = this.kijeloles.sajatCsapat;
+    let legjobb = -1, legjobbD2 = 40 * 40;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.csapat[i] !== cs || !ep.kesz(i)) continue;
+      const dx = ep.x[i] - p.x, dy = ep.y[i] - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
+    }
+    if (legjobb < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
+    // Mit képez ez az épület? A `Kepzes` tudja — végigpróbáljuk az öt típust.
+    for (let t = 0; t < 5; t++) {
+      if (this.sim.kepzes.kepezheti(ep.tipus[legjobb], t)) {
+        this._ad({ fajta: 'kepzes', csapat: cs, epulet: legjobb, egyseg: t });
+        this._uzenet = EPULET_NEV[ep.tipus[legjobb]] + ' — sorba állítva';
+        return;
+      }
+    }
+    this._uzenet = EPULET_NEV[ep.tipus[legjobb]] + ' nem képez egységet';
   }
 
   /**
@@ -322,9 +361,13 @@ export class Bevitel {
           this._ad({ fajta: 'allas', egysegek: this._masolat(), allas: this.allas });
         }
         break;
-      case 'KeyB':
-        this._epitParancs();
-        break;
+      case 'KeyB': this._epitParancs(EPULET.RAKTAR); break;
+      case 'KeyN': this._epitParancs(EPULET.HAZ); break;
+      case 'KeyL': this._epitParancs(EPULET.LAKTANYA); break;
+      case 'KeyJ': this._epitParancs(EPULET.IJASZDA); break;
+      case 'KeyI': this._epitParancs(EPULET.ISTALLO); break;
+      case 'KeyO': this._epitParancs(EPULET.OSTROMMUHELY); break;
+      case 'KeyC': this._kepzesParancs(); break;
       case 'KeyK':
         this._ad({ fajta: 'korszak', csapat: this.kijeloles.sajatCsapat });
         break;
@@ -389,6 +432,7 @@ export class Bevitel {
     const a = this.sim.gazdasag.allapot(cs);
     const m = this.sim.munkasok.osszesites(cs);
     const h = this.sim.harc.osszesites();
+    const k = this.sim.kepzes.osszesites(cs);
     return NYERS_NEV[0] + ' ' + a.etel
       + ' · ' + NYERS_NEV[1] + ' ' + a.fa
       + ' · ' + NYERS_NEV[2] + ' ' + a.ko
@@ -396,7 +440,10 @@ export class Bevitel {
       + '  |  ' + KORSZAK_NEV[a.korszak]
       + (a.valtasHatra ? ' → vált (' + Math.ceil(a.valtasHatra / 20) + ' mp)' : '')
       + '  |  dolgozó munkás: ' + m.dolgozik
-      + '  |  élő: ' + h.elo[cs] + ' (elesett ' + h.halottak[cs] + ')';
+      + '  |  nép: ' + a.nepesseg + '/' + a.nepessegMax
+      + '  |  élő: ' + h.elo[cs] + ' (elesett ' + h.halottak[cs] + ')'
+      + '  |  sorban: ' + k.sorban + ' (kész: ' + k.keszult + ')'
+      + (this._uzenet ? '  |  ' + this._uzenet : '');
   }
 
   /** Újrafelállás után a kijelölés és a csoportok takarítása. */

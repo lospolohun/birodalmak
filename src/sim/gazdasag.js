@@ -19,6 +19,8 @@
 // gazdaság egyirányú, és egy desync-vadászatnál ez sokat ér.
 
 import { NYERS } from './eroforras.js';
+import { EP_NEPESSEG } from './epuletek.js';
+import { EGYSEG_NEP, NEPESSEG_PLAFON } from './kepzes.js';
 
 export const KORSZAK = { SOTET: 0, HAJNAL: 1, KRISTALY: 2, FENY: 3 };
 export const KORSZAK_NEV = ['sötét kor', 'hajnal kora', 'kristály kora', 'fény kora'];
@@ -115,10 +117,50 @@ export class Gazdasag {
     }
   }
 
+  /**
+   * NÉPESSÉG: mennyi a férőhely, és mennyi fogyott el (v0.5).
+   *
+   * Szándékosan NEM tárolt szám, hanem tickenként újraszámolt. A tárolt
+   * számlálót minden halál, születés, épület-pusztulás és beszállásolás
+   * karban kellene tartani; egyetlen kimaradó ág pedig olyan hibát ad, ami
+   * hónapokig lappang (a játékos „tele van", pedig nincs). Néhány száz egység
+   * és néhány tucat épület végigszámolása elhanyagolható a mozgás mellett.
+   *
+   * @param {number} csapat
+   * @param {import('./sim.js').Sim} [sim] ha nincs, a bekötött sim
+   */
+  nepessegAllapot(csapat, sim) {
+    const s = sim || this._sim;
+    if (!s) return { foglalt: 0, max: 0 };
+    let max = 0;
+    const ep = s.epuletek;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.elo[i] === 0 || ep.csapat[i] !== csapat) continue;
+      if (ep.epulHatra[i] !== 0) continue;     // a félkész ház még nem ad helyet
+      max += EP_NEPESSEG[ep.tipus[i]];
+    }
+    if (max > NEPESSEG_PLAFON) max = NEPESSEG_PLAFON;
+
+    let foglalt = 0;
+    const e = s.egysegek;
+    for (let i = 0; i < e.db; i++) {
+      if (e.csapat[i] !== csapat) continue;
+      if (s.harc && s.harc.elo[i] === 0) continue;
+      foglalt += EGYSEG_NEP[e.tipus[i]];
+    }
+    return { foglalt, max };
+  }
+
+  /** A `Sim` köti be magát, hogy a népesség-számolás elérje az épületeket. */
+  kotSim(sim) { this._sim = sim; }
+
   /** Olvasható pillanatkép a HUD-nak és a jelentéseknek. */
   allapot(csapat) {
     const o = csapat * 4;
+    const nep = this.nepessegAllapot(csapat);
     return {
+      nepesseg: nep.foglalt,
+      nepessegMax: nep.max,
       etel: this.keszlet[o + NYERS.ETEL],
       fa: this.keszlet[o + NYERS.FA],
       ko: this.keszlet[o + NYERS.KO],

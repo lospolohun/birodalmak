@@ -74,9 +74,18 @@ céljával vagy rakományával születne meg.
 | szakasz | tartalom | állapot |
 |---|---|---|
 | v0.5/1 | slot-újrahasznosítás generációs számlálóval | **kész** |
-| v0.5/2 | egység-képzés (laktanya, sorbanállás, népesség) | hátravan |
-| v0.5/3 | épület-roster | hátravan |
+| v0.5/2 | egység-képzés (laktanya, sorbanállás, népesség) | **kész** |
+| v0.5/3 | épület-roster | **részben** — 9 épülettípus áll, a torony és a piac hátravan |
 | v0.5/4 | technológiafa | hátravan |
+
+A képzés épületenkénti SORRAL megy, nem globálisan — ettől lesz valódi döntés,
+hogy több laktanya vagy több munkás. Az ár a SORBAÁLLÁSKOR megy le, nem a
+végén: a törlés-visszatérítés nyersanyagot TEREMTENE, a gazdaság pedig a v0.3
+óta szigorúan egyirányú. Ezért a v0.5-ben nincs sor-törlés.
+
+A népességet tickenként ÚJRASZÁMOLJUK, nem tároljuk. A tárolt számlálót minden
+halál, születés, épület-pusztulás és beszállásolás karban kellene tartani, és
+egyetlen kimaradó ág olyan hibát ad, ami hónapokig lappang.
 
 ## A záró lépcsők (v0.11–v0.13)
 
