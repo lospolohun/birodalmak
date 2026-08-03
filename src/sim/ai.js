@@ -55,6 +55,7 @@ import { TIPUS } from './units.js';
 import { NYERS } from './eroforras.js';
 import { EPULET, EP_AR, EP_MERET } from './epuletek.js';
 import { MUNKA } from './munkas.js';
+import { TECH_DB, techEpulete } from './technologia.js';
 
 export const NEHEZSEG = { KONNYU: 0, KOZEPES: 1, NEHEZ: 2 };
 export const NEHEZSEG_NEV = ['könnyű', 'közepes', 'nehéz'];
@@ -83,6 +84,80 @@ const ARANY = [30, 45, 15, 10];
 /** Ekkora sugárban keres lelőhelyet a bázis körül. */
 const LELOHELY_SUGAR = 60;
 
+// ── v0.6/2: BUILD ORDER ──────────────────────────────────────────────────
+//
+// PRIORITÁS-SOR, NEM ÜTEMTERV. A gép minden döntési körben végigmegy rajta, és
+// az ELSŐ olyan tételt rendeli meg, amiből még nincs elég és amire telik. Ez a
+// v0.5 szondájának mért tanulsága: az „körönként egy tétel" ütemterv elakadt,
+// mert a drága elem elvitte a fát, és a mögötte állók nyolc körrel később
+// megint nem fértek bele. Ami már áll, azt a darabszám-korlát ejti; amire nem
+// telik, az a következő körben újra próbálkozik.
+//
+// A HÁROM SZINT ITT VÁLIK EL A LEGLÁTVÁNYOSABBAN. A könnyű gép egyetlen
+// laktanyát húz fel, és megáll — a játékos ellene ki tud terjeszkedni. A nehéz
+// gép három fegyvernemet nyit, tornyot rak és piacot épít, tehát a kőhöz is
+// hozzáfér. Ez nem nehézségi szorzó, hanem MÁS JÁTÉK ugyanazokkal a szabályokkal.
+const BUILD_ORDER = [
+  // könnyű
+  [EPULET.LAKTANYA],
+  // közepes
+  [EPULET.LAKTANYA, EPULET.IJASZDA, EPULET.PIAC],
+  // nehéz
+  [EPULET.LAKTANYA, EPULET.IJASZDA, EPULET.ISTALLO, EPULET.PIAC, EPULET.TORONY],
+];
+
+/**
+ * HÁNY DARAB kell az adott típusból. Az index az `EPULET.*`, tehát az egész
+ * roster benne van — ami 0, azt a gép sosem építi (a falat és a kaput a v0.6
+ * még nem tudja értelmesen elhelyezni, az a v0.7 minimap/tereprendezés dolga).
+ */
+const EPULET_CEL = [
+  1,  // KOZPONT — a kezdő, újat nem épít
+  1,  // RAKTAR
+  0, 0,
+  99, // HAZ — a népesség-tartalék szabályozza, nem darabszám
+  2,  // LAKTANYA
+  1,  // IJASZDA
+  1,  // ISTALLO
+  0,  // OSTROMMUHELY — a v0.6/3 ostrom-döntéséig nem kell
+  2,  // TORONY
+  1,  // PIAC
+];
+
+/**
+ * ÉPÜLET-HELYEK a központhoz képest, cellában. Fix eltolások: a bázisnak legyen
+ * ALAKJA, ne egyetlen kupac. A `_szabadEpuletHely` spirálja innen indul, tehát
+ * az ütközés magától feloldódik — az eltolás csak a kiindulást adja.
+ */
+const HELY_ELTOLAS = [
+  [0, 0], [-8, 4], [0, 0], [0, 0],
+  [5, -6],    // HAZ
+  [8, 7],     // LAKTANYA
+  [-8, 7],    // IJASZDA
+  [8, -8],    // ISTALLO
+  [-8, -8],   // OSTROMMUHELY
+  [11, 0],    // TORONY
+  [4, -12],   // PIAC
+];
+
+/** Hány katonát tart fenn a gép. A `99`-es ház-cél mellett ez a valódi plafon. */
+const SEREG_CEL = [8, 18, 30];
+
+/**
+ * Hány technológiát kutat ki. A KÖNNYŰ gép EGYET SEM — és ez nem lustaság:
+ * technológia nélkül a serege nyers alapértékeken harcol, tehát a játékos
+ * ugyanannyi egységgel is nyer. A szintek közti különbség így nem szám-szorzó,
+ * hanem az, hogy a gép mennyire használja ki a saját rendszereit.
+ */
+const KUTATAS_CEL = [0, 3, 6];
+
+/**
+ * Ennél hosszabb sorba nem rendel újat. A v0.6/1 mérése szerint a gép 198
+ * képzési parancsot adott ki 15 munkásért — a fölösleg elutasításba futott.
+ * A rövid sor egyben jobb JÁTÉK is: a termelés több épület közt oszlik el.
+ */
+const SOR_KORLAT = 2;
+
 export class Ai {
   /**
    * @param {number} csapatDb
@@ -108,6 +183,7 @@ export class Ai {
     this.gyujtDb = new Int32Array(this.csapatDb);
     this.epitDb = new Int32Array(this.csapatDb);
     this.kepzesDb = new Int32Array(this.csapatDb);
+    this.kutatasDb = new Int32Array(this.csapatDb);
 
     /**
      * Újrahasznált gyűjtő-tömb a tétlen munkásoknak. A döntési kör így NEM
@@ -116,6 +192,12 @@ export class Ai {
     this._tetlenek = [];
     /** Munkás-eloszlás nyersanyagonként — szintén újrahasznált. */
     this._eloszlas = new Int32Array(4);
+    /** A kör elején egyszer megszámolt létszámok (lásd `_szamlal`). */
+    this._munkasDb = 0;
+    this._seregDb = 0;
+    /** Újrahasznált jelölt-tömb és pont — a döntési kör nem allokál. */
+    this._jeloltek = [];
+    this._pont = { x: 0, y: 0 };
   }
 
   /** Egy csapat átadása a gépnek. */
@@ -133,6 +215,7 @@ export class Ai {
     this.gyujtDb.fill(0);
     this.epitDb.fill(0);
     this.kepzesDb.fill(0);
+    this.kutatasDb.fill(0);
   }
 
   /**
@@ -166,9 +249,136 @@ export class Ai {
     if (kozp < 0) return;   // nincs központ: a csapat el van intézve
     const bx = sim.epuletek.x[kozp], by = sim.epuletek.y[kozp];
 
+    // EGYETLEN VÉGIGJÁRÁS az egységeken, a kör legelején. A v0.6/2 első
+    // változatában három lépés is végigment rajtuk külön-külön (munkába
+    // állítás, munkás-képzés, katona-képzés) — ugyanaz a `O(egység)` munka
+    // háromszor. Egy döntési kör nem forró út, de a v0.1 óta tudjuk, hogy a
+    // „csak egy kis ciklus" hozzáállásból lesz a 40 ms-os tick.
+    this._szamlal(cs);
     this._munkaraFog(cs, bx, by);
+    this._atcsoportosit(cs, bx, by);
     this._hazatEpit(cs, bx, by);
     this._munkastKepez(cs, kozp);
+    // v0.6/2 — SORREND: előbb a ház és a munkás (a gazdaság), és csak utána a
+    // hadsereg meg a kutatás. Fordítva a gép a laktanyára költené azt a fát,
+    // ami a következő házra kellene, és a saját népesség-plafonjába ütközne —
+    // a v0.5 szondája pontosan ezt a hibát mérte ki kézi forgatókönyvön.
+    this._buildOrder(cs, bx, by);
+    this._katonatKepez(cs);
+    this._kutat(cs);
+  }
+
+  /**
+   * BUILD ORDER (v0.6/2) — az első olyan tétel, amiből még nincs elég.
+   *
+   * KÖRÖNKÉNT EGY ÉPÜLET indul el, nem az egész sor. Ez itt más döntés, mint a
+   * v0.5 szondájában (ahol a teljes sort minden körben beadtuk): ott a cél az
+   * volt, hogy MINDEN ág lefusson a kapun belül, itt viszont a gép gazdálkodik.
+   * Ha egyszerre rendelne laktanyát, íjászdát és piacot, mind levonná az árát,
+   * és a gazdaság egy körre kiürülne — a házra nem maradna, a népesség beállna.
+   */
+  _buildOrder(cs, bx, by) {
+    const sim = this.sim;
+    const sor = BUILD_ORDER[this.nehezseg[cs]];
+    for (let k = 0; k < sor.length; k++) {
+      const tipus = sor[k];
+      if (this._epuletDb(cs, tipus) >= EPULET_CEL[tipus]) continue;
+      if (!sim.gazdasag.telik(cs, EP_AR[tipus])) return;   // erre gyűjtünk, nem lépünk tovább
+      const el = HELY_ELTOLAS[tipus];
+      const hely = this._epitesiHely(tipus, (bx | 0) + el[0], (by | 0) + el[1]);
+      if (!hely) continue;
+      sim.parancs({ fajta: 'epit', csapat: cs, tipus, x: hely.x, y: hely.y });
+      this.epitDb[cs]++;
+      return;
+    }
+  }
+
+  /**
+   * Hány ilyen épülete van a csapatnak — az ÉPÜLŐFÉLBEN LÉVŐT IS BELESZÁMÍTVA.
+   *
+   * ⚠️ A `kesz()` itt hibás lenne. A laktanya 250 tickig épül, a gép viszont
+   * 50-120 tickenként dönt: ha csak a késznek számítana, két-öt laktanyát
+   * rendelne meg egymás után, mielőtt az első felépül — és mindegyik ára
+   * levonódna. Ez a fajta hiba nem látszik a hash-en, csak azon, hogy a gép
+   * szegény marad.
+   */
+  _epuletDb(cs, tipus) {
+    const ep = this.sim.epuletek;
+    let n = 0;
+    for (let k = 0; k < ep.db; k++) {
+      if (ep.csapat[k] === cs && ep.el(k) && ep.tipus[k] === tipus) n++;
+    }
+    return n;
+  }
+
+  /**
+   * KATONA-KÉPZÉS a sereg-célszámig, minden képző épületben.
+   *
+   * Az épület dönti el, mit képez (`Kepzes.kepezheti`) — a gép nem tart külön
+   * összetétel-tervet. Ez tudatosan egyszerű: a fegyvernem-arányt a v0.6/3
+   * felderítése fogja szabályozni, amikor már LÁTJA, mi ellen harcol. Addig a
+   * több épület magától ad vegyes sereget, ami a kő-papír-ollóban nem rossz
+   * alapállás.
+   */
+  _katonatKepez(cs) {
+    const sim = this.sim;
+    const n = this.nehezseg[cs];
+    if (this._seregDb >= SEREG_CEL[n]) return;
+
+    // ⚠️ A GAZDASÁG ELŐBB VAN, MINT A HADSEREG — és ezt mérni kellett.
+    // A v0.6/2 első változata a munkás-célszámtól függetlenül képzett katonát,
+    // és a nehéz gép gazdasága ÖSSZEOMLOTT tőle: 30 helyett 19 munkás, és
+    // 3890 helyett 1770 összegyűjtött nyersanyag ugyanannyi tick alatt. A
+    // katona ételbe kerül, az étel munkásból jön, és a kettő ugyanabból a
+    // készletből eszik — aki előbb költ hadseregre, az a saját utánpótlását
+    // fojtja meg. Ez az a hiba, amit se a hash, se egy „csinált-e valamit"
+    // szám nem mutat meg: a gép SZORGALMASAN dolgozik, csak rosszul.
+    //
+    // A küszöb kétharmad, nem száz százalék: teljes gazdaságra várni azt
+    // jelentené, hogy a gép a meccs feléig védtelen.
+    if (this._munkasDb * 3 < MUNKAS_CEL[n] * 2) return;
+
+    const ep = sim.epuletek;
+    for (let k = 0; k < ep.db; k++) {
+      if (ep.csapat[k] !== cs || !ep.kesz(k)) continue;
+      if (ep.tipus[k] === EPULET.KOZPONT) continue;   // az a munkásé
+      if (sim.kepzes.sorDb[k] >= SOR_KORLAT) continue;
+      for (let t = 0; t < 5; t++) {
+        if (t === TIPUS.MUNKAS) continue;
+        if (!sim.kepzes.kepezheti(ep.tipus[k], t)) continue;
+        sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg: t });
+        this.kepzesDb[cs]++;
+        break;
+      }
+    }
+  }
+
+  /**
+   * KUTATÁS a szint szerinti darabszámig. A `Technologia.indit()` dönt mindenről
+   * (jó épület-e, megvan-e a korszak, telik-e rá) — a gép csak ajánl.
+   *
+   * A KÖNNYŰ szint egyet sem kutat, tehát a serege nyers alapértékeken harcol.
+   * Ez a szintek közti legőszintébb különbség: nem a gép kap kevesebbet, hanem
+   * kevesebbet HOZ KI ugyanabból a rendszerből.
+   */
+  _kutat(cs) {
+    const cel = KUTATAS_CEL[this.nehezseg[cs]];
+    if (cel === 0) return;
+    const tech = this.sim.technologia;
+    const ossz = tech.osszesites(cs);
+    if (ossz.kesz + ossz.folyik >= cel) return;
+
+    const ep = this.sim.epuletek;
+    for (let t = 0; t < TECH_DB; t++) {
+      if (tech.allapot[cs * TECH_DB + t] !== 0) continue;
+      const kellEp = techEpulete(t);
+      for (let k = 0; k < ep.db; k++) {
+        if (ep.csapat[k] !== cs || !ep.kesz(k) || ep.tipus[k] !== kellEp) continue;
+        this.sim.parancs({ fajta: 'kutatas', csapat: cs, tech: t, epulet: k });
+        this.kutatasDb[cs]++;
+        return;   // körönként EGY kutatás — ugyanaz a spórolás, mint a build ordernél
+      }
+    }
   }
 
   /** A csapat első ÉLŐ központja, vagy -1. */
@@ -190,7 +400,7 @@ export class Ai {
    * eloszlást. Így egy tíz fős újonc-hullám nem megy mind ugyanarra a
    * nyersanyagra — ami látványos, de értéktelen gazdaságot adna.
    */
-  _munkaraFog(cs, bx, by) {
+  _szamlal(cs) {
     const sim = this.sim;
     const e = sim.egysegek;
     const mu = sim.munkasok;
@@ -200,33 +410,71 @@ export class Ai {
     tetlenek.length = 0;
     const el = this._eloszlas;
     el[0] = 0; el[1] = 0; el[2] = 0; el[3] = 0;
-    let osszes = 0;
+    this._munkasDb = 0;
+    this._seregDb = 0;
 
     for (let i = 0; i < e.db; i++) {
-      if (e.csapat[i] !== cs || e.tipus[i] !== TIPUS.MUNKAS) continue;
-      if (!sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
-      osszes++;
+      if (e.csapat[i] !== cs || !sim.harc.elo[i]) continue;
+      if (e.tipus[i] !== TIPUS.MUNKAS) { this._seregDb++; continue; }
+      // A beszállásolt munkás ÉL, de nincs a világban — nem lehet munkába
+      // állítani, viszont a népességet és a célszámot foglalja. Ezért a
+      // létszámba beszámít, a tétlenek közé nem kerül.
+      this._munkasDb++;
+      if (sim.beszallas.bent[i] === 1) continue;
       if (mu.allapot[i] === MUNKA.NINCS) { tetlenek.push(i); continue; }
       const node = mu.celNode[i];
       if (node >= 0 && node < ef.db) el[ef.fajta[node]]++;
     }
+  }
+
+  _munkaraFog(cs, bx, by) {
+    const sim = this.sim;
+    const ef = sim.eroforrasok;
+    const tetlenek = this._tetlenek;
+    const el = this._eloszlas;
+    const osszes = this._munkasDb;
     if (tetlenek.length === 0) return;
 
     for (let k = 0; k < tetlenek.length; k++) {
-      const fajta = this._hianyzoFajta(el, osszes);
-      const node = ef.keres(fajta, bx, by, LELOHELY_SUGAR);
-      if (node < 0) continue;   // ilyen nyersanyag nincs a közelben
+      if (!this._munkaraKuld(cs, tetlenek[k], el, osszes, bx, by)) break;
+    }
+  }
+
+  /**
+   * EGY munkás elküldése a legjobban HIÁNYZÓ nyersanyagra.
+   *
+   * ⚠️ HA A LEGSZŰKÖSEBB FAJTÁT NEM TALÁLJUK, LÉPÜNK A KÖVETKEZŐRE. Az első
+   * változat ilyenkor `continue`-val átugrotta a munkást — és ez CSENDES
+   * HOLTPONT volt: a hiány attól nem szűnt meg, hogy nincs a közelben lelőhely,
+   * tehát a következő körben ugyanaz a fajta jött ki győztesnek, ugyanúgy nem
+   * volt hol gyűjteni, és a munkás ÖRÖKRE tétlen maradt. A gép szorgalmasan
+   * gondolkodott volna, miközben áll a gazdasága.
+   *
+   * @returns {boolean} sikerült-e bárhova elküldeni
+   */
+  _munkaraKuld(cs, egyseg, el, osszes, bx, by) {
+    const ef = this.sim.eroforrasok;
+    // Legfeljebb négy próbálkozás: minden körben a LEGNAGYOBB hiányú fajta jön,
+    // és amelyikhez nincs lelőhely, azt kizárjuk ebből a keresésből.
+    let kizart = 0;
+    for (let proba = 0; proba < 4; proba++) {
+      const fajta = this._hianyzoFajta(el, osszes, kizart);
+      if (fajta < 0) return false;
+      const node = this._elerhetoLelohely(fajta, bx, by, egyseg);
+      if (node < 0) { kizart |= (1 << fajta); continue; }
       // EGY egység, EGY parancs. Drágábbnak látszik, mint egy csoportos
       // parancs, de a tétlenek száma egy körben néhány darab — a v0.1-es
       // „egy mező egységenként" csapda ITT nem áll fenn, mert a `gyujt`
       // ugyanarra a lelőhelyre ugyanazt a mezőt kéri.
-      sim.parancs({
-        fajta: 'gyujt', egysegek: [tetlenek[k]],
+      this.sim.parancs({
+        fajta: 'gyujt', egysegek: [egyseg],
         x: ef.x[node], y: ef.y[node], nyers: fajta,
       });
       el[fajta]++;
       this.gyujtDb[cs]++;
+      return true;
     }
+    return false;
   }
 
   /**
@@ -236,15 +484,127 @@ export class Ai {
    * Döntetlennél a KISEBB index nyer — ugyanaz a szabály, mint a célzásnál,
    * és ugyanabból az okból: a döntetlen feloldásának is gépfüggetlennek kell
    * lennie.
+   *
+   * @param {number} kizart bitmaszk: ezeket a fajtákat ne adja vissza
+   * @returns {number} `NYERS.*`, vagy -1 ha mind ki van zárva
    */
-  _hianyzoFajta(el, osszes) {
-    let legjobb = NYERS.ETEL, legjobbHiany = -0x7fffffff;
+  _hianyzoFajta(el, osszes, kizart = 0) {
+    let legjobb = -1, legjobbHiany = -0x7fffffff;
     for (let f = 0; f < 4; f++) {
+      if (kizart & (1 << f)) continue;
       const cel = ((osszes * ARANY[f]) / 100) | 0;
       const hiany = cel - el[f];
       if (hiany > legjobbHiany) { legjobbHiany = hiany; legjobb = f; }
     }
     return legjobb;
+  }
+
+  /**
+   * A legközelebbi olyan lelőhely, ahova a bázisból EL IS LEHET JUTNI.
+   *
+   * ⚠️ EZ NEM ÓVATOSSÁG, HANEM MÉRT HIBA JAVÍTÁSA. A `Eroforrasok.keres` a
+   * TÁVOLSÁGOT nézi, az útvonalat nem. A nehéz gép bázisától 24 egységre volt
+   * egy három lelőhelyből álló étel-fürt, amit vízen túl — vagyis sehogy — nem
+   * lehetett megközelíteni. Mind a hat étel-munkás oda indult, sosem ért oda,
+   * és 12 000 tick alatt 100 ÉTEL jött be 890 fa mellett. Étel nélkül nincs
+   * képzés: 658 képzési parancs futott elutasításba. A determinizmus-kapu
+   * végig zöld volt — egy elérhetetlen bogyós ugyanolyan reprodukálható, mint
+   * egy elérhető.
+   *
+   * AZ ÁRAMLÁSI MEZŐ INGYEN TUDJA A VÁLASZT: Dijkstra a célból kifelé, tehát
+   * az elérhetetlen cellák költsége végtelen marad. A mezőt ráadásul úgyis
+   * kikérjük — a `gyujt` parancs ugyanezt a célcellát kéri majd, és a
+   * `MezoTar` gyorstárából ugyanazt kapja. A vizsgálat tehát nem drágább, mint
+   * amit enélkül is kifizetnénk.
+   *
+   * @returns {number} lelőhely-index, vagy -1 ha egyik sem érhető el
+   */
+  _elerhetoLelohely(fajta, bx, by, egyseg) {
+    const sim = this.sim;
+    const ef = sim.eroforrasok;
+    const racs = sim.racs;
+    // ⚠️ A KIINDULÁS A MUNKÁS, NEM A KÖZPONT. Első nekifutásra a központ
+    // világkoordinátáját adtam át — és MINDEN lelőhely elérhetetlennek
+    // bizonyult, mert az épület LEZÁRJA a saját celláit, a Dijkstra pedig a
+    // zárt cellának sosem ad költséget. A gazdaság egy csapásra teljesen
+    // leállt: nulla begyűjtött nyersanyag mindkét oldalon. A keresés KÖZEPE
+    // marad a bázis (a fürtök ott vannak), az ELÉRHETŐSÉG viszont onnan
+    // kérdés, ahol a munkás tényleg áll.
+    const e = sim.egysegek;
+    const honnan = racs.idx(e.px[egyseg] | 0, e.py[egyseg] | 0);
+    if (honnan < 0) return -1;
+
+    const jeloltek = this._jeloltek;
+    jeloltek.length = 0;
+    ef.kornyek(fajta, bx, by, jeloltek, 8, LELOHELY_SUGAR);
+    for (let k = 0; k < jeloltek.length; k++) {
+      const node = jeloltek[k];
+      // A lelőhely SAJÁT cellája zárt (az erdő és a kőfejtő lezárja) — az
+      // állóhelyre kell mezőt kérni, oda megy a munkás is.
+      const hely = ef.allohely(node, this._pont, 0);
+      if (!hely) continue;
+      const cel = racs.idx(hely.x | 0, hely.y | 0);
+      if (cel < 0) continue;
+      const mezo = sim.mezoTar.kerj(cel, sim.tick);
+      if (sim.mezoTar.elerheto(mezo, honnan)) return node;
+    }
+    return -1;
+  }
+
+  /**
+   * ÁTCSOPORTOSÍTÁS — körönként EGY munkás a legbővebb nyersanyagról a
+   * legszűkösebbre.
+   *
+   * ⚠️ EZ A LÉPÉS KELL A LEGKEVÉSBÉ NYILVÁNVALÓAN, ÉS MÉRVE A LEGFONTOSABB.
+   * A gép csak a TÉTLEN munkást osztja be, a beosztott pedig magától dolgozik
+   * tovább — de a lelőhely KIMERÜL, és a munkás-AI ilyenkor a legközelebbi
+   * MÁSIK lelőhelyre áll át, akármilyen fajta is az. Néhány ezer tick alatt az
+   * eredeti arány szétcsúszik, és a gép nem veszi észre, mert senki nem lesz
+   * tétlen. Mérve: a nehéz gép 12 000 tick alatt 890 fát gyűjtött és 60 ÉTELT,
+   * miközben a célaránya 30 % étel lett volna. Étel nélkül nincs képzés — 663
+   * képzési parancsából 658 elutasításba futott.
+   *
+   * KÖRÖNKÉNT EGY munkás mozdul, és ez tudatos: a `gyujt` parancs eldobja a
+   * cipelt rakományt, tehát a tömeges átcsoportosítás ugyanaz a hiba lenne,
+   * ami ellen a fejléc figyelmeztet. Egy munkás körönként néhány perc alatt
+   * helyreteszi az arányt, és közben semmit nem tör el.
+   */
+  _atcsoportosit(cs, bx, by) {
+    const el = this._eloszlas;
+    const osszes = this._munkasDb;
+    if (osszes < 4) return;
+
+    let hianyF = -1, hianyMax = 0;
+    let tobblF = -1, tobblMax = 0;
+    for (let f = 0; f < 4; f++) {
+      const cel = ((osszes * ARANY[f]) / 100) | 0;
+      const d = cel - el[f];
+      if (d > hianyMax) { hianyMax = d; hianyF = f; }
+      if (-d > tobblMax) { tobblMax = -d; tobblF = f; }
+    }
+    // Csak VALÓDI aránytalanságra mozdulunk: két munkásnyi eltérés alatt a
+    // mozgatás többe kerülne (eldobott rakomány, út oda-vissza), mint amennyit
+    // az arány javulása ér.
+    if (hianyF < 0 || tobblF < 0 || hianyMax < 2 || tobblMax < 2) return;
+
+    const sim = this.sim;
+    const e = sim.egysegek;
+    const mu = sim.munkasok;
+    const ef = sim.eroforrasok;
+    for (let i = 0; i < e.db; i++) {
+      if (e.csapat[i] !== cs || e.tipus[i] !== TIPUS.MUNKAS) continue;
+      if (!sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
+      const node = mu.celNode[i];
+      if (node < 0 || node >= ef.db || ef.fajta[node] !== tobblF) continue;
+      const uj = this._elerhetoLelohely(hianyF, bx, by, i);
+      if (uj < 0) return;
+      sim.parancs({
+        fajta: 'gyujt', egysegek: [i],
+        x: ef.x[uj], y: ef.y[uj], nyers: hianyF,
+      });
+      this.gyujtDb[cs]++;
+      return;   // KÖRÖNKÉNT EGY
+    }
   }
 
   /**
@@ -301,13 +661,9 @@ export class Ai {
    */
   _munkastKepez(cs, kozp) {
     const sim = this.sim;
-    const e = sim.egysegek;
-    let munkas = 0;
-    for (let i = 0; i < e.db; i++) {
-      if (e.csapat[i] === cs && e.tipus[i] === TIPUS.MUNKAS && sim.harc.elo[i]) munkas++;
-    }
-    munkas += sim.kepzes.sorbanTipus(kozp, TIPUS.MUNKAS);
+    const munkas = this._munkasDb + sim.kepzes.sorbanTipus(kozp, TIPUS.MUNKAS);
     if (munkas >= MUNKAS_CEL[this.nehezseg[cs]]) return;
+    if (sim.kepzes.sorDb[kozp] >= SOR_KORLAT) return;
     sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: kozp, egyseg: TIPUS.MUNKAS });
     this.kepzesDb[cs]++;
   }
@@ -321,6 +677,7 @@ export class Ai {
       gyujt: this.gyujtDb[csapat],
       epit: this.epitDb[csapat],
       kepzes: this.kepzesDb[csapat],
+      kutatas: this.kutatasDb[csapat],
     };
   }
 }

@@ -104,6 +104,11 @@ export class Munkasok {
     /** Mit és mennyit cipel. */
     this.cipelFajta = new Uint8Array(m);
     this.cipelDb = new Int32Array(m);
+    /**
+     * Újrahasznált jelölt-tömb az elakadás utáni lelőhely-kereséshez. Előre
+     * lefoglalva, mert a `lep()` forró út — nulla per-tick allokáció.
+     */
+    this._jeloltek = [];
     /** Az egész gyűjtő-óra (lásd a fejlécet). */
     this.ora = new Int32Array(m);
     /**
@@ -209,7 +214,18 @@ export class Munkasok {
           // (a `probal` beleszámít a változatba), néhány kudarc után pedig
           // másik lelőhelyet keresünk — enélkül egy elérhetetlen cella örökre
           // lekötne egy munkást.
-          if (++this.probal[i] > MAX_PROBA) { this.probal[i] = 0; this._ujLelohely(i); }
+          // ⚠️ A LELŐHELYET KI KELL ZÁRNI. A komment fölötte a v0.3 óta ezt
+          // ígéri, a kód viszont nem tartotta be: a `_ujLelohely` a RÉGI
+          // lelőhely koordinátáiból keresett, és a legközelebbi találat maga a
+          // régi lelőhely lett. A munkás visszakapta ugyanazt az elérhetetlen
+          // célt, a `probal` nullázódott, és a kör újraindult — ÖRÖKRE.
+          //
+          // Mérve (v0.6/2): a nehéz gép mind a HAT étel-munkása ugyanazon a
+          // 23,8 egységre lévő, elérhetetlen lelőhelyen ragadt, és 12 000 tick
+          // alatt 60 ételt hozott be 890 fa mellett. Étel nélkül nincs képzés:
+          // 663 képzési parancsból 658 elutasításba futott. A determinizmus-
+          // kapu végig zöld volt — egy livelock tökéletesen reprodukálható.
+          if (++this.probal[i] > MAX_PROBA) { this.probal[i] = 0; this._ujLelohely(i, node); }
           else this._indulLelohelyre(i);
         }
         continue;
@@ -333,7 +349,7 @@ export class Munkasok {
   }
 
   /** A lelőhely kimerült — keresünk másikat UGYANABBÓL a fajtából a közelben. */
-  _ujLelohely(i) {
+  _ujLelohely(i, kizart = -1) {
     const sim = this.sim;
     const e = sim.egysegek;
     const ef = sim.eroforrasok;
@@ -343,7 +359,23 @@ export class Munkasok {
     const kx = regi >= 0 ? ef.x[regi] : e.px[i];
     const ky = regi >= 0 ? ef.y[regi] : e.py[i];
     const fajta = regi >= 0 ? ef.fajta[regi] : this.cipelFajta[i];
-    const uj = ef.keres(fajta, kx, ky, UJRA_SUGAR);
+    let uj;
+    if (kizart < 0) {
+      uj = ef.keres(fajta, kx, ky, UJRA_SUGAR);
+    } else {
+      // ELAKADÁS miatt keresünk újat: a mostani lelőhelyet KI KELL HAGYNI,
+      // különben ugyanazt kapjuk vissza (a keresés a saját koordinátájából
+      // indul, tehát ő a legközelebbi találat). A `kornyek` gyűrűnkénti
+      // sorrendben ad jelölteket, tehát az első NEM kizárt találat egyben a
+      // legközelebbi is — és a sorrend gépfüggetlen.
+      const jeloltek = this._jeloltek;
+      jeloltek.length = 0;
+      ef.kornyek(fajta, kx, ky, jeloltek, 16, UJRA_SUGAR);
+      uj = -1;
+      for (let k = 0; k < jeloltek.length; k++) {
+        if (jeloltek[k] !== kizart) { uj = jeloltek[k]; break; }
+      }
+    }
     if (uj < 0) {
       // Elfogyott a környéken: ha van rakománya, vigye be, aztán álljon le.
       if (this.cipelDb[i] > 0) { this.celNode[i] = -1; this._indulLerakatra(i); }
@@ -351,18 +383,43 @@ export class Munkasok {
       return;
     }
     this.celNode[i] = uj;
-    // A régi csoportos mező már nem feltétlenül ide mutat; a táv rövid (a
-    // keresés sugara `UJRA_SUGAR`), ezért egyenes vonalon megyünk, és NEM kérünk
-    // új mezőt munkásonként — az lenne a v0.1-es útkeresés-csapda.
-    this.nodeMezo[i] = -1;
+    // ⚠️ ÚJ MEZŐ KELL — ÉS EZ A LEGDRÁGÁBB TANULSÁG EBBEN A FÁJLBAN.
+    //
+    // Az első változat itt `nodeMezo[i] = -1`-et írt, azzal az indoklással,
+    // hogy a táv rövid (`UJRA_SUGAR`), tehát elég az egyenes vonal, és így
+    // elkerüljük a v0.1-es „mező munkásonként" csapdát. Két hiba volt benne:
+    //
+    //   1. A TÁV NEM RÖVID. A keresés a RÉGI LELŐHELYBŐL indul, nem a
+    //      munkásból — az új lelőhely 14 egységen belül van a RÉGIHEZ képest,
+    //      a munkás viszont lehet 33 egységre tőle.
+    //   2. HA AZ EGYENES VONAL ZÁRT, NINCS SEMMI. A `units.js` ilyenkor törli
+    //      az `egyenes` jelzőt, és `mezoId = -1` mellett a munkásnak nem marad
+    //      SEMMILYEN navigációja. Nem elakad — MEG SEM MOZDUL.
+    //
+    // Mérve (v0.6/2): egy munkás 3000 ticken át egyetlen század világegységet
+    // sem mozdult (206,0 → 206,0), miközben a `probal` 0..4 között körözött, és
+    // a lelőhelye 138 és 141 közt váltakozott. Hat étel-munkás állt így; a gép
+    // 12 000 tick alatt 100 ételt gyűjtött 890 fa mellett, és a képzése
+    // gyakorlatilag leállt.
+    //
+    // A megoldás UGYANAZ A MINTA, amit a `gyujt` parancs használ: a mező a
+    // lelőhely melletti JÁRHATÓ cellára megy, nem a munkás állóhelyére. Így a
+    // mezők száma a LELŐHELYEK számával nő, nem a munkásokéval — a v0.1-es
+    // szabály sértetlen marad.
+    const kozel = sim._jarhatoKozel(ef.x[uj], ef.y[uj]);
+    const ci = sim.racs.idx(kozel.x | 0, kozel.y | 0);
+    this.nodeMezo[i] = (ci >= 0 && sim.racs.jarhato[ci] === 1)
+      ? sim.mezoTar.kerj(ci, sim.tick) : -1;
     this.probal[i] = 0;
     this.utolsoTav[i] = 0;
     this.allapot[i] = MUNKA.MEGY_LELOHELYRE;
     const hely = ef.allohely(uj, this._p, i);
     if (hely) {
       this.alloX[i] = hely.x; this.alloY[i] = hely.y;
-      e.menetparancs(i, hely.x, hely.y, -1);
-      e.egyenes[i] = 1;
+      // A mezőt ADJUK ÁT: az egyenes vonal továbbra is gyorsítás marad (a
+      // `units.js` 15 tickenként újraértékeli), de ha az zárt, van mire
+      // visszaesni.
+      e.menetparancs(i, hely.x, hely.y, this.nodeMezo[i]);
     }
   }
 

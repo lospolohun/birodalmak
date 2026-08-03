@@ -97,7 +97,7 @@ egyetlen kimaradó ág olyan hibát ad, ami hónapokig lappang.
 | szakasz | tartalom | állapot |
 |---|---|---|
 | v0.6/1 | AI-váz, nehézségi szintek, gazdasági kör | **kész** |
-| v0.6/2 | build order: katonai épületek, katona-képzés, technológia | hátravan |
+| v0.6/2 | build order: katonai épületek, katona-képzés, technológia | **kész** |
 | v0.6/3 | felderítés és támadási döntés | hátravan |
 
 Az AI a **sim része**, nem a kliensé. A v0.8 lockstepjében minden gép futtatja a
@@ -120,6 +120,32 @@ a gép csinált-e valamit, hanem hogy a KIADOTT SZÁNDÉK és az EREDMÉNY össz
 hány házat rendelt, és hány épült meg. Ez a v0.6/1 legdrágább hibáját őrzi — a
 gép a bal-felső cellát adta át az `epit` parancsnak, ami a középpontot várja, és
 100 építési parancsból EGY ház lett. Minden addigi kapu zöld volt.
+
+### Amit a v0.6/2 a MUNKÁS-AI-ban talált
+
+A gépi ellenfél a gazdaságot sokkal keményebben hajtja, mint bármelyik kézi
+forgatókönyv — és ettől két olyan hiba jött elő a v0.3-as `munkas.js`-ben,
+amit három verzió zöld kapuja sem mutatott meg:
+
+1. **Livelock az elakadásnál.** A `_ujLelohely` a RÉGI lelőhely koordinátáiból
+   keresett, tehát a legközelebbi találat maga a régi lelőhely volt. Az
+   elakadt munkás visszakapta ugyanazt az elérhetetlen célt, a `probal`
+   nullázódott, és a kör újraindult — örökre.
+2. **Navigáció nélküli munkás.** A `_ujLelohely` szándékosan nem kért áramlási
+   mezőt (a v0.1-es „mező egységenként" csapdát kerülve), és arra épített, hogy
+   a rövid táv egyenesen megtehető. De a keresés a RÉGI LELŐHELYBŐL indul: az
+   új cél 14 egységen belül van AHHOZ képest, a munkástól viszont lehet 33-ra.
+   Ha közben az egyenes vonal zárt, a munkásnak **se mezője, se egyenese** nem
+   maradt — nem elakadt, hanem meg sem tudott mozdulni.
+
+Mérve: hat étel-munkás állt 12 000 ticken át egyetlen század világegységet sem
+mozdulva, a nehéz gép 100 ételt gyűjtött 890 fa mellett, és 658 képzési
+parancsa futott elutasításba. A javítás után ugyanaz a gép eléri mindkét
+célszámát (30 munkás, 30 katona), és 1770 helyett 4810 nyersanyagot gyűjt.
+
+A szonda 9. vizsgálatába ezért bekerült egy **invariáns**, nem heurisztika: a
+mozgás-magnak két módja van célba érni (mező vagy szabad egyenes), és aki úton
+van, annak legalább az egyikkel rendelkeznie KELL. A megengedett érték nulla.
 
 ## A záró lépcsők (v0.11–v0.13)
 

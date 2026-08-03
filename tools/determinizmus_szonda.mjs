@@ -958,12 +958,92 @@ if (ketV06.ok) {
   //
   // A tanulság általános: nem az a kérdés, hogy CSINÁLT-E valamit a rendszer,
   // hanem hogy a KIADOTT SZÁNDÉK ÉS AZ EREDMÉNY összeér-e.
-  let haz = [0, 0];
+  //
+  // ⚠️ MINDEN ÉPÜLETET SZÁMOLUNK, nem csak a házat — a kezdő központ kivételével.
+  // A v0.6/1-ben a gép csak házat épített, ezért elég volt a házat nézni; a
+  // v0.6/2 build ordere viszont laktanyát és piacot is rendel, és ha csak a
+  // házat vetnénk össze az ÖSSZES rendeléssel, a szám magától „veszteséget"
+  // mutatna. Egy hibás gát rosszabb, mint a hiányzó: hozzászokik az ember,
+  // hogy piros, és megszűnik figyelni rá.
+  let epult = [0, 0];
   for (let i = 0; i < s.epuletek.db; i++) {
-    if (s.epuletek.tipus[i] === 4 && s.epuletek.elo[i]) haz[s.epuletek.csapat[i] & 1]++;
+    if (!s.epuletek.elo[i]) continue;
+    if (s.epuletek.tipus[i] === 0) continue;   // a kezdő központot nem a gép építette
+    epult[s.epuletek.csapat[i] & 1]++;
   }
-  sor('rendelt / felépült ház', (a0.epit + '→' + haz[0]) + ' / ' + (a1.epit + '→' + haz[1]),
+  sor('rendelt / felépült épület', (a0.epit + '→' + epult[0]) + ' / ' + (a1.epit + '→' + epult[1]),
     'az elveszett parancs csendben vész el');
+
+  // v0.6/2 — a BUILD ORDER, a hadsereg és a kutatás működés-számai.
+  // A katonai épület a build order EREDMÉNYE: ha nulla, a `_buildOrder` néma
+  // (vagy sosem telik rá), és a gépnek nincs hadserege azon túl, amit kapott.
+  let katonaiEp = [0, 0], sereg = [0, 0];
+  for (let i = 0; i < s.epuletek.db; i++) {
+    const t = s.epuletek.tipus[i];
+    if (!s.epuletek.elo[i]) continue;
+    if (t === 5 || t === 6 || t === 7 || t === 8) katonaiEp[s.epuletek.csapat[i] & 1]++;
+  }
+  for (let i = 0; i < s.egysegek.db; i++) {
+    if (s.harc.elo[i] && s.egysegek.tipus[i] !== 0) sereg[s.egysegek.csapat[i] & 1]++;
+  }
+  const tec0 = s.technologia.osszesites(0), tec1 = s.technologia.osszesites(1);
+  sor('katonai épület', katonaiEp[0] + ' / ' + katonaiEp[1], 'a build order eredménye');
+  sor('élő katona', sereg[0] + ' / ' + sereg[1], 'sereg-cél: 8 / 30');
+  sor('kikutatott technológia', tec0.kesz + ' / ' + tec1.kesz,
+    'kutatás-cél: 0 / 6 — a könnyű gép SZÁNDÉKOSAN egyet sem kutat');
+
+  // A NEHÉZ GÉP TÖBBET ÉPÍT ÉS TÖBBET KUTAT — ez a három szint valódi
+  // különbsége. Ha nem így van, a `BUILD_ORDER` / `KUTATAS_CEL` indexelés nem
+  // ér el a nehézségig, és a szintek a gyakorlatban EGY szintté olvadnak. A
+  // hash ettől még végig zöld maradna.
+  if (katonaiEp[1] <= katonaiEp[0]) {
+    console.log('\n  \u26d4 A NEHÉZ GÉP NEM ÉPÍTETT TÖBB KATONAI ÉPÜLETET A KÖNNYŰNÉL:');
+    console.log('     a `BUILD_ORDER` nehézség-indexelése nem hat.');
+    bukas++;
+  }
+  if (tec1.kesz === 0) {
+    console.log('\n  \u26d4 A NEHÉZ GÉP EGYETLEN TECHNOLÓGIÁT SEM KUTATOTT KI:');
+    console.log('     a `_kutat` ága néma. Nézd meg a `KUTATAS_CEL`-t és azt,');
+    console.log('     hogy felépült-e egyáltalán a kutató épület.');
+    bukas++;
+  }
+  if (tec0.kesz !== 0) {
+    // Fordított irányú gát: a könnyű szint ígérete az, hogy NEM kutat. Ha
+    // mégis, a `KUTATAS_CEL[0] = 0` nem hat, és a szintek megint összemosódnak.
+    console.log('\n  \u26d4 A KÖNNYŰ GÉP KUTATOTT, PEDIG NEM SZABADNA: a KUTATAS_CEL[0]');
+    console.log('     nulla, tehát a `_kutat` korai kilépése nem működik.');
+    bukas++;
+  }
+  if (a1.kutatas === 0) {
+    console.log('\n  \u26d4 A NEHÉZ GÉP EGYSZER SEM ADOTT KI KUTATÁS-PARANCSOT.');
+    bukas++;
+  }
+
+  // NAVIGÁCIÓ NÉLKÜL ÁLLÓ MUNKÁS — a v0.6/2 legdrágább hibájának őre.
+  //
+  // A mozgás-magnak KÉT módja van célba érni: áramlási mező, vagy szabad
+  // egyenes. Ha egy egység úton van (`MEGY_LELOHELYRE`), de EGYIKE SINCS,
+  // akkor nem elakadt, hanem MEG SEM TUD MOZDULNI — és ezt semmilyen
+  // „csinált-e valamit" szám nem mutatja meg, mert a rendszer többi része
+  // vidáman dolgozik körülötte.
+  //
+  // Így ragadt hat étel-munkás 12 000 ticken át: a `_ujLelohely` szándékosan
+  // NEM kért mezőt (a v0.1-es „mező egységenként" csapdát kerülve), és arra
+  // épített, hogy a rövid táv egyenesen megtehető. Amikor az egyenes zárt volt,
+  // nem maradt semmi. Ez INVARIÁNS, nem heurisztika: nulla a megengedett érték.
+  let navNelkul = 0;
+  for (let i = 0; i < s.egysegek.db; i++) {
+    if (!s.harc.elo[i] || s.egysegek.tipus[i] !== 0) continue;
+    if (s.munkasok.allapot[i] !== 1) continue;   // MUNKA.MEGY_LELOHELYRE
+    if (s.munkasok.nodeMezo[i] < 0 && s.egysegek.egyenes[i] === 0) navNelkul++;
+  }
+  sor('navigáció nélkül álló munkás', navNelkul, 'se mező, se egyenes — invariáns: 0');
+  if (navNelkul > 0) {
+    console.log('\n  \u26d4 ' + navNelkul + ' MUNKÁS SEM MEZŐVEL, SEM EGYENESSEL NEM RENDELKEZIK,');
+    console.log('     miközben úton van. Ezek MEG SEM TUDNAK MOZDULNI. Nézd meg a');
+    console.log('     `Munkasok._ujLelohely`-t: kér-e áramlási mezőt az új lelőhelyhez.');
+    bukas++;
+  }
 
   if (a0.dontes === 0 || a1.dontes === 0) {
     console.log('\n  \u26d4 VALAMELYIK GÉP EGYSZER SEM GONDOLKODOTT: az `Ai.lep()` ága néma.');
@@ -992,9 +1072,9 @@ if (ketV06.ok) {
   }
   for (let cs = 0; cs < 2; cs++) {
     const rendelt = cs === 0 ? a0.epit : a1.epit;
-    if (rendelt > 0 && haz[cs] * 2 < rendelt) {
+    if (rendelt > 0 && epult[cs] * 2 < rendelt) {
       console.log('\n  \u26d4 A ' + cs + '. GÉP ÉPÍTÉSI PARANCSAI ELVESZNEK: ' + rendelt
-        + ' rendelésből ' + haz[cs] + ' ház lett.');
+        + ' rendelésből ' + epult[cs] + ' épület lett.');
       console.log('     A parancs csendben eldobódik — legvalószínűbb ok, hogy a');
       console.log('     koordináta a rossz rendszerben megy át (sarok kontra középpont),');
       console.log('     vagy hogy a gép foglalt helyre rendel újra meg újra.');
