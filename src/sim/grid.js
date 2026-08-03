@@ -17,6 +17,10 @@ import { Zaj, mulberry32 } from './rng.js';
 
 /** Ez alatt víz van — járhatatlan (hajók majd a v0.4-ben). */
 export const VIZSZINT = 0.0;
+/** A dombzaj kilengése világegységben. */
+const TEREP_AMPLITUDO = 5.0;
+/** Ennyivel emeljük a szárazföldet a vízszint fölé — lásd a `_general` indoklását. */
+const SZARAZFOLD_EMELES = 2.4;
 /** Ennél meredekebb lejtő szikla — járhatatlan. */
 export const SZIKLA_LEJTO = 0.55;
 
@@ -56,8 +60,15 @@ export class Racs {
     for (let y = 0; y <= n; y++) {
       for (let x = 0; x <= n; x++) {
         const fx = x / n, fy = y / n;
-        // Alap dombok
-        let h = zaj.fbm(fx * 4, fy * 4, 5) * 6.0;
+        // Alap dombok.
+        //
+        // A `+ SZARAZFOLD_EMELES` nélkül a zaj nullára centrált, tehát a pálya
+        // FELE víz alá kerül — mérve 45,1% víz és mindössze 44% járható. Egy
+        // AoE-pályán ez használhatatlan: a seregnek nincs hol manőverezni, és
+        // az áramlási mező fél térképnyi elérhetetlen cellát számolna végig.
+        // Az emeléssel a víz beltéri tavakra és folyókra szorul, a nyílt tenger
+        // pedig a peremre — ahol a `tav > 0.95` levágás úgyis lehúzza.
+        let h = zaj.fbm(fx * 4, fy * 4, 5) * TEREP_AMPLITUDO + SZARAZFOLD_EMELES;
         // Gerincek a szélek felé — a pálya közepe maradjon nyílt csatatér
         const dx = (x - kozep) / kozep, dy = (y - kozep) / kozep;
         const tav = Math.sqrt(dx * dx + dy * dy);

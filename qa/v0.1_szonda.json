@@ -1,0 +1,289 @@
+{
+  "verzio": "0.1.0",
+  "aocVerzio": "0.1.0",
+  "ido": "2026-08-03T15:19:10.928Z",
+  "gep": {
+    "platform": "darwin",
+    "node": "v24.18.1",
+    "gpu": "ANGLE (AMD, ANGLE Metal Renderer: AMD Radeon R9 M380, Unspecified Version)",
+    "bongeszo": "AOC_CHROME=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  },
+  "beallitas": {
+    "url": "http://localhost:5299/",
+    "szelesseg": 1600,
+    "magassag": 900,
+    "dpr": 2,
+    "meresMp": 5,
+    "ablacioMp": 2,
+    "retegek": [
+      "terep",
+      "props",
+      "egysegek",
+      "viz"
+    ]
+  },
+  "lepcsok": [
+    {
+      "egyseg": 100,
+      "tenylegesEgyseg": 100,
+      "fps": 243.3,
+      "kepkocka": 977,
+      "atlagMs": 4.11,
+      "p95Ms": 7.5,
+      "simMs": 0.008,
+      "renderMs": 4.079,
+      "haromszog": 78864,
+      "rajzhivas": 74,
+      "ablacioAlapMs": 3.89,
+      "zajMs": 20.408,
+      "bontas": {
+        "terep": {
+          "letezik": true,
+          "nelkuleMs": 3.58,
+          "nelkuleFps": 279.5,
+          "koltsegMs": 0.312,
+          "haromszog": 29946,
+          "rajzhivas": 33,
+          "szazalek": 8,
+          "zajAlatt": true
+        },
+        "props": {
+          "letezik": true,
+          "nelkuleMs": 2.01,
+          "nelkuleFps": 498.2,
+          "koltsegMs": 1.883,
+          "haromszog": 35202,
+          "rajzhivas": 34,
+          "szazalek": 48.4,
+          "zajAlatt": true
+        },
+        "egysegek": {
+          "letezik": true,
+          "nelkuleMs": 24.3,
+          "nelkuleFps": 41.2,
+          "koltsegMs": -20.408,
+          "haromszog": 65146,
+          "rajzhivas": 66,
+          "szazalek": -524.5,
+          "zajAlatt": true
+        },
+        "viz": {
+          "letezik": true,
+          "nelkuleMs": 3.68,
+          "nelkuleFps": 272.1,
+          "koltsegMs": 0.215,
+          "haromszog": 65144,
+          "rajzhivas": 65,
+          "szazalek": 5.5,
+          "zajAlatt": true
+        }
+      },
+      "egyebMs": 21.889
+    },
+    {
+      "egyseg": 400,
+      "tenylegesEgyseg": 400,
+      "fps": 194.7,
+      "kepkocka": 975,
+      "atlagMs": 5.14,
+      "p95Ms": 8.1,
+      "simMs": 0.026,
+      "renderMs": 4.439,
+      "haromszog": 128437,
+      "rajzhivas": 75,
+      "ablacioAlapMs": 5.15,
+      "zajMs": 0.012,
+      "bontas": {
+        "terep": {
+          "letezik": true,
+          "nelkuleMs": 3.65,
+          "nelkuleFps": 273.7,
+          "koltsegMs": 1.493,
+          "haromszog": 65191,
+          "rajzhivas": 41,
+          "szazalek": 29,
+          "zajAlatt": false
+        },
+        "props": {
+          "letezik": true,
+          "nelkuleMs": 4.77,
+          "nelkuleFps": 209.8,
+          "koltsegMs": 0.38,
+          "haromszog": 117964,
+          "rajzhivas": 43,
+          "szazalek": 7.4,
+          "zajAlatt": false
+        },
+        "egysegek": {
+          "letezik": true,
+          "nelkuleMs": 4.12,
+          "nelkuleFps": 242.5,
+          "koltsegMs": 1.023,
+          "haromszog": 65146,
+          "rajzhivas": 66,
+          "szazalek": 19.9,
+          "zajAlatt": false
+        },
+        "viz": {
+          "letezik": true,
+          "nelkuleMs": 3.84,
+          "nelkuleFps": 260.3,
+          "koltsegMs": 1.305,
+          "haromszog": 148293,
+          "rajzhivas": 74,
+          "szazalek": 25.4,
+          "zajAlatt": false
+        }
+      },
+      "egyebMs": 0.946
+    },
+    {
+      "egyseg": 800,
+      "tenylegesEgyseg": 800,
+      "fps": 176.8,
+      "kepkocka": 885,
+      "atlagMs": 5.66,
+      "p95Ms": 8.1,
+      "simMs": 0.059,
+      "renderMs": 4.911,
+      "haromszog": 241325,
+      "rajzhivas": 77,
+      "ablacioAlapMs": 5.84,
+      "zajMs": 0.18,
+      "bontas": {
+        "terep": {
+          "letezik": true,
+          "nelkuleMs": 4.88,
+          "nelkuleFps": 204.8,
+          "koltsegMs": 0.954,
+          "haromszog": 210108,
+          "rajzhivas": 44,
+          "szazalek": 16.3,
+          "zajAlatt": false
+        },
+        "props": {
+          "letezik": true,
+          "nelkuleMs": 5.41,
+          "nelkuleFps": 184.9,
+          "koltsegMs": 0.427,
+          "haromszog": 200624,
+          "rajzhivas": 46,
+          "szazalek": 7.3,
+          "zajAlatt": false
+        },
+        "egysegek": {
+          "letezik": true,
+          "nelkuleMs": 4.52,
+          "nelkuleFps": 221.5,
+          "koltsegMs": 1.322,
+          "haromszog": 65146,
+          "rajzhivas": 66,
+          "szazalek": 22.6,
+          "zajAlatt": false
+        },
+        "viz": {
+          "letezik": true,
+          "nelkuleMs": 4.42,
+          "nelkuleFps": 226.4,
+          "koltsegMs": 1.42,
+          "haromszog": 239653,
+          "rajzhivas": 77,
+          "szazalek": 24.3,
+          "zajAlatt": false
+        }
+      },
+      "egyebMs": 1.714
+    },
+    {
+      "egyseg": 1600,
+      "tenylegesEgyseg": 1600,
+      "fps": 156.6,
+      "kepkocka": 785,
+      "atlagMs": 6.39,
+      "p95Ms": 8.5,
+      "simMs": 0.135,
+      "renderMs": 5.562,
+      "haromszog": 429055,
+      "rajzhivas": 78,
+      "ablacioAlapMs": 6.39,
+      "zajMs": 0.005,
+      "bontas": {
+        "terep": {
+          "letezik": true,
+          "nelkuleMs": 5.44,
+          "nelkuleFps": 184,
+          "koltsegMs": 0.956,
+          "haromszog": 400847,
+          "rajzhivas": 45,
+          "szazalek": 15,
+          "zajAlatt": false
+        },
+        "props": {
+          "letezik": true,
+          "nelkuleMs": 5.96,
+          "nelkuleFps": 167.7,
+          "koltsegMs": 0.427,
+          "haromszog": 402848,
+          "rajzhivas": 46,
+          "szazalek": 6.7,
+          "zajAlatt": false
+        },
+        "egysegek": {
+          "letezik": true,
+          "nelkuleMs": 4.36,
+          "nelkuleFps": 229.4,
+          "koltsegMs": 2.032,
+          "haromszog": 65146,
+          "rajzhivas": 66,
+          "szazalek": 31.8,
+          "zajAlatt": false
+        },
+        "viz": {
+          "letezik": true,
+          "nelkuleMs": 4.95,
+          "nelkuleFps": 201.9,
+          "koltsegMs": 1.44,
+          "haromszog": 420661,
+          "rajzhivas": 77,
+          "szazalek": 22.5,
+          "zajAlatt": false
+        }
+      },
+      "egyebMs": 1.536
+    }
+  ],
+  "itelet": {
+    "dontes": "GO",
+    "indok": "60 FPS tartva a cél-egységszámon",
+    "celEgyseg": 1600,
+    "p95Ms": 8.5,
+    "atlagMs": 6.39,
+    "fps": 156.6,
+    "szukKeresztmetszet": "egysegek",
+    "szukMs": 2.032,
+    "szukSzazalek": 31.8,
+    "rangsor": [
+      {
+        "reteg": "egysegek",
+        "ms": 2.032
+      },
+      {
+        "reteg": "viz",
+        "ms": 1.44
+      },
+      {
+        "reteg": "terep",
+        "ms": 0.956
+      },
+      {
+        "reteg": "props",
+        "ms": 0.427
+      }
+    ],
+    "egyebMs": 1.536,
+    "egyebNagyobbMintBarmelyReteg": false
+  },
+  "konzolHibak": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}
