@@ -30,6 +30,7 @@ import { Hud } from './ui/hud.js';
 import { EpitesSav } from './ui/epites.js';
 import { Panelek } from './ui/panelek.js';
 import { Modalok } from './ui/modalok.js';
+import { Bevezeto } from './ui/bevezeto.js';
 import * as tarolo from './ui/tarolo.js';
 import { Hang } from './audio/hang.js';
 
@@ -122,13 +123,14 @@ async function indit() {
   const epitesSav = new EpitesSav(uiGyoker, sim, hud);
   const panelek = new Panelek(uiGyoker, sim, hud);
   const modalok = new Modalok(uiGyoker, sim, hud, vezerlo);
+  const bevezeto = new Bevezeto(uiGyoker, sim, hud);
 
   bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo, hang });
   vezerlo.szint(0);
-  hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo, hang, beallitas });
+  hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas });
 
   // Kényelmi kapaszkodó hibakereséshez: a konzolból elérhető a világ.
-  window.PHT = { sim, szinter, allomas, lenyek, hud, panelek, epitesSav, modalok, tarolo, hang, beallitas, betoltottAllapot };
+  window.PHT = { sim, szinter, allomas, lenyek, hud, panelek, epitesSav, modalok, bevezeto, tarolo, hang, beallitas, betoltottAllapot };
   console.log(`%cPORTAL HUB TYCOON%c  seed=${sim.seed}${mentes ? '  (betöltve)' : ''}`,
     'color:#9b6bff;font-weight:700', 'color:#93a0c8');
   if (mentes) hud.uzen(`Mentés betöltve — ${sim.nap}. nap`, 'jo');
@@ -228,7 +230,7 @@ function huzottTeglalap(cella) {
 //  HUROK
 // ══════════════════════════════════════════════════════════════════════════
 
-function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo, hang, beallitas }) {
+function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas }) {
   let utolsoIdo = performance.now();
   let maradek = 0;
   let ido = 0;
@@ -343,6 +345,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     epitesSav.frissit();
     panelek.frissit(dt);
     modalok.frissit();
+    bevezeto.frissit();
 
     // A „Kapuk" fül tartalma a dimenziók állapotától függ. Csak akkor
     // építjük újra, ha tényleg változott — különben minden képkockán DOM-ot

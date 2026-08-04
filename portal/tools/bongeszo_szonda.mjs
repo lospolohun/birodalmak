@@ -169,6 +169,39 @@ try {
     await lap.click(`#oldal button:nth-child(${i})`);
   }
 
+  cim('8a. BEVEZETŐ');
+  // A bevezető az ELSŐ öt perc: ha nem jelenik meg, egy új játékos vakon
+  // indul. A szonda azt méri, hogy kint van, hogy halad, és hogy eltüntethető.
+  {
+    const van = await lap.$('#bevezeto');
+    if (van) ok('a bevezető kártya kint van'); else rossz('nincs bevezető kártya');
+    const elso = await lap.evaluate(() => window.PHT.bevezeto.idx);
+    // Építsünk biztonsági ellenőrzést a parancsfelületen át — a bevezető
+    // első lépése pontosan ez.
+    // Több helyet is végigpróbálunk: a szonda korábbi lépései már raktak le
+    // épületet, és egy fix koordináta ütközhet velük. A vizsgálat tárgya a
+    // BEVEZETŐ, nem a hely — ne bukjon el egy foglalt cellán.
+    const hova = await lap.evaluate(() => {
+      const s = window.PHT.sim;
+      for (const [dx, dy] of [[8, 8], [12, 8], [16, 8], [8, 12], [12, 12], [16, 12], [6, 6]]) {
+        if (s.racs.szabadTerulet(s.kezdoX + dx, s.kezdoY + dy, 3, 2, 0)) {
+          s.parancs({ fajta: 'epit', tipus: 'biztonsag', x: s.kezdoX + dx, y: s.kezdoY + dy, z: 0 });
+          return `${dx},${dy}`;
+        }
+      }
+      return null;
+    });
+    if (!hova) rossz('nem találtam szabad helyet a biztonsági ellenőrzésnek');
+    await varj(900);
+    const masodik = await lap.evaluate(() => window.PHT.bevezeto.idx);
+    if (masodik > elso) ok(`a bevezető továbblépett (${elso} → ${masodik})`);
+    else rossz(`a bevezető nem lépett tovább (${elso} → ${masodik})`);
+    await lap.click('#bevezeto .zar');
+    await varj(200);
+    const rejtve = await lap.evaluate(() => document.getElementById('bevezeto').style.display === 'none');
+    if (rejtve) ok('a bevezető eltüntethető'); else rossz('a bevezető nem tüntethető el');
+  }
+
   cim('8. MENTÉS ÉS BETÖLTÉS');
   // Ez a vizsgálat a v0.2 legfontosabb ígéretét méri: a mentés a seed + a
   // parancsnapló, tehát a betöltött világnak BITRE ugyanannak kell lennie.
