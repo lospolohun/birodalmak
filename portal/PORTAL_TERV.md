@@ -54,7 +54,7 @@ következménye van, és mindhármat használjuk:
 
 ---
 
-## 3. Ami KÉSZ (v0.4)
+## 3. Ami KÉSZ (v1.0)
 
 ### Szimuláció
 - **Rács** 64×48, padló / épület / hő- / hidegzóna / tömeg rétegekkel.
@@ -111,6 +111,32 @@ következménye van, és mindhármat használjuk:
 - Alátámasztás: emeleti padló csak padló fölé. Az átjáró cellája JÁRHATÓ.
 - A szellem átmegy a FALON, de nem a PADLÓN — neki is átjáró kell.
 - Szintválasztó a felső sávban (R/F): a fölötte lévő emeletek eltűnnek.
+
+### v0.5 — végtelen mód
+- A győzelem NEM állítja meg a játékot: a hét fejezet után **korszakok**
+  jönnek, mindegyik saját céllal, **ranggal**, és korszakonként +9 %
+  instabilitással és bérrel. A korszakcél mennyiséget ÉS minőséget is kér.
+
+### v0.6 — élő állomás
+- A **kosz épületenként** gyűlik, ott, ahol a tömeg áll. A takarító koboldok
+  kiválasztják a legkoszosabb épületet, odamennek, és ott dolgoznak.
+
+### v0.7 — a felület, ami megmondja, mi történik
+- **💡 Tanácsadó**: a mérésekből tanult szűk keresztmetszeteket mondja ki.
+  Csak olyat, ami mérhető és amire van válaszlépés.
+- **Grafikonok**: napi idősor hírnévről, forgalomról, bevételről (canvas).
+- **„Ki áll itt?"**: egy cellára kattintva látszik az ott állók terve,
+  hangulata, türelme — az utas-AI eddig fekete doboz volt.
+
+### v0.8 — bevezető
+- Hat cél, mindegyikhez a MIÉRT-tel. Nem kattintgatós bemutató: célokat ad,
+  nem utasításokat, és bármikor eltüntethető.
+
+### v0.9 — kiadás-ellenőrző, események, fájlmentés
+- Külön kapu a KIADHATÓSÁGRA (verzió, ottfelejtett nyomok, külső hivatkozás,
+  npm-parancsok, az alprojekt szivárgása, dokumentáció, build).
+- Öt új esemény (16 összesen), és egy vizsgálat arra, hogy TÖRTÉNIK-e valami.
+- Mentés fájlba/fájlból — egyben a hibajelentés tökéletes formája.
 
 ### v0.4 — a hálózat
 - **Nehézségi fokozatok** (könnyű / normál / kemény) szorzókkal. A fokozat a
