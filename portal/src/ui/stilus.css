@@ -1,0 +1,238 @@
+/* PORTAL HUB TYCOON — FELÜLET.
+ *
+ * ── MIÉRT NINCS UI-KÖNYVTÁR ──────────────────────────────────────────────
+ * A HUD-nak egyetlen dolga van: gyorsan és félreérthetetlenül megmutatni az
+ * állomás állapotát. Ehhez nem kell keretrendszer, viszont NAGYON kell, hogy
+ * ne allokáljon és ne rajzoljon újra mindent minden képkockán — a 3D mellett
+ * a DOM a legkönnyebb módja annak, hogy elveszítsünk 20 FPS-t. Ezért a
+ * felület egyszer felépül, és utána csak a SZÖVEGEK cserélődnek.
+ *
+ * ── SZÍNEK ───────────────────────────────────────────────────────────────
+ * Sötét, hideg alap; a kiemelés lila (kapu) és türkiz (kristály). A három
+ * állapotszín (jó / gond / baj) MINDIG ugyanaz, hogy meg lehessen tanulni.
+ */
+
+:root {
+  --hatter: #10142a;
+  --panel: rgba(20, 25, 52, 0.88);
+  --panel2: rgba(30, 37, 72, 0.94);
+  --keret: rgba(140, 160, 230, 0.22);
+  --szoveg: #e6ecff;
+  --halvany: #93a0c8;
+  --lila: #9b6bff;
+  --turkiz: #6fd8ff;
+  --jo: #63d68a;
+  --gond: #ffc247;
+  --baj: #ff5d73;
+  --arany: #ffd257;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: var(--hatter);
+  color: var(--szoveg);
+  font-family: 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif;
+  font-size: 14px;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#vaszon { position: fixed; inset: 0; display: block; }
+
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui > * { pointer-events: auto; }
+
+/* ── FELSŐ SÁV ─────────────────────────────────────────────────────────── */
+
+#felso {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(12, 16, 38, 0.95), rgba(12, 16, 38, 0.55) 75%, transparent);
+  flex-wrap: wrap;
+}
+
+.cimke {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--keret);
+  border-radius: 10px; padding: 5px 10px;
+  white-space: nowrap;
+}
+.cimke .ikon { font-size: 15px; }
+.cimke b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cimke small { color: var(--halvany); font-size: 11px; }
+.cimke.baj { border-color: var(--baj); box-shadow: 0 0 12px rgba(255, 93, 115, 0.35); }
+.cimke.gond { border-color: var(--gond); }
+
+#jatek-nev { font-weight: 700; letter-spacing: 0.06em; color: var(--lila); }
+#jatek-nev small { color: var(--halvany); font-weight: 400; letter-spacing: 0; }
+
+.sav { width: 74px; height: 7px; border-radius: 4px; background: rgba(0, 0, 0, 0.45); overflow: hidden; }
+.sav > i { display: block; height: 100%; background: var(--jo); transition: width 0.25s linear, background 0.25s; }
+
+/* ── SEBESSÉG ──────────────────────────────────────────────────────────── */
+
+#sebesseg { display: flex; gap: 3px; margin-left: auto; }
+#sebesseg button {
+  width: 34px; height: 30px; border-radius: 8px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--keret); color: var(--szoveg);
+  font-size: 13px; font-weight: 600;
+}
+#sebesseg button.aktiv { background: var(--lila); border-color: var(--lila); color: #fff; }
+
+/* ── FEJEZET ───────────────────────────────────────────────────────────── */
+
+#fejezet {
+  position: absolute; top: 56px; left: 12px; width: 268px;
+  background: var(--panel); border: 1px solid var(--keret); border-left: 3px solid var(--lila);
+  border-radius: 10px; padding: 9px 11px;
+}
+#fejezet h3 { margin: 0 0 3px; font-size: 13px; }
+#fejezet p { margin: 0 0 6px; font-size: 12px; color: var(--halvany); line-height: 1.35; }
+#fejezet .sav { width: 100%; }
+
+/* ── OLDALSÓ GOMBOK ────────────────────────────────────────────────────── */
+
+#oldal {
+  position: absolute; top: 56px; right: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+#oldal button {
+  width: 44px; height: 42px; border-radius: 11px; cursor: pointer; font-size: 19px;
+  background: var(--panel); border: 1px solid var(--keret); color: var(--szoveg);
+  position: relative;
+}
+#oldal button:hover { border-color: var(--lila); }
+#oldal button.aktiv { background: var(--lila); border-color: var(--lila); }
+#oldal button .pont {
+  position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--gond);
+}
+
+/* ── PANEL ─────────────────────────────────────────────────────────────── */
+
+#panel {
+  position: absolute; top: 56px; right: 66px; bottom: 132px; width: 372px;
+  background: var(--panel2); border: 1px solid var(--keret); border-radius: 12px;
+  padding: 12px; overflow-y: auto; display: none;
+}
+#panel.nyitva { display: block; }
+#panel h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: 0.04em; }
+#panel h4 { margin: 12px 0 6px; font-size: 12px; color: var(--halvany); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.tetel {
+  background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px; padding: 8px 10px; margin-bottom: 6px;
+}
+.tetel .fej { display: flex; align-items: center; gap: 7px; }
+.tetel .fej b { flex: 1; font-size: 13px; }
+.tetel p { margin: 5px 0 0; font-size: 11.5px; color: var(--halvany); line-height: 1.4; }
+.tetel .sorok { display: flex; gap: 10px; margin-top: 5px; font-size: 11.5px; color: var(--halvany); flex-wrap: wrap; }
+.tetel .sorok b { color: var(--szoveg); }
+
+button.mini {
+  background: rgba(155, 107, 255, 0.2); border: 1px solid var(--lila); color: var(--szoveg);
+  border-radius: 7px; padding: 4px 9px; font-size: 11.5px; cursor: pointer;
+}
+button.mini:hover { background: var(--lila); }
+button.mini:disabled { opacity: 0.35; cursor: not-allowed; border-color: var(--keret); background: transparent; }
+button.mini.vesz { background: rgba(255, 93, 115, 0.16); border-color: var(--baj); }
+button.mini.vesz:hover { background: var(--baj); }
+
+input[type=range] { width: 100%; accent-color: var(--lila); }
+
+/* ── ÉPÍTÉS-SÁV ────────────────────────────────────────────────────────── */
+
+#epites {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(0deg, rgba(12, 16, 38, 0.97), rgba(12, 16, 38, 0.6) 70%, transparent);
+  padding: 10px 12px 12px;
+}
+#kategoriak { display: flex; gap: 5px; margin-bottom: 7px; flex-wrap: wrap; }
+#kategoriak button {
+  background: var(--panel); border: 1px solid var(--keret); color: var(--halvany);
+  border-radius: 8px; padding: 5px 11px; font-size: 12px; cursor: pointer;
+}
+#kategoriak button.aktiv { color: var(--szoveg); border-color: var(--lila); background: rgba(155, 107, 255, 0.22); }
+
+#epuletek { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
+.epgomb {
+  min-width: 96px; background: var(--panel); border: 1px solid var(--keret);
+  border-radius: 10px; padding: 7px 9px; cursor: pointer; text-align: left; color: var(--szoveg);
+  flex-shrink: 0;
+}
+.epgomb:hover { border-color: var(--lila); }
+.epgomb.aktiv { background: rgba(155, 107, 255, 0.3); border-color: var(--lila); }
+.epgomb.tiltott { opacity: 0.4; cursor: not-allowed; }
+.epgomb .sor1 { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+.epgomb .sor2 { font-size: 11px; color: var(--arany); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.epgomb .sor3 { font-size: 10px; color: var(--halvany); }
+
+/* ── SÚGÓBUBORÉK ───────────────────────────────────────────────────────── */
+
+#buborek {
+  position: absolute; max-width: 280px; padding: 8px 10px;
+  background: rgba(10, 14, 32, 0.96); border: 1px solid var(--keret);
+  border-radius: 9px; font-size: 12px; line-height: 1.4; display: none;
+  pointer-events: none; z-index: 20;
+}
+#buborek b { color: var(--turkiz); }
+
+/* ── ÜZENET ────────────────────────────────────────────────────────────── */
+
+#uzenetek {
+  position: absolute; left: 50%; bottom: 148px; transform: translateX(-50%);
+  display: flex; flex-direction: column-reverse; gap: 5px; align-items: center;
+  pointer-events: none;
+}
+.uzenet {
+  background: rgba(10, 14, 32, 0.94); border: 1px solid var(--keret);
+  border-left: 3px solid var(--turkiz);
+  border-radius: 8px; padding: 6px 13px; font-size: 12.5px;
+  animation: bejon 0.25s ease-out;
+}
+.uzenet.jo { border-left-color: var(--jo); }
+.uzenet.gond { border-left-color: var(--gond); }
+.uzenet.baj { border-left-color: var(--baj); }
+@keyframes bejon { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── MODÁLIS ───────────────────────────────────────────────────────────── */
+
+#fatyol {
+  position: absolute; inset: 0; background: rgba(6, 8, 20, 0.72);
+  display: none; align-items: center; justify-content: center; z-index: 30;
+  backdrop-filter: blur(3px);
+}
+#fatyol.nyitva { display: flex; }
+#modal {
+  width: min(560px, 92vw); background: var(--panel2);
+  border: 1px solid var(--keret); border-radius: 16px; padding: 22px 24px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+#modal .fejlec { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+#modal .fejlec .ikon { font-size: 30px; }
+#modal h1 { margin: 0; font-size: 19px; letter-spacing: 0.03em; }
+#modal .alcim { color: var(--lila); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+#modal p.torzs { font-size: 13.5px; line-height: 1.6; color: #cfd8f5; margin: 0 0 14px; }
+#modal .valaszok { display: flex; flex-direction: column; gap: 8px; }
+#modal .valasz {
+  text-align: left; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--keret);
+  border-radius: 10px; padding: 10px 13px; cursor: pointer; color: var(--szoveg);
+}
+#modal .valasz:hover { border-color: var(--lila); background: rgba(155, 107, 255, 0.18); }
+#modal .valasz b { display: block; font-size: 13.5px; margin-bottom: 3px; }
+#modal .valasz span { font-size: 11.5px; color: var(--halvany); line-height: 1.4; }
+#modal .valasz:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── VÉGE-KÉPERNYŐ ─────────────────────────────────────────────────────── */
+
+#modal.vege h1 { font-size: 26px; }
+
+/* ── GÖRGETŐSÁV ────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(140, 160, 230, 0.28); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(140, 160, 230, 0.5); }

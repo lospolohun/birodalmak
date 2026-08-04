@@ -25,7 +25,14 @@
     "p:uzenetek": "node tools/panel_uzenetek_szonda.mjs",
     "p:statisztika": "node tools/panel_statisztika_szonda.mjs",
     "p:minimap": "node tools/minimap_szonda.mjs",
-    "panelek": "npm run ikon && npm run p:epites && npm run p:kijeloles && npm run p:kepzes && npm run p:tech && npm run p:uzenetek && npm run p:statisztika && npm run p:minimap"
+    "panelek": "npm run ikon && npm run p:epites && npm run p:kijeloles && npm run p:kepzes && npm run p:tech && npm run p:uzenetek && npm run p:statisztika && npm run p:minimap",
+    "portal:dev": "vite --config portal/vite.config.js",
+    "portal:build": "vite build --config portal/vite.config.js",
+    "portal:preview": "vite preview --config portal/vite.config.js",
+    "portal:det": "node portal/tools/det_szonda.mjs",
+    "portal:bongeszo": "node portal/tools/bongeszo_szonda.mjs",
+    "portal:kep": "node portal/tools/kep.mjs",
+    "portal:szonda": "npm run portal:det && npm run portal:build && npm run portal:bongeszo"
   },
   "dependencies": {
     "three": "^0.170.0",

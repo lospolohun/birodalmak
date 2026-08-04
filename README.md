@@ -1,3 +1,17 @@
+# A repó két játéka
+
+| mappa | játék | indítás |
+|---|---|---|
+| gyökér (`src/`) | **AGE OF THE CRYSTALS** — böngészős RTS | `npm run dev` |
+| [`portal/`](portal/PORTAL_TERV.md) | **PORTAL HUB TYCOON** — dimenziókapu-tycoon | `npm run portal:dev` |
+
+A két játék diszjunkt fájlkészleten él: a `portal/` alprojektnek saját
+`index.html`-je, `vite.config.js`-e és szondái vannak, és az AoC egyetlen
+fájljához sem nyúl. A közös felület a `package.json` néhány `portal:*`
+scriptje.
+
+---
+
 # AGE OF THE CRYSTALS
 
 Böngészős RTS az Age of Empires hagyományában — Three.js / WebGL2, Vite.

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Portal Hub Tycoon</title>
+  <!--
+    Az ikon adat-URI, nem fájl. Ha egy lapon nincs ikon-hivatkozás, a böngésző
+    MAGÁTÓL kér egy `/favicon.ico`-t; nálunk az nem létezik, tehát 404 — és
+    onnantól minden mérés „1 konzol-hibával" indul. Egy örökös sárga jelzés a
+    legrosszabb fajta: megtanítja az embert, hogy nézzen át rajta, és a
+    következő, VALÓDI hiba is átcsúszik vele. Az adat-URI-t a vite érintetlenül
+    viszi ki a `dist/index.html`-be, tehát alkönyvtárból is működik.
+    A rajz a játék kapuja: lila gyűrű, világító maggal.
+  -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='5'%20fill='%2310142a'/%3E%3Ccircle%20cx='12'%20cy='12'%20r='7.5'%20fill='none'%20stroke='%239b6bff'%20stroke-width='2.6'/%3E%3Ccircle%20cx='12'%20cy='12'%20r='3.6'%20fill='%236fd8ff'/%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="vaszon"></canvas>
+  <div id="ui"></div>
+  <script type="module" src="/src/fo.js"></script>
+</body>
+</html>

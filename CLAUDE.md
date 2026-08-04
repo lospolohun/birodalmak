@@ -1,5 +1,14 @@
 # AGE OF THE CRYSTALS — munkaszabályok
 
+> ⚠️ **EBBEN A REPÓBAN KÉT JÁTÉK VAN.** Ez a fájl az AGE OF THE CRYSTALS-ról
+> szól (gyökér `src/`). A `portal/` mappa egy ÖNÁLLÓ alprojekt — **PORTAL HUB
+> TYCOON** —, saját `index.html`-lel, `vite.config.js`-szel és szondákkal;
+> a szabályai a [`portal/PORTAL_TERV.md`](portal/PORTAL_TERV.md)-ben vannak.
+> A szellemük ugyanaz (determinizmus, magyar azonosítók, MIÉRT-kommentek), de
+> a parancsok mások: `npm run portal:dev`, `npm run portal:det`,
+> `npm run portal:szonda`. **A két játék diszjunkt fájlkészleten él — ha az
+> egyiken dolgozol, a másikhoz ne nyúlj.**
+
 ## A legfontosabb szabály
 
 **A `src/sim/` alatt a determinizmus mindent felülír.** Mielőtt bármit írsz oda,
