@@ -14,7 +14,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
-| v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **folyamatban** — lásd alább |
+| v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
 | v0.10 | Térkép-presetek, kampány | |
@@ -197,7 +197,7 @@ megközelítését** az ellenséges központhoz.
 |---|---|---|
 | v0.7/1 | hadi köd (sim-oldali láthatóság + GPU-textúra) | **kész** |
 | v0.7/2 | mentés / betöltés | **kész** |
-| v0.7/3 | minimap és rendes HUD | hátravan |
+| v0.7/3 | minimap és rendes HUD | **kész** |
 
 **A köd a SIMBEN él, nem a renderben** — pedig elsőre látványnak tűnik. Három
 oka van:
@@ -282,6 +282,48 @@ egyetlen nyitott cella olyan útvonalat ad, ami az eredeti meccsben nem létezet
 Játékosnak: **F5** mentés, **F9** betöltés (böngésző-tároló, egy rekesz). A
 mentés mérete a 3000. ticken 184 kB JSON — a tömör bináris formátum a v0.8
 hálózati kódjának dolga, ahol tényleg számít.
+
+### v0.7/3 — a minimap nem szivárogtathat
+
+A minimap adat-előállítása külön fájlban van (`ui/minimap_adat.js`), és
+**nem tud a DOM-ról** — egyetlen dolga, hogy a sim állapotából feltöltsön egy
+RGBA bájt-puffert. A szétválasztás oka gyakorlati: így node-ban is fut, tehát a
+szonda vizsgálni tudja. Egy vászonba rajzoló minimapról csak szemmel derülne
+ki, ha elromlik, a felhőben pedig nincs szem (nincs GPU).
+
+⚠️ **Ez a v0.7 legkönnyebben elrontható és legnehezebben észrevehető pontja.**
+A minimap egyetlen elfelejtett feltétellel megmutatná az ellenség minden
+mozdulatát, miközben a nagy képernyőn sötét van. A hadi köd ilyenkor „működik"
+— a rácsa frissül, a textúrája rendben van, a szonda köd-számai nem nullák —,
+csak épp senkit nem érdekel, mert a valódi információ máshol elérhető. Se a
+hash, se a köd-számok nem fognák meg.
+
+A szabály tehát szigorú, és a szonda ellenőrzi:
+
+| | mikor látszik a minimapon |
+|---|---|
+| saját egység, épület | mindig |
+| idegen egység, épület | csak ha a cellája **éppen most** látható |
+| terep, nyersanyag | ha **valaha** láttuk (a felderítés jutalma) |
+| sosem látott terület | fekete |
+
+A gát nem azt nézi, hogy „rajzolt-e valamit", hanem hogy **maradt-e bármi a
+ködben rejtve**. Ellenőrizve: a láthatóság-feltétel kiiktatásával a szonda
+tényleg bukik.
+
+**A HUD** rögzített mezőkből áll, nem szövegblokkból, és minden mező csak akkor
+ír, ha az értéke tényleg változott. A v0.2 óta egyetlen `textContent` volt a
+`main.js`-ben — egy értékadás az egész csomópontot újratördeli, 144 Hz-en
+ingyen elvitt munkára. A gyors mezők (kijelölés, üzenet) képkockánként mennek,
+a lassúak (nyersanyag, népesség, felfedezettség) 120 ms-onként.
+
+A minimapra kattintás a **kamerát** mozgatja, és ez az egyetlen felhasználói
+művelet a projektben, ami NEM megy át a parancs-soron — helyesen: a kamera nem
+a szimuláció része, a v0.8-ban a másik játékos nézőpontja minket nem érdekel.
+
+**Ismert adósság:** az épületek csak akkor látszanak a minimapon, ha éppen
+láthatók. A műfaj-szokás az, hogy a felfedezett épület emlékként ottmarad — ez
+külön „emlékezett épületek" állapotot igényel, ami a v0.11 UI-körébe való.
 
 ## A záró lépcsők (v0.11–v0.13)
 

@@ -527,6 +527,9 @@ export class Bevitel {
   }
 
   /** A gazdaság sora a HUD-nak (v0.3). */
+  /** A legutóbbi visszajelzés a játékosnak (a HUD kérdezi). */
+  uzenet() { return this._uzenet || ''; }
+
   gazdasagSzoveg() {
     const cs = this.kijeloles.sajatCsapat;
     const a = this.sim.gazdasag.allapot(cs);

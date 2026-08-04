@@ -48,3 +48,57 @@ html, body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45) inset;
   z-index: 10;
 }
+
+/* A minimap (v0.7/3). A JOBB ALSÓ sarokban, mert a HUD a bal felsőben ül, és
+   a kettő így sosem takarja egymást — a képernyő közepe pedig marad a
+   játéknak. A `pointer-events` itt SZÁNDÉKOSAN bekapcsolva van (a HUD-dal
+   ellentétben): a minimapra kattintás mozgatja a kamerát. */
+#minimap {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  width: 192px;
+  height: 192px;
+  border-radius: 4px;
+  border: 1px solid rgba(120, 190, 255, 0.3);
+  background: rgba(6, 10, 18, 0.9);
+  /* Élhű nagyítás: a minimap képpontjai INFORMÁCIÓT hordoznak (egy egység egy
+     pont), az elmosás pedig pont ezt kenné szét. */
+  image-rendering: pixelated;
+  cursor: crosshair;
+  z-index: 12;
+}
+
+/* ── HUD (v0.7/3) ───────────────────────────────────────────────────────
+   A v0.2 óta a HUD egyetlen szövegblokk volt. Most rögzített MEZŐK vannak,
+   mert egy RTS-ben a nyersanyag-számot a szem sarokkal olvassa — ahhoz
+   viszont rögzített HELY kell, nem folyó szöveg. A `tabular-nums` ezt
+   fejezi be: a számjegyek egyforma szélesek, tehát a szám nem ugrál, amikor
+   99-ről 100-ra vált. */
+.hud-panel { display: flex; flex-direction: column; gap: 2px; }
+.hud-eroforras {
+  display: flex;
+  gap: 14px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.hud-eroforras b { font-weight: 700; }
+.hud-sereg { display: flex; gap: 12px; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.hud-eroforras i, .hud-sereg i {
+  font-style: normal;
+  opacity: 0.6;
+  margin-right: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+/* A négy nyersanyag színe MEGEGYEZIK a minimapéval és a 3D-s lelőhelyekével.
+   Egy szín egy dolgot jelentsen a játékban — enélkül a játékosnak minden
+   felületen újra kell tanulnia ugyanazt. */
+.hud-nyers-0 b { color: #e08494; }
+.hud-nyers-1 b { color: #7fc98c; }
+.hud-nyers-2 b { color: #c3c7cf; }
+.hud-nyers-3 b { color: #b39bec; }
+.hud-kijeloles { opacity: 0.95; }
+.hud-uzenet { min-height: 1em; color: #ffd479; }
+.hud-mero, .hud-sugo { opacity: 0.55; font-size: 11px; }

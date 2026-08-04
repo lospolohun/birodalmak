@@ -1138,6 +1138,46 @@ if (ketV06.ok) {
     bukas++;
   }
 
+  // ── v0.7/3 — A MINIMAP NEM SZIVÁROGTATHAT ──────────────────────────
+  //
+  // ⚠️ EZ A LEGKÖNNYEBBEN ELRONTHATÓ DOLOG A v0.7-BEN, ÉS A LEGNEHEZEBBEN
+  // ÉSZREVEHETŐ. A minimap egyetlen elfelejtett feltétellel megmutatná az
+  // ellenség minden mozdulatát, miközben a nagy képernyőn sötét van. A hadi
+  // köd ilyenkor „működik" — a rácsa frissül, a textúrája rendben van, a
+  // szonda köd-számai nem nullák —, csak épp SENKIT NEM ÉRDEKEL, mert a
+  // valódi információ máshol elérhető. Se a hash, se a köd-számok nem
+  // fognák meg.
+  //
+  // A `minimap_adat.js` ezért DOM-mentes: node-ban is lefut, tehát itt
+  // ellenőrizhető, amit a felhőben szemmel úgysem lehetne (nincs GPU).
+  {
+    const { minimapAdat, MINIMAP_MERET } = await import(
+      pathToFileURL(join(GYOKER, 'src', 'ui', 'minimap_adat.js')).href);
+    const puffer = new Uint8ClampedArray(MINIMAP_MERET * MINIMAP_MERET * 4);
+    const mm = minimapAdat(s, puffer, 0);
+    sor('minimap kirajzolva', mm.egyseg + ' egység · ' + mm.epulet + ' épület',
+      'terep ' + mm.terep + ' · nyersanyag ' + mm.nyers);
+    sor('minimap köd', mm.sotet + ' sosem látott · ' + mm.kodos + ' emlékezett',
+      'ködben REJTVE maradt: ' + mm.rejtett);
+
+    if (mm.egyseg === 0 && mm.epulet === 0) {
+      console.log('\n  \u26d4 A MINIMAP ÜRES: sem egység, sem épület nem került rá.');
+      bukas++;
+    }
+    if (mm.sotet === 0) {
+      console.log('\n  \u26d4 A MINIMAPON NINCS SÖTÉT TERÜLET: a köd nem hat rá,');
+      console.log('     tehát a kis térkép a teljes pályát elárulja.');
+      bukas++;
+    }
+    if (mm.rejtett === 0) {
+      console.log('\n  \u26d4 A MINIMAP MINDENT KIRAJZOLT, AMI LÉTEZIK: egyetlen idegen');
+      console.log('     egység vagy épület sem maradt a ködben. Vagy tényleg mindent');
+      console.log('     látunk (akkor a köd a hibás), vagy a minimap MEGKERÜLI a ködöt.');
+      console.log('     Nézd meg a `minimapAdat` láthatóság-feltételeit.');
+      bukas++;
+    }
+  }
+
   // NAVIGÁCIÓ NÉLKÜL ÁLLÓ MUNKÁS — a v0.6/2 legdrágább hibájának őre.
   //
   // A mozgás-magnak KÉT módja van célba érni: áramlási mező, vagy szabad

@@ -32,6 +32,8 @@ import { Egysegek3D } from './render/units3d.js';
 import { Kijeloles3D } from './render/kijeloles3d.js';
 import { Gazdasag3D } from './render/gazdasag3d.js';
 import { Kod3D } from './render/kod3d.js';
+import { Minimap } from './ui/minimap.js';
+import { Hud } from './ui/hud.js';
 import { Lovedek3D } from './render/lovedek3d.js';
 import { Ostrom3D } from './render/ostrom3d.js';
 import { Bevitel } from './ui/bevitel.js';
@@ -80,6 +82,10 @@ class Jatek {
       // `renderOrder` amúgy is eldönti a sorrendet, de a felsorolás olvassa is
       // magát — aki ide néz, lássa, hogy ez a réteg mindenek fölött van.
       kod: new Kod3D(szinter, this.sim, { sajatCsapat: 0 }),
+      // A minimap NEM a 3D szinterben rajzol (saját 2D vászon), de a réteg-
+      // szerződést betartja — így a réteg-kapcsoló és az újrafelállás
+      // ugyanúgy éri el, mint bármelyik másikat.
+      minimap: new Minimap(this.sim, this.kamera, { sajatCsapat: 0 }),
     };
 
     // ── Óra-állapot ────────────────────────────────────────────────────
@@ -90,7 +96,7 @@ class Jatek {
     /** Mérés közben ide gyűlnek a képkocka-idők. */
     this._mero = null;
 
-    this._hud = document.getElementById('hud');
+    this._hud = new Hud(this.sim, this.bevitel, { sajatCsapat: 0 });
     this._fpsAblak = [];
 
     this._kotesek();
@@ -139,14 +145,14 @@ class Jatek {
     if (this.kamera.frissit) this.kamera.frissit(dt);
     for (const nev in this.retegek) {
       const r = this.retegek[nev];
-      if (r.frissit) r.frissit(this.sim, alfa);
+      if (r.frissit) r.frissit(this.sim, alfa, most);
     }
     const kam = this.kamera.objektum || this.kamera.kamera || this.kamera;
     this.mag.rajzol ? this.mag.rajzol(kam) : this.mag.renderer.render(this.mag.scene, kam);
     this._renderMs = performance.now() - rKezd;
 
     this._merestGyujt(dt);
-    this._hudFrissit();
+    this._hudFrissit(most);
   }
 
   _merestGyujt(dt) {
@@ -160,25 +166,25 @@ class Jatek {
     }
   }
 
-  _hudFrissit() {
+  /**
+   * A HUD frissítése. A mérőszámokat INNEN kapja — a `Hud` maga nem olvas
+   * `performance.now()`-t és nem nyúl a renderelőhöz, hogy egyetlen dolga
+   * maradjon: kiírni, amit kap. (Ugyanaz az elv, ami a render-rétegeknél: egy
+   * réteg se szerezzen be magának adatot, amit a gazda úgyis tud.)
+   */
+  _hudFrissit(most) {
     if (!this._hud) return;
     let osszeg = 0;
     for (let i = 0; i < this._fpsAblak.length; i++) osszeg += this._fpsAblak[i];
     const atlag = osszeg / (this._fpsAblak.length || 1);
     const info = this.mag.renderer ? this.mag.renderer.info.render : { triangles: 0, calls: 0 };
-    this._hud.textContent =
-      'AGE OF THE CRYSTALS v' + VERZIO +
-      '  ·  ' + (1000 / atlag).toFixed(0) + ' FPS (' + atlag.toFixed(1) + ' ms)' +
-      '  ·  egység: ' + this.sim.egysegek.db +
-      '  ·  tick: ' + this.sim.tick +
-      '  ·  sim ' + this._simMs.toFixed(2) + ' ms / render ' + this._renderMs.toFixed(2) + ' ms' +
-      '  ·  △ ' + (info.triangles / 1000).toFixed(0) + 'k / ' + info.calls + ' hívás' +
-      '\n' + this.bevitel.gazdasagSzoveg() +
-      '\n' + this.bevitel.hudSzoveg() +
-      '\nbal: kijelölés · jobb: menet vagy gyűjtés · Shift+jobb / T: támadó menet · '
-      + 'X: állj · H: tartás · F: alakzat · G: állás · K: korszak · Ctrl+1..0: csoport' +
-      '\népítés a kurzorhoz: B raktár · N ház · L laktanya · J íjászda · I istálló · O ostromműhely'
-      + '  ·  C: képzés a legközelebbi saját épületben';
+    this._hud.frissit(this.sim, most, {
+      fps: 1000 / atlag,
+      simMs: this._simMs,
+      renderMs: this._renderMs,
+      haromszog: info.triangles,
+      hivas: info.calls,
+    });
   }
 
   // ── A szonda felülete ────────────────────────────────────────────────
