@@ -330,7 +330,7 @@ külön „emlékezett épületek" állapotot igényel, ami a v0.11 UI-körébe 
 | szakasz | tartalom | állapot |
 |---|---|---|
 | v0.8/1 | lockstep mag, hurok-szállítás, desync-detektor | **kész** |
-| v0.8/2 | WebSocket relay (szerver + kliens) | hátravan |
+| v0.8/2 | WebSocket relay (szerver + kliens) | **kész** |
 | v0.8/3 | újracsatlakozás a mentésből, késleltetés-simítás | hátravan |
 
 **A hálózat nem világállapotot küld.** Nem pozíciókat, nem életerőt, nem
@@ -375,6 +375,39 @@ A 11. vizsgálat három ágon fut:
 A **hurok-szállítás** (`net/hurok.js`) nem egyszerűsített változata a
 valódinak: ugyanazt a felületet hajtja meg, ugyanazokkal az üzenetekkel, és tud
 késleltetni is. Ha valami ott működik, a WebSocket-változat már csak szállítás.
+
+### v0.8/2 — a szerver nem tud semmit a játékról
+
+A relay (`server/relay.mjs`) nem ismer egységet, nyersanyagot, térképet vagy
+győzelmi feltételt. Egyetlen dolgot csinál: **továbbít**. Ez nem szegényes
+megoldás, hanem a lockstep közvetlen következménye — ha minden gép ugyanazt a
+determinisztikus szimulációt futtatja ugyanarra a parancs-sorra, a szervernek
+nincs mit hitelesítenie. Amit ezzel nyerünk: elhanyagolható szerver-terhelés,
+és egy szerver, ami **nem tud desyncet okozni**, mert nincs benne játék-logika,
+amiben eltérhetne.
+
+⚠️ **Egy tekintélye viszont van, és az nem elhagyható: a játékos-azonosítót a
+szerver bélyegzi.** Egy hamis kliens különben `jatekos: 0`-val küldhetne
+csomagot, és a *másik* játékos seregének parancsolhatna. A kliensek nem látják
+egymás kapcsolatát, tehát ezt csak a relay tudja megfogni. A hálózati szonda
+külön próbálja: az egyik kliens szándékosan hazudik a feladóról, és a másiknak
+a valódi azonosítót kell látnia. (Ellenőrizve: a bélyegzés kiiktatásával a
+szonda bukik.)
+
+A parancsok **tartalmát** viszont nem vizsgáljuk. Azt minden kliens simje úgyis
+elutasítja, ha érvénytelen — és mindenhol ugyanúgy, mert a szabály a simben van.
+Egy szerver-oldali „ellenőrzés" csak egy második, eltérő szabálykészletet
+hozna, vagyis pont desync-forrás lenne.
+
+**A hálózati szonda külön parancs (`npm run halo`), nem a `det` része.** A
+determinizmus-szonda értéke az, hogy tiszta: nincs benne port, időzítés vagy
+másik folyamat, tehát ha bukik, a szimuláció a hibás. Egy socketes vizsgálat
+ebbe beleerőltetve egy foglalt portot „determinizmus-hibaként" jelentene, és
+néhány hamis riasztás után senki nem hinne a kapunak.
+
+Mérve (200 kör, valódi socket, külön folyamatban futó relay): 202 csomag
+mindkét irányban, 21 végrehajtott parancs oldalanként, 198 hash-vizsgálat, a
+két szimuláció **bitre azonos**.
 
 ## A záró lépcsők (v0.11–v0.13)
 
