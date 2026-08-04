@@ -52,9 +52,30 @@ function chromeUtvonal() {
   return undefined;
 }
 
-const kiszolgalo = spawn('npx', ['vite', 'preview', '--config', join(GYOKER, 'vite.config.js'), '--port', String(PORT), '--strictPort'], {
-  cwd: join(GYOKER, '..'), stdio: 'ignore',
-});
+/**
+ * A kiszolgáló indítása és MEGBÍZHATÓ leállítása.
+ *
+ * ⚠️ EZ EGY VALÓDI, MEGTALÁLT HIBA VOLT. A `spawn('npx', …)` + `kill()` csak az
+ * `npx`-et állítja meg; a vite GYEREKFOLYAMATA életben marad, és megtartja a
+ * portot. A következő futás `--strictPort` mögül a MÁR FUTÓ, elavult
+ * kiszolgálót kapja — vagyis zöld szonda a RÉGI `dist/`-re. Ennél kevés
+ * álnokabb hiba van egy mérőeszközben.
+ *
+ * A megoldás: saját folyamatcsoport (`detached`), és a csoport egészének
+ * kilövése (`process.kill(-pid)`).
+ */
+function kiszolgalotIndit(args) {
+  const p = spawn('npx', args, { cwd: join(GYOKER, '..'), stdio: 'ignore', detached: true });
+  p.unref();
+  return p;
+}
+
+function kiszolgalotLeallit(p) {
+  if (!p || !p.pid) return;
+  try { process.kill(-p.pid, 'SIGTERM'); } catch (e) { try { p.kill(); } catch (e2) { /* már halott */ } }
+}
+
+const kiszolgalo = kiszolgalotIndit(['vite', 'preview', '--config', join(GYOKER, 'vite.config.js'), '--port', String(PORT), '--strictPort']);
 const varj = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
@@ -94,19 +115,36 @@ try {
   else rossz(`az idő nem halad: ${t1} → ${t2}`);
 
   cim('5. ÉRKEZNEK UTASOK ÉS RAJZOLÓDNAK');
-  const allapot = await lap.evaluate(() => ({
-    utas: window.PHT.sim.utasSzam,
-    rajzoltTest: window.PHT.lenyek.szilardTest.count + window.PHT.lenyek.lebegoTest.count,
-    padloCella: window.PHT.allomas.padlo.count,
-    hivas: window.PHT.szinter.renderelo.info.render.calls,
-    haromszog: window.PHT.szinter.renderelo.info.render.triangles,
-  }));
+  const allapot = await lap.evaluate(() => {
+    // A v0.2 óta fajonként/típusonként külön példányosított mesh van, ezért a
+    // „hány lény rajzolódik" kérdést össze kell adni a fajok fölött.
+    let rajzoltTest = 0;
+    for (const b of window.PHT.lenyek.fajMesh.values()) rajzoltTest += b.test.count;
+    let epuletPeldany = 0;
+    for (const b of window.PHT.allomas.tipusMesh.values()) epuletPeldany += b.test.count;
+    return {
+      utas: window.PHT.sim.utasSzam,
+      rajzoltTest,
+      epuletPeldany,
+      padloCella: window.PHT.allomas.padlo.count,
+      hivas: window.PHT.szinter.renderelo.info.render.calls,
+      haromszog: window.PHT.szinter.renderelo.info.render.triangles,
+    };
+  });
   console.log(`    utas ${allapot.utas} · rajzolt lény ${allapot.rajzoltTest} · padlócella ${allapot.padloCella}`);
   console.log(`    rajzolási hívás ${allapot.hivas} · háromszög ${allapot.haromszog}`);
   if (allapot.utas > 0) ok('vannak utasok az állomáson'); else rossz('egyetlen utas sem érkezett');
   if (allapot.padloCella > 300) ok('a padló felépült'); else rossz('a padló nem rajzolódott ki');
   if (allapot.hivas > 0 && allapot.haromszog > 1000) ok('a WebGL rajzol'); else rossz('a WebGL nem rajzolt semmit');
-  if (allapot.hivas < 40) ok(`${allapot.hivas} rajzolási hívás — a példányosítás működik`);
+  // ⚠️ A KÜSZÖB A v0.2-BEN MEGVÁLTOZOTT, és ez tudatos csere volt. Amíg minden
+  // épület ugyanaz a doboz és minden lény ugyanaz a kapszula volt, tizenkét
+  // hívásból kijött az egész jelenet — de akkor minden egyformán is nézett ki.
+  // A típusonkénti sziluett ára az, hogy a hívások száma a TÍPUSOK számától
+  // függ (≈20 épület + 10 faj, testtel-dísszel). Ami NEM változhat: a hívás
+  // száma nem függhet az ÉPÜLETEK és a LÉNYEK számától. A küszöb ezért 120 —
+  // bőven a típus-alapú felső korlát fölött, és bőven az alatt, amit egy
+  // elrontott, példányonként rajzoló változat produkálna.
+  if (allapot.hivas < 120) ok(`${allapot.hivas} rajzolási hívás — a példányosítás működik`);
   else rossz(`${allapot.hivas} rajzolási hívás — valami nincs példányosítva`);
 
   cim('6. AZ ÉPÍTÉS MŰKÖDIK A FELÜLETRŐL');
@@ -172,7 +210,7 @@ try {
   console.log(`\n    képernyőkép: portal/qa/bongeszo.png`);
   await bongeszo.close();
 } finally {
-  kiszolgalo.kill();
+  kiszolgalotLeallit(kiszolgalo);
 }
 
 console.log('');

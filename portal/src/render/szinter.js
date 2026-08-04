@@ -16,8 +16,10 @@
 import * as THREE from 'three';
 import { RACS_SZ, RACS_M } from '../mag/config.js';
 
-/** A talajsík: minden egérkoordináta ezen keresztül lesz rács-cellává. */
-const TALAJ = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+// A talajsík példányonként van, mert a MAGASSÁGA változik: a szintválasztó
+// átteszi az aktív emelet szintjére. Ha modulszintű állandó maradna, az
+// emeleten építve a kurzor a földszintre mutatna — vagyis pont oda, ahová a
+// játékos NEM épít. (`THREE.Plane` normálisa (0,1,0), a konstans −magasság.)
 
 export class Szinter {
   /** @param {HTMLCanvasElement} vaszon */
@@ -44,6 +46,9 @@ export class Szinter {
     this._fenyek();
     this._eg();
 
+    /** Az aktív szint világ-magassága; a szintválasztó állítja. */
+    this.talajY = 0;
+    this._talaj = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.egerNdc = new THREE.Vector2(0, 0);
     this.sugar = new THREE.Raycaster();
     this._talajPont = new THREE.Vector3();
@@ -232,7 +237,8 @@ export class Szinter {
   /** Az egér alatti talajpont világkoordinátában, vagy null. */
   talajPont() {
     this.sugar.setFromCamera(this.egerNdc, this.kamera);
-    const p = this.sugar.ray.intersectPlane(TALAJ, this._talajPont);
+    this._talaj.constant = -this.talajY;
+    const p = this.sugar.ray.intersectPlane(this._talaj, this._talajPont);
     return p ? p : null;
   }
 

@@ -23,7 +23,8 @@ import { ALAP_TURELEM, SOR_HANGULAT_KOPAS, SETA_HANGULAT_KOPAS, ALAP_SEBESSEG } 
 import { FAJOK } from './lenyek.js';
 import { DIMENZIOK } from './dimenziok.js';
 import { sulyozott } from '../mag/rng.js';
-import { DX, DY } from './utkereses.js';
+import { DX, DY, IRANY_FEL, IRANY_LE } from './utkereses.js';
+import { EPULETEK } from './epuletek.js';
 
 export const ALLAPOT = {
   ERKEZIK: 0,     // most lép ki a kapuból, még nem irányítható
@@ -46,8 +47,19 @@ export function ujUtas() {
     dimIdx: 0,      // honnan jött
     celDimIdx: 0,   // hová megy tovább
     x: 0, y: 0,
+    /** Melyik szinten van. Ez a világ állapota, nem nézeti beállítás. */
+    z: 0,
     /** Az aktuális lépés célcellájának közepe. */
     lx: 0, ly: 0,
+    /**
+     * Szintváltás közben: hány tick van hátra, és melyik szintre tart.
+     * Az átjáró IDŐBE kerül — ez az, ami a mozgólépcsőt lassabbá teszi a
+     * liftnél, és ami miatt egy rosszul elhelyezett lépcső valódi torlódás.
+     */
+    valtasHatra: 0,
+    valtasCel: 0,
+    /** A szintváltás teljes hossza — a render ebből számol arányt. */
+    valtasTeljes: 1,
     allapot: ALLAPOT.ERKEZIK,
     ora: 0,          // az állapotban eltöltött tick
     terv: [],        // igénykódok sorban
@@ -73,7 +85,7 @@ export function ujUtas() {
  * @param {number} dimIdx honnan érkezik
  * @param {number} px,py belépési pont (a kapu peronja)
  */
-export function utastIndit(sim, u, dimIdx, px, py, fajIdxKenyszer = -1) {
+export function utastIndit(sim, u, dimIdx, px, py, pz = 0, fajIdxKenyszer = -1) {
   const dim = DIMENZIOK[dimIdx];
   const dall = sim.dimenziok[dimIdx];
   let fi = fajIdxKenyszer;
@@ -86,8 +98,9 @@ export function utastIndit(sim, u, dimIdx, px, py, fajIdxKenyszer = -1) {
   u.aktiv = true;
   u.fajIdx = fi;
   u.dimIdx = dimIdx;
-  u.x = px; u.y = py;
+  u.x = px; u.y = py; u.z = pz | 0;
   u.lx = px; u.ly = py;
+  u.valtasHatra = 0; u.valtasCel = u.z;
   u.allapot = ALLAPOT.ERKEZIK;
   u.ora = 0;
   u.tervIdx = 0;
@@ -161,6 +174,21 @@ export function utasLep(sim, u) {
 
   const kornyezet = kornyezetHatas(sim, u, faj);
 
+  // ── SZINTVÁLTÁS ─────────────────────────────────────────────────────────
+  // Amíg az átjárón van, nem lép és nem dönt — csak fogy az ideje és a
+  // hangulata. Ez a „várakozás mozgás közben", ami egy állomáson a
+  // legidegesítőbb, és pont ezért kell, hogy a játékos érezze a lépcső árát.
+  if (u.valtasHatra > 0) {
+    u.valtasHatra--;
+    hangulatValt(u, -(SOR_HANGULAT_KOPAS * 0.5 + kornyezet));
+    if (u.valtasHatra === 0) {
+      u.z = u.valtasCel;
+      u.lx = Math.floor(u.x) + 0.5;
+      u.ly = Math.floor(u.y) + 0.5;
+    }
+    return;
+  }
+
   switch (u.allapot) {
     case ALLAPOT.ERKEZIK:
       // Rövid „kilépek a kapuból" pillanat: enélkül az utasok egymás hegyén
@@ -227,7 +255,7 @@ function kornyezetHatas(sim, u, faj) {
   let extra = sim.koszTerheles;
   if (sim.aramszunet) extra += 3;
   if (faj.hoVagy !== 0) {
-    const i = sim.racs.idx(Math.floor(u.x), Math.floor(u.y));
+    const i = sim.racs.idx(Math.floor(u.x), Math.floor(u.y), u.z);
     if (i >= 0 && i < sim.racs.ho.length) {
       const ho = sim.racs.ho[i], hideg = sim.racs.hideg[i];
       // A démon a melegtől JAVUL, a hidegtől romlik — és fordítva.
@@ -285,16 +313,18 @@ export function legkozelebbiEpulet(sim, u, igeny) {
   if (!lista || lista.length === 0) return null;
   const racs = sim.racs;
   const ux = Math.floor(u.x), uy = Math.floor(u.y);
-  if (!racs.bent(ux, uy)) return null;
-  const cella = uy * racs.sz + ux;
+  if (!racs.bent(ux, uy, u.z)) return null;
+  const cella = racs.idx(ux, uy, u.z);
   let legjobb = null, legjobbErtek = 1e9;
   for (let i = 0; i < lista.length; i++) {
     const ep = sim.epuletek[lista[i]];
     if (!ep || ep.kikapcsolva) continue;
     if (ep.peron.length === 0) continue;
     let t;
-    if (FAJOK[u.fajIdx].atmegyFalon) {
-      // A szellemnek nincs útvonal-korlátja: neki a légvonal az igazság.
+    // A szellem ÁTMEGY A FALON, de nem megy át a PADLÓN: a szintváltáshoz
+    // neki is átjáró kell. Ezért csak az azonos szintű célra használhatja a
+    // légvonalat; máshová ugyanúgy a mezőt kell követnie, mint bárki más.
+    if (FAJOK[u.fajIdx].atmegyFalon && ep.z === u.z) {
       const dx = (ep.x + ep.sz * 0.5) - u.x, dy = (ep.y + ep.m * 0.5) - u.y;
       t = Math.sqrt(dx * dx + dy * dy);
     } else {
@@ -320,7 +350,7 @@ function megy(sim, u, faj) {
   }
 
   const seb = faj.sebesseg * sim.sebessegSzorzo(u);
-  if (faj.atmegyFalon) {
+  if (faj.atmegyFalon && ep.z === u.z) {
     // ── SZELLEM ───────────────────────────────────────────────────────────
     // Nem a rácson jár: egyenesen a cél felé lebeg. Ettől lesz a Ködmocsár
     // megnyitása valódi játékmenet-döntés — a szellemek nem torlódnak, de
@@ -336,10 +366,10 @@ function megy(sim, u, faj) {
   }
 
   const racs = sim.racs;
-  let tx = Math.floor(u.x), ty = Math.floor(u.y);
-  if (!racs.jarhato(tx, ty)) { kiszabadit(sim, u); return; }
+  const tx = Math.floor(u.x), ty = Math.floor(u.y);
+  if (!racs.jarhato(tx, ty, u.z)) { kiszabadit(sim, u); return; }
   const mezo = sim.utkereso.mezo(ep.azon, ep.peron);
-  const itt = mezo[ty * racs.sz + tx];
+  const itt = mezo[racs.idx(tx, ty, u.z)];
   if (itt === 0) { megerkezett(sim, u, ep); return; }
   if (itt < 0) {
     // Elzáródott az út (a játékos épp elé épített). Nem ragadunk be: új
@@ -352,8 +382,20 @@ function megy(sim, u, faj) {
   const kozelX = tx + 0.5, kozelY = ty + 0.5;
   const dcx = u.lx - u.x, dcy = u.ly - u.y;
   if (dcx * dcx + dcy * dcy < 0.02) {
-    const k = sim.utkereso.irany(mezo, tx, ty, 2);
+    const k = sim.utkereso.irany(mezo, tx, ty, u.z, 2);
     if (k < 0) { u.lx = kozelX; u.ly = kozelY; return; }
+    if (k === IRANY_FEL || k === IRANY_LE) {
+      // Rálépett az átjáróra: innen IDŐ kell a másik szintre. Az átjáró
+      // épülete mondja meg, mennyi — a lift nyolc tick, a mozgólépcső negyven.
+      const azon = racs.epuletAzon(tx, ty, u.z);
+      const ep2 = azon >= 0 ? sim.epuletek[azon] : null;
+      const ido = ep2 ? (EPULETEK[ep2.tipusIdx].atjaroIdo || 30) : 30;
+      u.x = kozelX; u.y = kozelY; u.lx = kozelX; u.ly = kozelY;
+      u.valtasCel = k === IRANY_FEL ? u.z + 1 : u.z - 1;
+      u.valtasHatra = ido;
+      u.valtasTeljes = ido;
+      return;
+    }
     u.lx = tx + DX[k] + 0.5;
     u.ly = ty + DY[k] + 0.5;
   }
@@ -378,7 +420,7 @@ function kiszabadit(sim, u) {
       for (let i = -r; i <= r; i++) {
         if (Math.abs(i) !== r && Math.abs(j) !== r) continue;
         const x = bx + i, y = by + j;
-        if (racs.jarhato(x, y)) {
+        if (racs.jarhato(x, y, u.z)) {
           u.x = x + 0.5; u.y = y + 0.5;
           u.lx = u.x; u.ly = u.y;
           return;

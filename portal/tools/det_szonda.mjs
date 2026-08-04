@@ -10,6 +10,7 @@
 //   4. SEBESSÉG — ms/tick terhelés alatt
 //   5. VISSZAJÁTSZÁS — a parancsnaplóból újrajátszva ugyanaz jön ki
 //   6. MŰKÖDÉS — csinál-e egyáltalán valamit a gazdaság
+//   7. SZINTEK — a többszintes állomás minden ága lefut-e, és HASZNÁLJÁK-e
 //
 // ⚠️ A 6. VIZSGÁLAT NEM DÍSZ. A determinizmus-kapu nem működés-kapu: a
 // semmittevés is tökéletesen reprodukálható. Az AoC-nál a v0.3 mind a hat
@@ -25,7 +26,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
-import { v01Uj } from './forgatokonyv.mjs';
+import { v01Uj, v02Uj } from './forgatokonyv.mjs';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.env.PHT_TICK || 24000);
@@ -88,9 +89,9 @@ cim('1. STATIKUS — tiltott hívások a szimulációban');
 //  SEGÉD: egy teljes futás
 // ══════════════════════════════════════════════════════════════════════════
 
-function futas(seed, tickek = TICKEK, gyujtNaplot = false) {
+function futas(seed, tickek = TICKEK, gyujtNaplot = false, fkGyar = v01Uj) {
   const sim = new Sim({ seed });
-  const fk = v01Uj();
+  const fk = fkGyar();
   const minta = [];
   for (let t = 0; t < tickek; t++) {
     fk(sim, t);
@@ -215,10 +216,60 @@ cim('6. MŰKÖDÉS — a zöld determinizmus nem elég');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  7. SZINTEK — a v0.3 új felülete
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Külön vizsgálat, mert a szintek ÚJ parancsmezőt (`z`) és két új épületet
+// hoztak. Ha csak a v01 futna, a többszintes kód egésze mérés nélkül maradna —
+// és a szonda vidáman zöld lenne körülötte.
+
+cim('7. SZINTEK — emeleti padló, mozgólépcső, lift');
+{
+  const E = futas(4242, 12000, true, v02Uj);
+  const F = futas(4242, 12000, false, v02Uj);
+  if (E.zaro === F.zaro) ok('12 000 tick a szint-forgatókönyvvel — két futás azonos');
+  else rossz(`a szint-forgatókönyv szétcsúszott: ${E.zaro} ≠ ${F.zaro}`);
+
+  // Visszajátszás is: a `z` mező a parancsnaplóban utazik, és ha ott elveszne,
+  // a betöltött állomásnak hiányoznának az emeletei.
+  {
+    const sim = new Sim({ seed: 4242 });
+    let n = 0;
+    for (let t = 0; t < 12000; t++) {
+      while (n < E.napló.length && E.napló[n].tick === t) { sim.parancs(E.napló[n].p); n++; }
+      sim.lep();
+    }
+    if (sim.ellenorzoOsszeg() === E.zaro) ok(`${E.napló.length} parancs visszajátszva — az emeletek is visszaálltak`);
+    else rossz(`a szint-visszajátszás eltért: ${sim.ellenorzoOsszeg()} ≠ ${E.zaro}`);
+  }
+
+  // ── MŰKÖDÉS: tényleg HASZNÁLJÁK-E a szinteket? ───────────────────────────
+  // Ez a lényeg. Egy emeletet meg lehet építeni úgy is, hogy soha senki nem
+  // megy fel rá — akkor a szint csak drága díszlet, és a determinizmus
+  // ettől még hibátlan lenne.
+  const s = E.sim;
+  const utasSzint = [0, 0, 0];
+  for (const u of s.utasok) if (u.aktiv) utasSzint[u.z]++;
+  const epSzint = [0, 0, 0];
+  for (const ep of s.epuletek) if (ep) epSzint[ep.z]++;
+  info(`épület szintenként: ${epSzint.join(' / ')} · utas szintenként: ${utasSzint.join(' / ')}`);
+  info(`nap ${s.nap} · távozó ${s.osszTavozo} (elégedett ${s.elegedettTavozok})`);
+
+  if (epSzint[1] >= 3) ok('az első emelet beépült'); else rossz(`az első emeleten csak ${epSzint[1]} épület áll`);
+  if (epSzint[2] >= 1) ok('a második emelet is épült'); else rossz('a második emeletre nem került semmi');
+  if (utasSzint[1] > 0) ok(`${utasSzint[1]} utas tartózkodik az emeleten — a mozgólépcső ÉL`);
+  else rossz('senki nem ment fel az emeletre — a függőleges közlekedés halott');
+  if (s.epuletek.some((e) => e && e.kod === 'lepcso')) ok('mozgólépcső áll'); else rossz('nincs mozgólépcső');
+  const emeletiForgalom = s.epuletek.some((e) => e && e.z === 1 && e.kiszolgalt > 5);
+  if (emeletiForgalom) ok('az emeleti szolgáltatások ki is szolgálnak');
+  else rossz('az emeleti szolgáltatások nem szolgáltak ki senkit');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 
 console.log('');
 if (hiba === 0) {
-  console.log('\x1b[42m\x1b[30m  MIND A HAT VIZSGÁLAT ZÖLD  \x1b[0m\n');
+  console.log('\x1b[42m\x1b[30m  MIND A HÉT VIZSGÁLAT ZÖLD  \x1b[0m\n');
   process.exit(0);
 } else {
   console.log(`\x1b[41m\x1b[37m  ${hiba} HIBA  \x1b[0m\n`);

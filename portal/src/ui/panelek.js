@@ -395,6 +395,28 @@ export class Panelek {
       be(p, t);
     }
 
+    // ── HANG ──────────────────────────────────────────────────────────
+    if (this.hud && this.hud.hang) {
+      const hang = this.hud.hang;
+      be(p, el('h4', null, 'Hang'));
+      const hd = el('div', 'tetel');
+      hd.innerHTML = '<p>A portálzúgás színe az instabilitást követi, a tömegzaj az utasszámot. ' +
+        'Ha valami nincs rendben az állomáson, azt hallani is lehet.</p>';
+      const csuszka = (cimke, kezdo, ra) => {
+        const sor = el('div', 'sorok');
+        sor.style.flexDirection = 'column';
+        const c = el('input');
+        c.type = 'range'; c.min = '0'; c.max = '100'; c.value = String(Math.round(kezdo * 100));
+        const f = el('div', null, `${cimke}: ${Math.round(kezdo * 100)} %`);
+        c.oninput = () => { f.textContent = `${cimke}: ${c.value} %`; ra(Number(c.value) / 100); };
+        be(sor, f, c);
+        return sor;
+      };
+      be(hd, csuszka('Mester', 0.7, (v) => { hang.inditas(); hang.hangero(v); }));
+      be(hd, csuszka('Zene', 0.5, (v) => { hang.inditas(); hang.zeneHangero(v); }));
+      be(p, hd);
+    }
+
     be(p, el('h4', null, 'Új játszás'));
     const uj = el('div', 'tetel');
     uj.innerHTML = '<p>Minden világ egy seedből nő ki. Ugyanaz a seed ugyanazt a világot adja — ' +

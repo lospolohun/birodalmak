@@ -20,7 +20,7 @@
 
 import './ui/stilus.css';
 import { Sim } from './sim/sim.js';
-import { TICK_MS, SEBESSEGEK } from './mag/config.js';
+import { TICK_MS, SEBESSEGEK, RACS_SZINT, SZINT_MAGASSAG } from './mag/config.js';
 import { EPULETEK, epuletTipus } from './sim/epuletek.js';
 import { Visszajatszo } from './sim/mentes.js';
 import { Szinter } from './render/szinter.js';
@@ -31,6 +31,7 @@ import { EpitesSav } from './ui/epites.js';
 import { Panelek } from './ui/panelek.js';
 import { Modalok } from './ui/modalok.js';
 import * as tarolo from './ui/tarolo.js';
+import { Hang } from './audio/hang.js';
 
 /** Modulszintű, mert a hurok is olvassa (a súgóbuborék helyéhez kell). */
 let egerX = 0, egerY = 0;
@@ -81,20 +82,53 @@ async function indit() {
 
   // ── A FELÜLET ──────────────────────────────────────────────────────────
   let sebIdx = 1;
+  let aktivSzint = 0;
   const vezerlo = {
     sebesseg(i) { sebIdx = Math.max(0, Math.min(SEBESSEGEK.length - 1, i)); hud.sebessegJeloles(sebIdx); },
     sebessegIdx() { return sebIdx; },
+    /**
+     * Szintváltás. Három dolgot kell EGYSZERRE átállítani, és ha bármelyik
+     * kimarad, az félrevezető: mit rajzolunk (allomas, lenyek), mire mutat az
+     * egér (a talajsík magassága), és mit jelöl a HUD.
+     */
+    szint(i) {
+      aktivSzint = Math.max(0, Math.min(RACS_SZINT - 1, i | 0));
+      allomas.szintet(aktivSzint);
+      lenyek.aktivSzint = aktivSzint;
+      szinter.talajY = aktivSzint * SZINT_MAGASSAG;
+      hud.szintJeloles(aktivSzint);
+    },
+    szintIdx() { return aktivSzint; },
   };
-  const hud = new Hud(uiGyoker, sim, vezerlo);
+  // ── HANG ───────────────────────────────────────────────────────────────
+  // Az AudioContext csak FELHASZNÁLÓI GESZTUSRA indulhat (autoplay-szabály),
+  // ezért a példány most jön létre, de némán; az első kattintás kelti életre.
+  const hang = new Hang();
+  /**
+   * Mérési fogantyú. A hangréteg folyamatos sávjait a hurok hangolja a világ
+   * állapotához — emiatt viszont egy mérőeszköz nem tud befecskendezni saját
+   * álállapotot: a következő képkocka azonnal visszaírná a valódit. (A
+   * hang-szonda pontosan ebbe futott bele: az „üres" és a „nyüzsgő" állomás
+   * ugyanolyan hangos lett, mert mindkettőt a valódi, üres állomás írta felül.)
+   * Ezzel a kapcsolóval a szonda kikapcsolhatja a hurok hangolását a mérés
+   * idejére. Egyetlen logikai érték, és a játékmenetre nincs hatása.
+   */
+  const beallitas = { hangAuto: true };
+  const gesztus = () => hang.inditas();
+  addEventListener('pointerdown', gesztus, { once: false });
+  addEventListener('keydown', gesztus, { once: false });
+
+  const hud = new Hud(uiGyoker, sim, vezerlo, hang);
   const epitesSav = new EpitesSav(uiGyoker, sim, hud);
   const panelek = new Panelek(uiGyoker, sim, hud);
   const modalok = new Modalok(uiGyoker, sim, hud, vezerlo);
 
-  bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo });
-  hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo });
+  bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo, hang });
+  vezerlo.szint(0);
+  hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo, hang, beallitas });
 
   // Kényelmi kapaszkodó hibakereséshez: a konzolból elérhető a világ.
-  window.PHT = { sim, szinter, allomas, lenyek, hud, panelek, epitesSav, modalok, tarolo, betoltottAllapot };
+  window.PHT = { sim, szinter, allomas, lenyek, hud, panelek, epitesSav, modalok, tarolo, hang, beallitas, betoltottAllapot };
   console.log(`%cPORTAL HUB TYCOON%c  seed=${sim.seed}${mentes ? '  (betöltve)' : ''}`,
     'color:#9b6bff;font-weight:700', 'color:#93a0c8');
   if (mentes) hud.uzen(`Mentés betöltve — ${sim.nap}. nap`, 'jo');
@@ -135,22 +169,23 @@ async function visszajatszasFolyamatjelzovel(uiGyoker, mentes) {
 //  BEVITEL
 // ══════════════════════════════════════════════════════════════════════════
 
-function bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo }) {
+function bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo, hang }) {
   vaszon.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
     const cella = szinter.egerCella();
     if (!cella) return;
     const e = epitesSav.eszkoz;
 
+    const z = vezerlo.szintIdx();
     if (e.fajta === 'kez') {
-      const azon = sim.racs.epuletAzon(cella.x, cella.y);
+      const azon = sim.racs.epuletAzon(cella.x, cella.y, z);
       if (azon >= 0) panelek.epuletet(azon);
       else panelek.nyit(null);
       return;
     }
     if (e.fajta === 'padlo' || e.fajta === 'bont') { huzKezdet = cella; return; }
     if (e.fajta === 'epit') {
-      const p = { fajta: 'epit', tipus: e.tipus, x: cella.x, y: cella.y };
+      const p = { fajta: 'epit', tipus: e.tipus, x: cella.x, y: cella.y, z };
       if (e.dim) p.dim = e.dim;
       sim.parancs(p);
     }
@@ -161,12 +196,13 @@ function bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo }) {
     const cella = szinter.egerCella() || huzKezdet;
     const r = huzottTeglalap(cella);
     const e = epitesSav.eszkoz;
+    const z = vezerlo.szintIdx();
     if (e.fajta === 'padlo') {
-      sim.parancs({ fajta: 'padlo', x: r.x, y: r.y, sz: r.sz, m: r.m });
+      sim.parancs({ fajta: 'padlo', x: r.x, y: r.y, sz: r.sz, m: r.m, z });
     } else if (e.fajta === 'bont') {
       // A bontás cellánként megy: az épület bárhol elkapható, a padló is.
       for (let j = 0; j < r.m; j++) {
-        for (let i = 0; i < r.sz; i++) sim.parancs({ fajta: 'bont', x: r.x + i, y: r.y + j });
+        for (let i = 0; i < r.sz; i++) sim.parancs({ fajta: 'bont', x: r.x + i, y: r.y + j, z });
       }
     }
     huzKezdet = null;
@@ -176,6 +212,8 @@ function bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo }) {
     if (ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
     if (ev.code === 'Space') { ev.preventDefault(); vezerlo.sebesseg(vezerlo.sebessegIdx() === 0 ? 1 : 0); }
     else if (ev.key >= '1' && ev.key <= '4') vezerlo.sebesseg(Number(ev.key) - 1);
+    else if (ev.key === 'r' || ev.key === 'R') vezerlo.szint(vezerlo.szintIdx() + 1);
+    else if (ev.key === 'f' || ev.key === 'F') vezerlo.szint(vezerlo.szintIdx() - 1);
   });
 }
 
@@ -189,13 +227,17 @@ function huzottTeglalap(cella) {
 //  HUROK
 // ══════════════════════════════════════════════════════════════════════════
 
-function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo }) {
+function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, vezerlo, hang, beallitas }) {
   let utolsoIdo = performance.now();
   let maradek = 0;
   let ido = 0;
   let elozoValasz = null;
   let elozoDimAllapot = '';
   let elozoNap = sim.nap;
+  let elozoEpuletSzam = sim.epuletek.length;
+  let elozoFejezet = sim.tortenet.fejezet;
+  let elozoNaploHossz = sim.naplok.length;
+  let elozoVege = sim.jatekVege;
 
   function eszkozMeret() {
     const e = epitesSav.eszkoz;
@@ -213,10 +255,17 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
       if (!t) return false;
       if (t.kutatas && !sim.kesz(t.kutatas)) return false;
       if (sim.penz < t.ar) return false;
-      return sim.racs.szabadTerulet(cella.x, cella.y, meret.sz, meret.m);
+      const z = vezerlo.szintIdx();
+      if (!sim.racs.szabadTerulet(cella.x, cella.y, meret.sz, meret.m, z)) return false;
+      if (t.atjaro) {
+        if (z + 1 >= RACS_SZINT) return false;
+        if (!sim.racs.szabadTerulet(cella.x, cella.y, meret.sz, meret.m, z + 1)) return false;
+      }
+      return true;
     }
-    if (e.fajta === 'padlo') return sim.penz > 0;
-    if (e.fajta === 'bont') return sim.racs.vanPadlo(cella.x, cella.y) || sim.racs.epuletAzon(cella.x, cella.y) >= 0;
+    const z = vezerlo.szintIdx();
+    if (e.fajta === 'padlo') return sim.penz > 0 && sim.racs.padloLerakhato(cella.x, cella.y, z);
+    if (e.fajta === 'bont') return sim.racs.vanPadlo(cella.x, cella.y, z) || sim.racs.epuletAzon(cella.x, cella.y, z) >= 0;
     return false;
   }
 
@@ -239,6 +288,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     // akkor van, amikor a játékos amúgy is elszámol (bérek, mérleg).
     if (sim.nap !== elozoNap) {
       elozoNap = sim.nap;
+      if (sim.elozoNap && sim.elozoNap.bevetel > sim.elozoNap.koltseg) hang.jelez('kassza');
       const v = tarolo.automataMentes(sim);
       if (!v.rendben) hud.uzen('Az automata mentés nem sikerült: ' + v.ok, 'gond');
     }
@@ -248,8 +298,12 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     // olvasható. Ez a néhány sor az, ami miatt a játékos nem azt látja, hogy
     // „nem történt semmi", hanem azt, hogy MIÉRT nem.
     if (sim.utolsoValasz !== elozoValasz) {
-      if (sim.utolsoValasz && !sim.utolsoValasz.rendben) hud.uzen(sim.utolsoValasz.ok, 'gond');
+      if (sim.utolsoValasz && !sim.utolsoValasz.rendben) { hud.uzen(sim.utolsoValasz.ok, 'gond'); hang.jelez('hiba'); }
       elozoValasz = sim.utolsoValasz;
+    }
+    if (sim.epuletek.length !== elozoEpuletSzam) {
+      hang.jelez(sim.epuletek.length > elozoEpuletSzam ? 'epit' : 'bont');
+      elozoEpuletSzam = sim.epuletek.length;
     }
 
     // ── ÉPÍTÉSI ELŐNÉZET ────────────────────────────────────────────────
@@ -269,7 +323,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
 
     // ── SÚGÓBUBORÉK A KÉZ ESZKÖZNÉL ─────────────────────────────────────
     if (cella && e.fajta === 'kez') {
-      const azon = sim.racs.epuletAzon(cella.x, cella.y);
+      const azon = sim.racs.epuletAzon(cella.x, cella.y, vezerlo.szintIdx());
       if (azon >= 0) {
         const ep = sim.epuletek[azon];
         const t = EPULETEK[ep.tipusIdx];
@@ -294,9 +348,37 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     // cserélnénk a sáv alatt, és a kattintás elveszne.
     const dimAllapot = sim.dimenziok.map((d) => (d.felfedezve ? 1 : 0) + (d.nyitva ? 2 : 0) + (d.lezarva ? 4 : 0)).join('');
     if (dimAllapot !== elozoDimAllapot) {
+      // Csak akkor szóljon, ha tényleg NYÍLT egy kapu — a bezárás és a
+      // felfedezés is ezt a jelzőt mozgatja, de azoknak más a hangja.
+      if (elozoDimAllapot && dimAllapot.length === elozoDimAllapot.length) {
+        for (let i = 0; i < dimAllapot.length; i++) {
+          const elotte = Number(elozoDimAllapot[i]), utana = Number(dimAllapot[i]);
+          if (!(elotte & 2) && (utana & 2)) { hang.jelez('kapu_nyit'); break; }
+        }
+      }
       elozoDimAllapot = dimAllapot;
       if (epitesSav.kategoria === 'kapuk') epitesSav.ujraEpit();
     }
+
+    // ── HANG-ESEMÉNYEK A NAPLÓBÓL ───────────────────────────────────────
+    // A napló az a hely, ahol a sim MÁR eldöntötte, hogy valami történt.
+    // Ebből olvasni olcsóbb és megbízhatóbb, mint minden alrendszerhez külön
+    // figyelőt írni — és nem is csúszhat el a kettő egymástól.
+    if (sim.naplok.length !== elozoNaploHossz) {
+      for (let i = Math.max(elozoNaploHossz, sim.naplok.length - 6); i < sim.naplok.length; i++) {
+        const sz = sim.naplok[i].szoveg;
+        if (sz.startsWith('ÖSSZEOMLOTT')) hang.jelez('omlas');
+        else if (sz.startsWith('ESEMÉNY')) hang.jelez('esemeny');
+        else if (sz.startsWith('Kutatás kész')) hang.jelez('kutatas_kesz');
+      }
+      elozoNaploHossz = sim.naplok.length;
+    }
+    if (sim.tortenet.fejezet !== elozoFejezet) { elozoFejezet = sim.tortenet.fejezet; hang.jelez('fejezet'); }
+    if (sim.jatekVege !== elozoVege) {
+      elozoVege = sim.jatekVege;
+      if (elozoVege) hang.jelez(elozoVege === 'gyozelem' ? 'gyozelem' : 'csod');
+    }
+    if (beallitas.hangAuto) hang.frissit(sim, dt);
 
     // ── RAJZOLÁS ────────────────────────────────────────────────────────
     allomas.frissit(ido);

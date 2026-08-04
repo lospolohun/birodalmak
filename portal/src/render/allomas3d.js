@@ -21,12 +21,13 @@
 // nekik külön objektumot adni. Belőlük legfeljebb pár tucat van.
 
 import * as THREE from 'three';
-import { RACS_SZ, RACS_M } from '../mag/config.js';
+import { RACS_SZ, RACS_M, RACS_SZINT, SZINT_MAGASSAG } from '../mag/config.js';
 import { EPULETEK } from '../sim/epuletek.js';
 import { DIMENZIOK } from '../sim/dimenziok.js';
 import { hash2 } from '../mag/rng.js';
+import { epuletMertanok, epuletDiszek } from './epulet_mertan.js';
 
-const MAX_EPULET = 400;
+const MAX_EPULET = 600;
 const MAX_PORTAL = 24;
 
 export class Allomas3d {
@@ -50,6 +51,22 @@ export class Allomas3d {
     this._elonezetet();
 
     this._racsVerzio = -1;
+    /**
+     * Az aktív szint. A FÖLÖTTE lévő emeleteket nem rajzoljuk ki — enélkül a
+     * földszinten dolgozó játékos a saját emeletének a padlóját nézné, és nem
+     * látná, hová épít. Ez a legfontosabb következménye annak, hogy az
+     * állomás többszintes lett.
+     */
+    this.aktivSzint = 0;
+    this._rajzoltSzint = -1;
+  }
+
+  /** A szintválasztó hívja. Újraépítést kényszerít, mert a láthatóság változik. */
+  szintet(z) {
+    const uj = Math.max(0, Math.min(RACS_SZINT - 1, z | 0));
+    if (uj === this.aktivSzint) return;
+    this.aktivSzint = uj;
+    this._racsVerzio = -1;
   }
 
   /**
@@ -72,7 +89,7 @@ export class Allomas3d {
     const g = new THREE.BoxGeometry(0.98, 0.24, 0.98);
     g.translate(0, -0.12, 0);
     const a = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const m = new THREE.InstancedMesh(g, a, RACS_SZ * RACS_M);
+    const m = new THREE.InstancedMesh(g, a, RACS_SZ * RACS_M * RACS_SZINT);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.receiveShadow = true;
     m.count = 0;
@@ -81,23 +98,22 @@ export class Allomas3d {
   }
 
   // ── ÉPÜLETEK ────────────────────────────────────────────────────────────
+  //
+  // TÍPUSONKÉNT egy test- és egy dísz-InstancedMesh. Miért nem egyetlen közös
+  // doboz, mint a v0.1-ben: mert a példányosítás EGY geometriát tud sokszorozni,
+  // és ha minden épület ugyanaz a doboz, akkor minden épület úgy is néz ki.
+  // A csere ára a rajzolási hívások száma — de az a TÍPUSOK számától függ
+  // (~20 × 2), nem az épületekétől. Négyszáz épület is ugyanannyi hívás.
   _epuleteket() {
-    const g = new THREE.BoxGeometry(1, 1, 1);
-    g.translate(0, 0.5, 0);   // a doboz alja a talajon áll
-    const test = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0xffffff }), MAX_EPULET);
-    test.castShadow = true; test.receiveShadow = true;
-    test.count = 0;
-    this.gyoker.add(test);
-    this.testek = test;
+    const mertanok = epuletMertanok(THREE);
+    const diszek = epuletDiszek(THREE);
+    /** épületkód → { test, disz, kapacitas } */
+    this.tipusMesh = new Map();
+    for (const [kod, geo] of mertanok) {
+      this.tipusMesh.set(kod, this._tipusMesheket(kod, geo, diszek.get(kod)));
+    }
 
-    // Tetődísz: világosabb sáv a tetején. Ettől lesz „épület" a dobozból.
-    const teto = new THREE.InstancedMesh(g.clone(), new THREE.MeshLambertMaterial({ color: 0xffffff }), MAX_EPULET);
-    teto.castShadow = true;
-    teto.count = 0;
-    this.gyoker.add(teto);
-    this.tetok = teto;
-
-    // Állapotjelző kocka az épület fölött: ez mondja meg egy pillantásra,
+    // Állapotjelző az épület fölött: ez mondja meg egy pillantásra,
     // hogy hiányzik a személyzet vagy ki van kapcsolva. Szöveg helyett szín,
     // mert a szöveg 3D-ben vagy olvashatatlan, vagy elveszi a képet.
     const jg = new THREE.OctahedronGeometry(0.34);
@@ -105,6 +121,38 @@ export class Allomas3d {
     jelzo.count = 0;
     this.gyoker.add(jelzo);
     this.jelzok = jelzo;
+  }
+
+  /**
+   * Egy típus mesh-párja. A kapacitás igény szerint NŐ: egy tycoonban nem
+   * tudjuk előre, hány mosdót épít valaki, egy fix keret pedig vagy pazarol,
+   * vagy csendben elnyeli a huszonötödik épületet.
+   */
+  _tipusMesheket(kod, geo, diszGeo, kapacitas = 48) {
+    const test = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), kapacitas);
+    test.castShadow = true; test.receiveShadow = true;
+    test.count = 0;
+    test.frustumCulled = false;
+    this.gyoker.add(test);
+    let disz = null;
+    if (diszGeo) {
+      disz = new THREE.InstancedMesh(diszGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), kapacitas);
+      disz.castShadow = true;
+      disz.count = 0;
+      disz.frustumCulled = false;
+      this.gyoker.add(disz);
+    }
+    return { kod, test, disz, kapacitas, geo, diszGeo };
+  }
+
+  /** Kapacitás-növelés: a régi mesh-ek helyére kétszer akkorák kerülnek. */
+  _tipustNovel(bejegyzes) {
+    this.gyoker.remove(bejegyzes.test);
+    bejegyzes.test.dispose();
+    if (bejegyzes.disz) { this.gyoker.remove(bejegyzes.disz); bejegyzes.disz.dispose(); }
+    const uj = this._tipusMesheket(bejegyzes.kod, bejegyzes.geo, bejegyzes.diszGeo, bejegyzes.kapacitas * 2);
+    this.tipusMesh.set(bejegyzes.kod, uj);
+    return uj;
   }
 
   // ── PORTÁLOK ────────────────────────────────────────────────────────────
@@ -167,7 +215,7 @@ export class Allomas3d {
     const e = this.elonezetMesh;
     if (!cella) { e.visible = false; return; }
     e.visible = true;
-    e.position.set(cella.x + sz * 0.5, 0.02, cella.y + m * 0.5);
+    e.position.set(cella.x + sz * 0.5, this.aktivSzint * SZINT_MAGASSAG + 0.02, cella.y + m * 0.5);
     e.scale.set(sz * 0.96, magas, m * 0.96);
     e.material.color.setHex(ervenyes ? 0x63d68a : 0xff5d73);
   }
@@ -176,7 +224,8 @@ export class Allomas3d {
 
   frissit(ido) {
     const sim = this.sim;
-    if (sim.racs.verzio !== this._racsVerzio) {
+    if (sim.racs.verzio !== this._racsVerzio || this.aktivSzint !== this._rajzoltSzint) {
+      this._rajzoltSzint = this.aktivSzint;
       this._padlotEpit();
       this._epuleteketEpit();
       this._racsVerzio = sim.racs.verzio;
@@ -192,13 +241,17 @@ export class Allomas3d {
     q.identity(); s.set(1, 1, 1);
     let n = 0;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let z = 0; z <= this.aktivSzint; z++) {
+    const magas = z * SZINT_MAGASSAG;
     for (let y = 0; y < RACS_M; y++) {
       for (let x = 0; x < RACS_SZ; x++) {
-        const i = y * RACS_SZ + x;
+        const i = (z * RACS_M + y) * RACS_SZ + x;
         if (racs.padlo[i] !== 1) continue;
-        if (x < x0) x0 = x; if (x > x1) x1 = x;
-        if (y < y0) y0 = y; if (y > y1) y1 = y;
-        p.set(x + 0.5, 0, y + 0.5);
+        if (z === 0) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        p.set(x + 0.5, magas, y + 0.5);
         mat.compose(p, q, s);
         m.setMatrixAt(n, mat);
         // Alapszín + cellánkénti apró eltérés, hogy a padló ne legyen lapos
@@ -215,10 +268,14 @@ export class Allomas3d {
         const ho = racs.ho[i] / 255, hideg = racs.hideg[i] / 255;
         if (ho > 0) { r += ho * 0.42; g2 += ho * 0.12; b -= ho * 0.14; }
         if (hideg > 0) { r -= hideg * 0.10; g2 += hideg * 0.18; b += hideg * 0.34; }
+        // Az emeleti padló hidegebb és világosabb: így egy pillantással
+        // látszik, melyik szintet nézed, akkor is, ha a kamera lapos szögben áll.
+        if (z > 0) { r = r * 0.86 + 0.10; g2 = g2 * 0.9 + 0.12; b = b * 0.95 + 0.16; }
         sz.setRGB(clamp01(r), clamp01(g2), clamp01(b), THREE.SRGBColorSpace);
         m.setColorAt(n, sz);
         n++;
       }
+    }
     }
     m.count = n;
     m.instanceMatrix.needsUpdate = true;
@@ -233,51 +290,63 @@ export class Allomas3d {
 
   _epuleteketEpit() {
     const sim = this.sim;
-    const test = this.testek, teto = this.tetok;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
     q.identity();
-    let n = 0;
+    for (const b of this.tipusMesh.values()) { b.test.count = 0; if (b.disz) b.disz.count = 0; }
     let portalN = 0;
     this._portalHozzarendeles = [];
+
     for (let a = 0; a < sim.epuletek.length; a++) {
       const ep = sim.epuletek[a];
       if (!ep) continue;
       const t = EPULETEK[ep.tipusIdx];
+      if (ep.z > this.aktivSzint) continue;
+      const magas = ep.z * SZINT_MAGASSAG;
 
       if (ep.kod === 'portal') {
         if (portalN < MAX_PORTAL) {
           const o = this.portalok[portalN];
           o.cs.visible = true;
-          o.cs.position.set(ep.x + ep.sz * 0.5, 0, ep.y + ep.m * 0.5);
+          o.cs.position.set(ep.x + ep.sz * 0.5, magas, ep.y + ep.m * 0.5);
           this._portalHozzarendeles.push({ o, ep });
           portalN++;
         }
         continue;
       }
 
-      if (n >= MAX_EPULET) break;
-      p.set(ep.x + ep.sz * 0.5, 0.02, ep.y + ep.m * 0.5);
-      s.set(ep.sz * 0.9, t.magas, ep.m * 0.9);
-      mat.compose(p, q, s);
-      test.setMatrixAt(n, mat);
-      sz.setHex(t.szin);
-      test.setColorAt(n, sz);
+      let b = this.tipusMesh.get(ep.kod);
+      if (!b) continue;
+      if (b.test.count >= b.kapacitas) b = this._tipustNovel(b);
 
-      p.set(ep.x + ep.sz * 0.5, t.magas + 0.02, ep.y + ep.m * 0.5);
-      s.set(ep.sz * 0.66, 0.2, ep.m * 0.66);
+      // Az átjáró a két szint közti teret tölti ki, nem a saját magasságát:
+      // a mozgólépcsőnek FEL kell érnie, különben ránézésre nem vezet sehová.
+      const testMagas = t.atjaro ? SZINT_MAGASSAG : t.magas;
+      p.set(ep.x, magas + 0.02, ep.y);
+      s.set(ep.sz, testMagas, ep.m);
+      // A mértan a [0..1]³-ban van, az origója a bal-felső sarok alja — ezért
+      // a pozíció a SAROK, nem a közép, és a skála a teljes alapterület.
       mat.compose(p, q, s);
-      teto.setMatrixAt(n, mat);
-      sz.setHex(t.szin).offsetHSL(0, 0.05, 0.22);
-      teto.setColorAt(n, sz);
-      n++;
+      const i = b.test.count++;
+      b.test.setMatrixAt(i, mat);
+      sz.setHex(t.szin);
+      b.test.setColorAt(i, sz);
+      if (b.disz) {
+        b.disz.count = b.test.count;
+        b.disz.setMatrixAt(i, mat);
+        sz.setHex(t.szin).offsetHSL(0, 0.04, 0.24);
+        b.disz.setColorAt(i, sz);
+      }
     }
     for (let i = portalN; i < MAX_PORTAL; i++) this.portalok[i].cs.visible = false;
 
-    test.count = n; teto.count = n;
-    test.instanceMatrix.needsUpdate = true;
-    teto.instanceMatrix.needsUpdate = true;
-    if (test.instanceColor) test.instanceColor.needsUpdate = true;
-    if (teto.instanceColor) teto.instanceColor.needsUpdate = true;
+    for (const b of this.tipusMesh.values()) {
+      b.test.instanceMatrix.needsUpdate = true;
+      if (b.test.instanceColor) b.test.instanceColor.needsUpdate = true;
+      if (b.disz) {
+        b.disz.instanceMatrix.needsUpdate = true;
+        if (b.disz.instanceColor) b.disz.instanceColor.needsUpdate = true;
+      }
+    }
   }
 
   /**
@@ -296,13 +365,14 @@ export class Allomas3d {
       const ep = sim.epuletek[a];
       if (!ep || n >= MAX_EPULET) continue;
       const t = EPULETEK[ep.tipusIdx];
+      if (ep.z > this.aktivSzint) continue;
       let szin = 0;
       if (ep.kikapcsolva) szin = 0xff5d73;
       else if (t.szemelyzet > 0 && ep.dolgozok.length === 0) szin = 0xff5d73;
       else if (t.szemelyzet > 0 && ep.dolgozok.length < t.szemelyzet) szin = 0xffc247;
       else if (ep.sor.length > 12) szin = 0xffc247;
       if (!szin) continue;
-      p.set(ep.x + ep.sz * 0.5, (t.magas || 2) + 1.1, ep.y + ep.m * 0.5);
+      p.set(ep.x + ep.sz * 0.5, ep.z * SZINT_MAGASSAG + (t.magas || 2) + 1.1, ep.y + ep.m * 0.5);
       mat.compose(p, q, s);
       j.setMatrixAt(n, mat);
       sz.setHex(szin);

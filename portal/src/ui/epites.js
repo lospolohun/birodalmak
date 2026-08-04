@@ -24,7 +24,8 @@ const KATEGORIAK = [
   { kod: 'kotelezo', nev: '🛡️ Kötelező', epuletek: ['biztonsag', 'vam', 'poggyasz'] },
   { kod: 'kenyelem', nev: '🪑 Kényelem', epuletek: ['varo', 'wc', 'info', 'seprupark', 'hoforras', 'jegkamra'] },
   { kod: 'bevetel', nev: '💰 Bevétel', epuletek: ['etterem', 'bolt', 'konyvesbolt', 'reklam', 'vip'] },
-  { kod: 'uzem', nev: '⚙️ Üzem', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos', 'teleportlift'] },
+  { kod: 'szint', nev: '🪜 Szintek', epuletek: ['lepcso', 'teleportlift'] },
+  { kod: 'uzem', nev: '⚙️ Üzem', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos'] },
 ];
 
 /** Az „Alap" fül eszközei: ezek nem épületek, hanem szerkesztő-módok. */

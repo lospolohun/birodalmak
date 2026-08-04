@@ -16,7 +16,7 @@
 // volt, és emiatt az EGÉSZ felületre gyanakodni kellett.
 
 import { el, be, szoveg, szam, savBeallit } from './elemek.js';
-import { JATEK_NEV, VERZIO, SEBESSEGEK, NAP_TICK } from '../mag/config.js';
+import { JATEK_NEV, VERZIO, SEBESSEGEK, NAP_TICK, RACS_SZINT } from '../mag/config.js';
 import { FEJEZETEK } from '../sim/tortenet.js';
 
 const SZINEK = ['#ff5d73', '#ffc247', '#63d68a'];
@@ -27,9 +27,11 @@ export class Hud {
    * @param {import('../sim/sim.js').Sim} sim
    * @param {{sebesseg:(i:number)=>void}} vezerlo
    */
-  constructor(gyoker, sim, vezerlo) {
+  constructor(gyoker, sim, vezerlo, hang = null) {
     this.sim = sim;
     this.vezerlo = vezerlo;
+    /** A hangréteg — a panelek is innen érik el (`hud.hang`). */
+    this.hang = hang;
     this._naploHossz = sim.naplok.length;
 
     // ── FELSŐ SÁV ────────────────────────────────────────────────────────
@@ -49,6 +51,25 @@ export class Hud {
 
     felso.insertBefore(nev, felso.firstChild);
 
+    // ── SZINTVÁLASZTÓ ────────────────────────────────────────────────────
+    // MIÉRT A FELSŐ SÁVBAN ÉS NEM AZ ÉPÍTÉS-SÁVBAN: mert nem eszköz, hanem
+    // NÉZET. Az építés-sávban az ember eszköznek hinné, és azt várná, hogy
+    // „szintet rak le" — holott azt választja ki, melyik emeleten dolgozik és
+    // meddig lát. A fölötte lévő emeletek el is tűnnek, különben a saját
+    // padlójukkal takarnák ki azt, amit épp építesz.
+    const szintDoboz = el('div');
+    szintDoboz.id = 'szintek';
+    this.szintGombok = [];
+    const szintNev = ['F', '1', '2', '3', '4'];
+    for (let i = 0; i < RACS_SZINT; i++) {
+      const g = el('button', i === 0 ? 'aktiv' : '', szintNev[i] || String(i));
+      g.title = i === 0 ? 'Földszint  (R = fel, F = le)' : `${i}. emelet  (R = fel, F = le)`;
+      g.onclick = () => vezerlo.szint(i);
+      szintDoboz.appendChild(g);
+      this.szintGombok.push(g);
+    }
+    felso.appendChild(szintDoboz);
+
     // ── SEBESSÉG ─────────────────────────────────────────────────────────
     const seb = el('div');
     seb.id = 'sebesseg';
@@ -61,8 +82,35 @@ export class Hud {
       seb.appendChild(g);
       this.sebGombok.push(g);
     }
+    // ── HANGKAPCSOLÓ ─────────────────────────────────────────────────────
+    // Egyetlen gomb, mert a hangerőt ritkán állítja az ember, a némítást
+    // viszont azonnal akarja — például amikor valaki bejön a szobába.
+    // A finomhangolás (mester/zene) a Mentés-panelben van.
+    if (hang) {
+      const h = el('button');
+      h.id = 'hangGomb';
+      h.textContent = '🔊';
+      h.title = 'Hang némítása / visszakapcsolása';
+      h.onclick = () => {
+        const uj = !hang.be;
+        hang.inditas();
+        hang.nemit(!uj);
+        h.textContent = hang.be ? '🔊' : '🔇';
+      };
+      seb.appendChild(h);
+    }
+
     felso.appendChild(seb);
     gyoker.appendChild(felso);
+
+    // Minden gombkattintás halk visszajelzést kap. Egyetlen figyelő az egész
+    // felületre: nem kell minden gombnál külön gondolni rá, és nem is
+    // maradhat ki egy új panelnél sem.
+    if (hang) {
+      gyoker.addEventListener('click', (e) => {
+        if (e.target && e.target.closest && e.target.closest('button')) hang.jelez('gomb');
+      });
+    }
 
     // ── FEJEZET-KÁRTYA ───────────────────────────────────────────────────
     const f = el('div');
@@ -107,6 +155,10 @@ export class Hud {
     c.appendChild(sav);
     c._sav = i;
     return c;
+  }
+
+  szintJeloles(i) {
+    for (let k = 0; k < this.szintGombok.length; k++) this.szintGombok[k].classList.toggle('aktiv', k === i);
   }
 
   sebessegJeloles(i) {

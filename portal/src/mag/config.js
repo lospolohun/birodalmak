@@ -31,6 +31,21 @@ export const RACS_M = 48;
 /** Egy cella élhossza világegységben — a render ezzel skáláz. */
 export const CELLA_MERET = 1;
 
+// ── SZINTEK ───────────────────────────────────────────────────────────────
+// Az állomás három szintes lehet. MIÉRT PONT HÁROM: a második szint a
+// játékmenet szempontjából az igazi ugrás (a függőleges közlekedés új szűk
+// keresztmetszet), a harmadik már csak ismétlés — a negyedik viszont a
+// távolságmezők memóriáját és a rajzolási időt is negyedeli-ötödöli feleslegesen.
+// A játék ÚGY indul, hogy csak a földszint van kiépítve; aki nem épít felfelé,
+// annak a világ pontosan ugyanaz marad, mint egy szinttel.
+export const RACS_SZINT = 3;
+/** Két szint közti magasság világegységben. */
+export const SZINT_MAGASSAG = 7;
+/** Az emeleti padló ennyivel drágább szintenként (tartószerkezet). */
+export const EMELET_FELAR = 1.1;
+/** Egy szintváltás ennyi lépésnyi „útnak" számít az útkeresésben. */
+export const ATJARO_KOLTSEG = 4;
+
 /** A kezdő csarnok (kiépített padló) mérete a rács közepén. */
 export const KEZDO_CSARNOK_SZ = 22;
 export const KEZDO_CSARNOK_M = 16;

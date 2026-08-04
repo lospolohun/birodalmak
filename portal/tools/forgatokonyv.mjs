@@ -218,3 +218,89 @@ function kovetkezoKutatas(sim) {
   }
   return null;
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  v0.2 — A TÖBBSZINTES ÁLLOMÁS
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ MIÉRT KELLETT ÚJ FORGATÓKÖNYV: a `v01` a motor-mag regresszió-őre, azt
+// nem szabad átírni. A szintek viszont ÚJ parancsmezőt hoztak (`z`) és két új
+// épületet (mozgólépcső, teleport lift), és ha ezek nem szerepelnének
+// forgatókönyvben, a determinizmus-szonda vidáman zöld maradna a v0.3 összes
+// új kódja körül. Pontosan az a hamis biztonságérzet, ami ellen a fájl
+// fejléce szól.
+//
+// Ez a forgatókönyv szándékosan KICSI és sűrű: nem gazdaságot mér, hanem azt,
+// hogy a függőleges közlekedés minden ága lefusson — emeleti padló, lépcső,
+// lift, emeleti szolgáltatás, emeleti kapu, és a tiltott műveletek is
+// (alátámasztás nélküli padló, alatta lévő padló bontása).
+
+const V02_TERV = [
+  // [tick, parancs]
+  [4, { fajta: 'epit', tipus: 'biztonsag', dx: 8, dy: 2, z: 0 }],
+  [8, { fajta: 'epit', tipus: 'wc', dx: 8, dy: 6, z: 0 }],
+  [12, { fajta: 'epit', tipus: 'etterem', dx: 12, dy: 2, z: 0 }],
+  [16, { fajta: 'epit', tipus: 'takarito', dx: 2, dy: 9, z: 0 }],
+
+  // ── ELSŐ EMELET ─────────────────────────────────────────────────────────
+  [60, { fajta: 'padlo', dx: 4, dy: 6, sz: 12, m: 8, z: 1 }],
+  // Alátámasztás nélküli emeleti padló — ELUTASÍTÁSBA kell futnia.
+  [64, { fajta: 'padlo', dx: 40, dy: 40, sz: 2, m: 2, z: 1 }],
+  [70, { fajta: 'epit', tipus: 'lepcso', dx: 6, dy: 9, z: 0 }],
+  [120, { fajta: 'epit', tipus: 'bolt', dx: 9, dy: 7, z: 1 }],
+  [124, { fajta: 'epit', tipus: 'konyvesbolt', dx: 12, dy: 7, z: 1 }],
+  [128, { fajta: 'epit', tipus: 'varo', dx: 9, dy: 11, z: 1 }],
+  // A lépcső alatti padlót nem szabad kihúzni — ELUTASÍTÁS.
+  [140, { fajta: 'bont', dx: 5, dy: 6, z: 0 }],
+
+  // ── MÁSODIK EMELET ──────────────────────────────────────────────────────
+  [600, { fajta: 'padlo', dx: 8, dy: 8, sz: 6, m: 4, z: 2 }],
+  [640, { fajta: 'epit', tipus: 'seprupark', dx: 8, dy: 8, z: 2 }],
+
+  // ── EMELETI KAPU ────────────────────────────────────────────────────────
+  [2400, { fajta: 'epit', tipus: 'portal', dx: 12, dy: 9, z: 1, dim: 'kodmocsar' }],
+];
+
+/**
+ * v0.2 — szintek. Gyárfüggvény, saját állapottal (lásd a `v01Uj()` fejlécét).
+ * @returns {(sim: object, t: number) => void}
+ */
+export function v02Uj() {
+  let utolsoFelvetel = -999;
+  let liftKesz = false;
+  return function v02(sim, t) {
+    const kx = sim.kezdoX, ky = sim.kezdoY;
+    for (let i = 0; i < V02_TERV.length; i++) {
+      const [tick, p] = V02_TERV[i];
+      if (t !== tick) continue;
+      const q = Object.assign({}, p);
+      q.x = kx + p.dx; q.y = ky + p.dy;
+      delete q.dx; delete q.dy;
+      sim.parancs(q);
+    }
+    // Személyzet, hogy a szolgáltatások tényleg működjenek — enélkül a
+    // szintek „üzemelnek", de senkit nem szolgálnak ki, és a 6. vizsgálat
+    // működés-feltételei üresek maradnának.
+    if (t - utolsoFelvetel > 40 && sim.penz > 3000) {
+      const hiany = hianyzoSzakma(sim);
+      if (hiany) { sim.parancs({ fajta: 'felvesz', tipus: hiany }); utolsoFelvetel = t; }
+    }
+    // Teleport lift, amint kikutattuk (a második átjáró-fajta lefedése).
+    if (!liftKesz && sim.kesz('teleport_lift') && sim.penz > 6000) {
+      liftKesz = true;
+      sim.parancs({ fajta: 'epit', tipus: 'teleportlift', x: kx + 12, y: ky + 8, z: 1 });
+    }
+    if (!sim.aktivKutatas && t > 300 && sim.penz > 9000) {
+      for (const kod of ['energia_halo', 'teleport_lift', 'gyors_sorok']) {
+        if (sim.kutathato(kod)) { sim.parancs({ fajta: 'kutat', kod }); break; }
+      }
+    }
+    if (t % 20 === 0) {
+      if (sim.tortenet.allapot === 'bevezeto') sim.parancs({ fajta: 'fejezet_tovabb' });
+      else if (sim.tortenet.allapot === 'dontes') sim.parancs({ fajta: 'dontes', valasz: 0 });
+      for (let i = 0; i < sim.varakozoValaszok.length; i++) {
+        sim.parancs({ fajta: 'esemeny_valasz', azon: sim.varakozoValaszok[i].azon, valasz: 1 });
+      }
+    }
+  };
+}

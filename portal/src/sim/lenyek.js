@@ -43,7 +43,7 @@ export const FAJOK = [
   },
   {
     kod: 'szellem', nev: 'Szellem', ikon: '👻', szin: 0xcfe6ff,
-    sebesseg: 0.062, turelem: 0.55, penz: 90, szoras: 60, helyIgeny: 0, meret: 0.95,
+    sebesseg: 0.062, turelem: 0.55, penz: 90, szoras: 60, helyIgeny: 0, meret: 0.88,
     igenyek: [
       { kod: 'info', suly: 3 }, { kod: 'pihenes', suly: 2 },
       { kod: 'vasarlas', suly: 1 }, { kod: 'konyv', suly: 2 },
@@ -92,7 +92,7 @@ export const FAJOK = [
   },
   {
     kod: 'meduza', nev: 'Lebegő medúza', ikon: '🎐', szin: 0xff9ad2,
-    sebesseg: 0.046, turelem: 1.8, penz: 130, szoras: 60, helyIgeny: 1, meret: 1.15,
+    sebesseg: 0.046, turelem: 1.8, penz: 130, szoras: 60, helyIgeny: 1, meret: 0.95,
     igenyek: [
       { kod: 'pihenes', suly: 4 }, { kod: 'konyv', suly: 2 },
       { kod: 'vasarlas', suly: 2 }, { kod: 'info', suly: 1 },

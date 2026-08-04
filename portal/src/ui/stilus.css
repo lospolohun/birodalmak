@@ -72,15 +72,26 @@ html, body {
 .sav { width: 74px; height: 7px; border-radius: 4px; background: rgba(0, 0, 0, 0.45); overflow: hidden; }
 .sav > i { display: block; height: 100%; background: var(--jo); transition: width 0.25s linear, background 0.25s; }
 
+/* ── SZINTVÁLASZTÓ ─────────────────────────────────────────────────────── */
+
+#szintek { display: flex; gap: 3px; margin-left: auto; }
+#szintek button {
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--keret); color: var(--halvany);
+  font-size: 12px; font-weight: 700;
+}
+#szintek button.aktiv { background: var(--turkiz); border-color: var(--turkiz); color: #0d1428; }
+
 /* ── SEBESSÉG ──────────────────────────────────────────────────────────── */
 
-#sebesseg { display: flex; gap: 3px; margin-left: auto; }
+#sebesseg { display: flex; gap: 3px; margin-left: 8px; }
 #sebesseg button {
   width: 34px; height: 30px; border-radius: 8px; cursor: pointer;
   background: var(--panel); border: 1px solid var(--keret); color: var(--szoveg);
   font-size: 13px; font-weight: 600;
 }
 #sebesseg button.aktiv { background: var(--lila); border-color: var(--lila); color: #fff; }
+#hangGomb { margin-left: 6px; }
 
 /* ── FEJEZET ───────────────────────────────────────────────────────────── */
 

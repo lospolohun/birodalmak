@@ -590,7 +590,7 @@ export class Hang {
     t.szint.gain.setTargetAtTime(Math.max(CSEND, tomottseg * M.szintMax * ejjeliSzorzo), most, atmenet);
     t.szuro.frequency.setTargetAtTime(
       Math.max(120, M.szuroF + (M.szuroFTeli - M.szuroF) * tomottseg + A.napszak.szinEjjel * (1 - nappal)),
-      most, sim1,
+      most, atmenet,
     );
 
     // Hangfoszlányok: annál sűrűbben, minél többen vannak. Ez az egyetlen

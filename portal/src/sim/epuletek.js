@@ -187,7 +187,18 @@ export const EPULETEK = [
     ar: 2400, energia: 40, szemelyzet: 0, fajta: null,
     igeny: null, kapacitas: 0, ido: 0, dij: 0,
     szin: 0x8de0ff, magas: 2.8, kutatas: 'teleport_lift',
-    leiras: 'A körülötte lévő utasok jóval gyorsabban közlekednek. Nagy csarnokokban ez menti meg a türelmet.',
+    // Átjáró: két szintet köt össze, ÉS a környékén gyorsabban jár mindenki.
+    // A `atjaroIdo` a szintváltás hossza tickben — a lift ezért drága: azonnal visz.
+    atjaro: true, atjaroIdo: 8,
+    leiras: 'Két szintet köt össze azonnal, és a környékén mindenki gyorsabban közlekedik. Kell alá és fölé kiépített padló.',
+  },
+  {
+    kod: 'lepcso', nev: 'Mozgólépcső', ikon: '🪜', sz: 2, m: 3,
+    ar: 900, energia: 14, szemelyzet: 0, fajta: null,
+    igeny: null, kapacitas: 0, ido: 0, dij: 0,
+    szin: 0xa8b8d8, magas: 1.0, kutatas: null,
+    atjaro: true, atjaroIdo: 40,
+    leiras: 'A legolcsóbb út felfelé. Lassabb, mint a lift, de enélkül az emelet halott tér. Kell alá és fölé kiépített padló.',
   },
 ];
 
@@ -207,13 +218,17 @@ export function epuletTipus(kod) {
  * Egy friss épület-példány. A típus adatai NEM másolódnak bele (a `tipus`
  * mezőn át érhetők el) — csak az, ami példányonként változik.
  */
-export function ujEpulet(azon, kod, x, y) {
+export function ujEpulet(azon, kod, x, y, z = 0) {
   const t = epuletTipus(kod);
   return {
     azon,
     kod,
     tipusIdx: EPULET_INDEX.get(kod),
     x, y, sz: t.sz, m: t.m,
+    /** Melyik szinten áll. Az átjárók a `z` ÉS a `z+1` szinten is ott vannak. */
+    z,
+    /** Hány szintet foglal (1, vagy 2 az átjáróknál). */
+    szintek: t.atjaro ? 2 : 1,
     /** A rács-cellák indexei, ahonnan használható. Az útkeresés célja. */
     peron: [],
     /** Épp kiszolgált utasok azonosítói (kapacitás-korlátig). */

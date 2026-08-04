@@ -23,7 +23,7 @@ import {
   ARAMSZUNET_HATEKONYSAG, HIRNEV_KEZDO, HIRNEV_TEHETETLENSEG, NAP_TICK,
   KOSZ_KISZOLGALASONKENT, KOSZ_TAKARITAS, ERKEZES_ALAP_TICK, INSTABIL_NOVEKEDES,
   INSTABIL_UTASONKENT, INSTABIL_KARBANTARTAS, INSTABIL_HATAR, OSSZEOMLAS_SZUNET,
-  KEZDO_CSARNOK_SZ, KEZDO_CSARNOK_M, RACS_SZ, RACS_M,
+  KEZDO_CSARNOK_SZ, KEZDO_CSARNOK_M, RACS_SZ, RACS_M, RACS_SZINT, EMELET_FELAR,
 } from '../mag/config.js';
 import { mulberry32, sulyozott, Osszeg } from '../mag/rng.js';
 import { Racs } from './racs.js';
@@ -50,7 +50,7 @@ export class Sim {
     this.nap = 1;
     this.jatekVege = null;   // null | 'gyozelem' | 'csod'
 
-    this.racs = new Racs(RACS_SZ, RACS_M);
+    this.racs = new Racs(RACS_SZ, RACS_M, RACS_SZINT);
     this.utkereso = new Utkereso(this.racs);
 
     // ── ÉPÜLETEK ──────────────────────────────────────────────────────────
@@ -153,15 +153,15 @@ export class Sim {
     const x0 = ((RACS_SZ - KEZDO_CSARNOK_SZ) >> 1);
     const y0 = ((RACS_M - KEZDO_CSARNOK_M) >> 1);
     for (let j = 0; j < KEZDO_CSARNOK_M; j++) {
-      for (let i = 0; i < KEZDO_CSARNOK_SZ; i++) this.racs.padlotLerak(x0 + i, y0 + j);
+      for (let i = 0; i < KEZDO_CSARNOK_SZ; i++) this.racs.padlotLerak(x0 + i, y0 + j, 0);
     }
     this.kezdoX = x0; this.kezdoY = y0;
-    const p = this._epuletetLerak('portal', x0 + 2, y0 + 2, true);
+    const p = this._epuletetLerak('portal', x0 + 2, y0 + 2, 0, true);
     if (p) this._dimenziotKapuhozKot(p, DIMENZIO_INDEX.get('zsibvasar'), true);
     // Egy ingyen energiamag is jár. Nem nagylelkűség: áram nélkül az ELSŐ
     // épület is félsebességgel indulna, és a játékos azt hinné, hogy a
     // szolgáltatás rossz — pedig csak a láthatatlan energiamérleg bukott meg.
-    this._epuletetLerak('energiamag', x0, y0 + KEZDO_CSARNOK_M - 2, true);
+    this._epuletetLerak('energiamag', x0, y0 + KEZDO_CSARNOK_M - 2, 0, true);
     this.naplo('Az állomás megnyílt. A Zsibvásár-világ kapuja működik.', 'jo');
   }
 
@@ -206,20 +206,29 @@ export class Sim {
   }
 
   _pPadlo(p) {
+    const z = p.z | 0;
     const sz = p.sz || 1, m = p.m || 1;
-    let db = 0;
+    let db = 0, alatamasztasHiany = 0;
     for (let j = 0; j < m; j++) {
       for (let i = 0; i < sz; i++) {
-        if (!this.racs.bent(p.x + i, p.y + j)) continue;
-        if (this.racs.vanPadlo(p.x + i, p.y + j)) continue;
-        db++;
+        const x = p.x + i, y = p.y + j;
+        if (!this.racs.bent(x, y, z)) continue;
+        if (this.racs.vanPadlo(x, y, z)) continue;
+        if (this.racs.padloLerakhato(x, y, z)) db++;
+        else alatamasztasHiany++;
       }
     }
-    if (db === 0) return this._elutasit('itt már van padló');
-    const ar = db * PADLO_AR;
+    if (db === 0) {
+      return this._elutasit(alatamasztasHiany > 0
+        ? 'emeleti padló csak meglévő padló FÖLÉ kerülhet'
+        : 'itt már van padló');
+    }
+    // Az emelet drágább: tartószerkezet kell alá. Ez tartja vissza attól,
+    // hogy a felfelé építés mindig olcsóbb legyen az oldalirányúnál.
+    const ar = Math.round(db * PADLO_AR * (1 + z * EMELET_FELAR));
     if (this.penz < ar) return this._elutasit('nincs elég pénz');
     for (let j = 0; j < m; j++) {
-      for (let i = 0; i < sz; i++) this.racs.padlotLerak(p.x + i, p.y + j);
+      for (let i = 0; i < sz; i++) this.racs.padlotLerak(p.x + i, p.y + j, z);
     }
     this.koltseg(ar, 'építkezés');
     return this._rendben();
@@ -228,8 +237,16 @@ export class Sim {
   _pEpit(p) {
     const t = epuletTipus(p.tipus);
     if (!t) return this._elutasit('ismeretlen épület');
+    const z = p.z | 0;
     if (t.kutatas && !this.keszTechek.has(t.kutatas)) return this._elutasit('előbb kutasd ki');
-    if (!this.racs.szabadTerulet(p.x, p.y, t.sz, t.m)) return this._elutasit('nincs itt hely (padló kell, épület nélkül)');
+    if (!this.racs.szabadTerulet(p.x, p.y, t.sz, t.m, z)) return this._elutasit('nincs itt hely (padló kell, épület nélkül)');
+    // Az átjáró KÉT szintet foglal: a fölötte lévő emeletnek is állnia kell.
+    if (t.atjaro) {
+      if (z + 1 >= this.racs.szintek) return this._elutasit('nincs fölötte szint');
+      if (!this.racs.szabadTerulet(p.x, p.y, t.sz, t.m, z + 1)) {
+        return this._elutasit('a fölötte lévő szinten is kell hozzá szabad, kiépített padló');
+      }
+    }
 
     let ar = t.ar;
     let dimIdx = -1;
@@ -249,7 +266,7 @@ export class Sim {
     }
     if (this.penz < ar) return this._elutasit('nincs elég pénz');
 
-    const ep = this._epuletetLerak(p.tipus, p.x, p.y, false);
+    const ep = this._epuletetLerak(p.tipus, p.x, p.y, z, false);
     if (!ep) return this._elutasit('nem sikerült lerakni');
     this.koltseg(ar, 'építkezés');
     if (dimIdx >= 0) this._dimenziotKapuhozKot(ep, dimIdx, false);
@@ -257,12 +274,17 @@ export class Sim {
   }
 
   _pBont(p) {
-    const azon = this.racs.epuletAzon(p.x, p.y);
+    const z = p.z | 0;
+    const azon = this.racs.epuletAzon(p.x, p.y, z);
     if (azon < 0) {
       // Nincs épület: akkor padlót bontunk.
-      if (!this.racs.vanPadlo(p.x, p.y)) return this._elutasit('itt nincs mit bontani');
-      if (!this.racs.padlotBont(p.x, p.y)) return this._elutasit('épület áll rajta');
-      this.bevetel(Math.round(PADLO_AR * BONTAS_TERITES), 'bontás');
+      if (!this.racs.vanPadlo(p.x, p.y, z)) return this._elutasit('itt nincs mit bontani');
+      if (!this.racs.padlotBont(p.x, p.y, z)) {
+        return this._elutasit(this.racs.vanPadlo(p.x, p.y, z + 1)
+          ? 'előbb a fölötte lévő emeletet kell elbontani'
+          : 'épület áll rajta');
+      }
+      this.bevetel(Math.round(PADLO_AR * BONTAS_TERITES * (1 + z * EMELET_FELAR)), 'bontás');
       return this._rendben();
     }
     const ep = this.epuletek[azon];
@@ -418,14 +440,18 @@ export class Sim {
   //  ÉPÜLET-KEZELÉS
   // ══════════════════════════════════════════════════════════════════════
 
-  _epuletetLerak(kod, x, y, ingyen) {
+  _epuletetLerak(kod, x, y, z, ingyen) {
     const t = epuletTipus(kod);
     if (!t) return null;
-    if (!this.racs.szabadTerulet(x, y, t.sz, t.m)) return null;
+    if (!this.racs.szabadTerulet(x, y, t.sz, t.m, z)) return null;
+    if (t.atjaro && !this.racs.szabadTerulet(x, y, t.sz, t.m, z + 1)) return null;
     const azon = this.kovEpuletAzon++;
-    const ep = ujEpulet(azon, kod, x, y);
+    const ep = ujEpulet(azon, kod, x, y, z);
     this.epuletek[azon] = ep;
-    this.racs.bejegyez(azon, x, y, t.sz, t.m);
+    this.racs.bejegyez(azon, x, y, t.sz, t.m, z, !!t.atjaro);
+    // Az átjáró a fölötte lévő szinten is ott van — ugyanazzal az
+    // azonosítóval, hogy a bontás és a kijelölés egy egységként kezelje.
+    if (t.atjaro) this.racs.bejegyez(azon, x, y, t.sz, t.m, z + 1, true);
     this._listakUjra();
     return ep;
   }
@@ -452,7 +478,8 @@ export class Sim {
       d.nyitva = false;
       d.portalAzon = -1;
     }
-    this.racs.torol(ep.x, ep.y, ep.sz, ep.m);
+    this.racs.torol(ep.x, ep.y, ep.sz, ep.m, ep.z);
+    if (ep.szintek > 1) this.racs.torol(ep.x, ep.y, ep.sz, ep.m, ep.z + 1);
     this.epuletek[ep.azon] = null;
     this.utkereso.elfelejt(ep.azon);
     this._listakUjra();
@@ -476,7 +503,7 @@ export class Sim {
       if (ep.kod === 'portal') this.portalok.push(ep.azon);
       if (ep.kod === 'teleportlift') this.liftek.push(ep.azon);
       if (t.zona) {
-        this.hoForrasok.push({ x: ep.x, y: ep.y, sz: ep.sz, m: ep.m, ho: t.zona.ho, hideg: t.zona.hideg, sugar: t.zona.sugar });
+        this.hoForrasok.push({ x: ep.x, y: ep.y, z: ep.z, sz: ep.sz, m: ep.m, ho: t.zona.ho, hideg: t.zona.hideg, sugar: t.zona.sugar });
       }
     }
     this._zonaVerzio = -1;   // a zónamezők újraszámolása kell
@@ -489,7 +516,7 @@ export class Sim {
     for (let a = 0; a < this.epuletek.length; a++) {
       const ep = this.epuletek[a];
       if (!ep) continue;
-      this.racs.peron(ep.x, ep.y, ep.sz, ep.m, ep.peron);
+      this.racs.peron(ep.x, ep.y, ep.sz, ep.m, ep.z, ep.peron);
     }
     this._peronVerzio = this.racs.verzio;
   }
@@ -608,8 +635,8 @@ export class Sim {
       const u = this.utasok[i];
       if (!u.aktiv || u.allapot === ALLAPOT.KISZOLGALAS) continue;
       const x = Math.floor(u.x), y = Math.floor(u.y);
-      if (!racs.bent(x, y)) continue;
-      const k = y * racs.sz + x;
+      if (!racs.bent(x, y, u.z)) continue;
+      const k = (u.z * racs.m + y) * racs.sz + x;
       const uj = racs.tomeg[k] + FAJOK[u.fajIdx].helyIgeny;
       racs.tomeg[k] = uj > 255 ? 255 : uj;
     }
@@ -659,11 +686,12 @@ export class Sim {
   _utastErkeztet(ep, d, fajKenyszer = -1) {
     if (this.szabadDb === 0) return null;
     const cella = ep.peron[(d.osszUtas + ep.azon) % ep.peron.length];
-    const x = (cella % this.racs.sz) + 0.5;
-    const y = ((cella - (cella % this.racs.sz)) / this.racs.sz) + 0.5;
+    const x = this.racs.cellaX(cella) + 0.5;
+    const y = this.racs.cellaY(cella) + 0.5;
+    const z = this.racs.cellaZ(cella);
     const slot = this.szabadSlotok[--this.szabadDb];
     const u = this.utasok[slot];
-    utastIndit(this, u, d.idx, x, y, fajKenyszer);
+    utastIndit(this, u, d.idx, x, y, z, fajKenyszer);
     this.utasSzam++;
     if (this.utasSzam > this.csucsUtas) this.csucsUtas = this.utasSzam;
 
@@ -1021,6 +1049,9 @@ export class Sim {
     for (let i = 0; i < this.liftek.length; i++) {
       const ep = this.epuletek[this.liftek[i]];
       if (!ep || ep.kikapcsolva) continue;
+      // A lift a saját szintjén és a fölötte lévőn is gyorsít — az átjáró
+      // mindkét végén ugyanaz a szerkezet áll.
+      if (u.z !== ep.z && u.z !== ep.z + 1) continue;
       const dx = (ep.x + 1) - u.x, dy = (ep.y + 1) - u.y;
       if (dx * dx + dy * dy < 81) { s *= 2.2; break; }
     }
@@ -1182,7 +1213,7 @@ export class Sim {
     for (let a = 0; a < this.epuletek.length; a++) {
       const ep = this.epuletek[a];
       if (!ep) { o.be(-1); continue; }
-      o.be(ep.tipusIdx).be(ep.x).be(ep.y).be(ep.sor.length).be(ep.bent.length)
+      o.be(ep.tipusIdx).be(ep.x).be(ep.y).be(ep.z).be(ep.sor.length).be(ep.bent.length)
         .be(ep.dolgozok.length).be(ep.kiszolgalt).beF(ep.bevetel).beF(ep.hatekonysag);
     }
     for (let i = 0; i < this.dolgozok.length; i++) {
@@ -1193,7 +1224,7 @@ export class Sim {
       const u = this.utasok[i];
       if (!u.aktiv) { o.be(0); continue; }
       o.be(u.fajIdx).be(u.allapot).be(u.tervIdx).be(u.terv.length).be(u.celEpulet)
-        .beF(u.hangulat).be(u.turelem).be(u.penz).beF(u.x).beF(u.y);
+        .beF(u.hangulat).be(u.turelem).be(u.penz).beF(u.x).beF(u.y).be(u.z).be(u.valtasHatra).be(u.valtasCel);
     }
     for (let i = 0; i < this.aktivEsemenyek.length; i++) {
       const e = this.aktivEsemenyek[i];

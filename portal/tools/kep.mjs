@@ -35,9 +35,30 @@ function chromeUtvonal() {
   return undefined;
 }
 
-const kiszolgalo = spawn('npx', ['vite', '--config', join(GYOKER, 'vite.config.js'), '--port', String(PORT), '--strictPort'], {
-  cwd: join(GYOKER, '..'), stdio: 'ignore',
-});
+/**
+ * A kiszolgáló indítása és MEGBÍZHATÓ leállítása.
+ *
+ * ⚠️ EZ EGY VALÓDI, MEGTALÁLT HIBA VOLT. A `spawn('npx', …)` + `kill()` csak az
+ * `npx`-et állítja meg; a vite GYEREKFOLYAMATA életben marad, és megtartja a
+ * portot. A következő futás `--strictPort` mögül a MÁR FUTÓ, elavult
+ * kiszolgálót kapja — vagyis zöld szonda a RÉGI `dist/`-re. Ennél kevés
+ * álnokabb hiba van egy mérőeszközben.
+ *
+ * A megoldás: saját folyamatcsoport (`detached`), és a csoport egészének
+ * kilövése (`process.kill(-pid)`).
+ */
+function kiszolgalotIndit(args) {
+  const p = spawn('npx', args, { cwd: join(GYOKER, '..'), stdio: 'ignore', detached: true });
+  p.unref();
+  return p;
+}
+
+function kiszolgalotLeallit(p) {
+  if (!p || !p.pid) return;
+  try { process.kill(-p.pid, 'SIGTERM'); } catch (e) { try { p.kill(); } catch (e2) { /* már halott */ } }
+}
+
+const kiszolgalo = kiszolgalotIndit(['vite', '--config', join(GYOKER, 'vite.config.js'), '--port', String(PORT), '--strictPort']);
 const varj = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
@@ -72,5 +93,17 @@ try {
   await varj(1200);
   await lap.screenshot({ path: KIMENET });
   console.log('kép:', KIMENET);
+
+  // Közeli is: a lények és az épületek részletei csak innen ítélhetők meg.
+  await lap.evaluate(() => {
+    const sz = window.PHT.szinter;
+    sz.tav = 14; sz.dolt = 1.02; sz.szog = 0.7;
+    sz.cel.set(window.PHT.sim.kezdoX + 10, 0, window.PHT.sim.kezdoY + 5);
+    sz._kamerat();
+  });
+  await varj(900);
+  const kozeli = KIMENET.replace(/\.png$/, '_kozeli.png');
+  await lap.screenshot({ path: kozeli });
+  console.log('közeli:', kozeli);
   await b.close();
 } finally { kiszolgalo.kill(); }

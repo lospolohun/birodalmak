@@ -414,12 +414,14 @@ const TERVEK = new Map([
   // ezt a játék a látványban is elmondja.
   ['reklam', (k) => ({
     test: [
-      k.henger(0.16, 0.2, 0.1, 8, 0, 0.05, 0),
+      k.henger(0.2, 0.25, 0.1, 8, 0, 0.05, 0),
       k.henger(0.045, 0.055, 0.76, 6, 0, 0.44, 0),
     ],
     disz: [
-      k.doboz(0.44, 0.34, 0.05, 0, 0.94, 0),
-      k.okta(0.06, 0, 1.16, 0),
+      // A tábla szándékosan szélesebb az oszlopnál: ez az egyetlen felület,
+      // amit a játékos „elolvas" — és ez tölti ki a cella alapterületét is.
+      k.doboz(0.64, 0.38, 0.05, 0, 0.94, 0),
+      k.okta(0.06, 0, 1.18, 0),
     ],
   })],
 
@@ -462,6 +464,30 @@ const TERVEK = new Map([
     ],
   })],
 
+  // Ferde szalag korláttal és lépcsőfokokkal. A DŐLÉS a jelentés: ez az
+  // egyetlen épület, ami nem a saját szintjén szolgál ki, hanem fölfelé visz.
+  // (Ezt a típust a többszintes sáv vette fel a katalógusba; a mértan azért
+  // van itt, hogy a készlet ne maradjon lyukas, amint az a sáv beolvad.)
+  ['lepcso', (k) => {
+    const test = [
+      k.doboz(0.58, 0.13, 1.1, 0, 0.5, 0, 0.7),      // a szalag
+      k.doboz(0.6, 0.14, 0.22, 0, 0.09, 0.45),       // alsó peron
+      k.doboz(0.6, 0.14, 0.22, 0, 0.87, -0.45),      // felső peron
+      k.doboz(0.5, 0.8, 0.18, 0, 0.47, -0.45),       // a felső peron lába
+    ];
+    const disz = [
+      k.doboz(0.06, 0.18, 1.1, -0.27, 0.62, 0.1, 0.7),
+      k.doboz(0.06, 0.18, 1.1, 0.27, 0.62, 0.1, 0.7),
+    ];
+    // Lépcsőfokok a szalag felszínén: a haladási irány mentén léptetve, a
+    // szalagra merőlegesen kiemelve.
+    for (let i = -2; i <= 2; i++) {
+      const t = i * 0.2;
+      disz.push(k.doboz(0.5, 0.05, 0.15, 0, 0.569 - 0.644 * t, 0.766 * t + 0.058, 0.7));
+    }
+    return { test, disz };
+  }],
+
   // Henger + gyűrűk. A gyűrűk a portálgyűrűk kistestvérei: a lift ugyanaz a
   // technológia kicsiben, és ezt a formanyelv mondja el.
   ['teleportlift', (k) => ({
@@ -482,8 +508,16 @@ const TERVEK = new Map([
 //  A NYILVÁNOS FELÜLET
 // ══════════════════════════════════════════════════════════════════════════
 
+// A hívó jó eséllyel MINDKÉT belépési pontot meghívja. A test és a dísz
+// közös normalizáláson megy át, tehát egyszerre kell készülniük — a gyorstár
+// nemcsak a dupla munkát spórolja meg, hanem azt is garantálja, hogy a
+// két Map ugyanabból az igazításból származik.
+const GYORSTAR = new WeakMap();
+
 /** A test és a dísz egyszerre készül, mert közös a normalizálásuk. */
 function keszlet(THREE) {
+  const kesz = GYORSTAR.get(THREE);
+  if (kesz) return kesz;
   const k = kellekek(THREE);
   const testek = new Map();
   const diszek = new Map();
@@ -495,7 +529,9 @@ function keszlet(THREE) {
     testek.set(kod, gT);
     if (gD) diszek.set(kod, gD);
   }
-  return { testek, diszek };
+  const ki = { testek, diszek };
+  GYORSTAR.set(THREE, ki);
+  return ki;
 }
 
 /**
