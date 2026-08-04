@@ -43,6 +43,7 @@ import { Kod } from './kod.js';
 import { Civ, CIV, CIV_NINCS } from './civ.js';
 import { Egyedi } from './egyedi.js';
 import { TERKEP, terkepErvenyes } from './terkep.js';
+import { Gyozelem, VEGE_OK, NINCS_GYOZTES } from './gyozelem.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -136,6 +137,12 @@ export class Sim {
     // Egyetlen `TIPUS`, nyolc nép. A számokat ez tartja csapatonként — a
     // `harc.js` és a `kepzes.js` innen kérdez, ha a típus `TIPUS.EGYEDI`.
     this.egyedi = new Egyedi(2, this);
+
+    // ── P0/1: győzelem és vereség ────────────────────────────────────────
+    // A LEGUTOLSÓNAK jön létre, és ez nem esetleges: ez az egyetlen réteg, ami
+    // MINDEN másikat olvas (épületek, egységek, harc), és semmit nem ír. A
+    // sorrend így magától kimondja a függés irányát.
+    this.gyozelem = new Gyozelem(2, this);
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -211,6 +218,12 @@ export class Sim {
     this.kepzes.lep();
     this.egysegek.lep(this.tick, this._tickHorog);
     this._mezoErvenytelenites();
+    // A GYŐZELEM A LEGUTOLSÓ, MÉG A `tick++` ELŐTT. Addigra a tick minden
+    // halála és épület-rombolása megtörtént, tehát a `vegeTick` pontosan arra a
+    // tickre esik, amelyiken a döntő csapás elért — nem eggyel utána. A
+    // `this.tick`-et adjuk át, nem a megnövelt értéket: a mentés és a lockstep
+    // is ezt a számot látja majd viszont.
+    this.gyozelem.lep(this.tick);
     this.tick++;
   }
 
@@ -272,6 +285,11 @@ export class Sim {
     this.technologia.nullaz();
     this.ai.nullaz();
     this.kod.nullaz();
+    // A GYŐZELEM-LATCH IS NULLÁZÓDIK. Enélkül egy befejezett meccs után indított
+    // ÚJ felállás azonnal „eldöntöttként" születne: a `lep()` első dolga a
+    // `vegeTick >= 0` vizsgálat, tehát a réteg soha többé nem nézne rá a világra,
+    // és a második meccset már senki nem tudná megnyerni.
+    this.gyozelem.nullaz();
     // ⚠️ A CIV IS AZ ÉPÜLETEK ELŐTT, ÉS AZONNAL VISSZA IS ÁLLÍTVA. Ugyanaz az
     // indok, ami a technológiánál: az épület-életerő a LERAKÁSKORI százalékkal
     // születik, a központok pedig pár sorral lentebb kerülnek le. Ha csak
@@ -1064,6 +1082,32 @@ export class Sim {
     return db;
   }
 
+  /**
+   * P0/1 SZONDA-FORGATÓKÖNYV — A FELADÁS.
+   *
+   * ── MIÉRT KELL KÜLÖN KÖR EGYETLEN PARANCSNAK ──────────────────────────
+   * A determinizmus-szonda forgatókönyvekből dolgozik: nem találja meg magától
+   * az új kódot. A `feladas` az EGYETLEN új parancsfajta a P0/1-ben, és ha nem
+   * kerülne be egy körbe sem, pont a legfrissebb — tehát legkockázatosabb —
+   * ág maradna a kapun kívül, miközben minden lámpa zölden ég.
+   *
+   * ── MIÉRT NEM A KIIRTÁSSAL EGY KÖRBEN ─────────────────────────────────
+   * A kiirtásos győzelemhez a gépnek le kell rombolnia az ellenfél központját;
+   * mérve ez a v0.9-es felállásban 11 223 tick. Két futás plusz egy kevert
+   * futás ennyin ~40 másodperc lenne — a feladás-ág viszont pár száz tick alatt
+   * lefut, és ugyanazt a latch-et és ugyanazokat a hash-mezőket járatja. A
+   * DRÁGA kiirtás-ágat ezért a szonda EGYSZER futtatja, külön (14. vizsgálat),
+   * ez a kör pedig a determinizmusé.
+   *
+   * A feladó az 1. csapat, a 2. körben. Nem az elsőben: hadd épüljön fel valami
+   * a világból, hogy a latch egy ÉLŐ meccset zárjon le, ne egy üreset.
+   * @param {number} kor
+   */
+  szondaParancsGyozelem(kor) {
+    if (kor !== 2) return;
+    this.parancs({ fajta: 'feladas', csapat: 1 });
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -1217,6 +1261,23 @@ export class Sim {
     // más civet játszana ugyanaz a csapat, minden csapás és minden ár eltérne.
     const cv = this.civ;
     for (let cs = 0; cs < cv.csapatDb; cs++) h = fnvSzam(h, cv.civ[cs]);
+    // P0/1 — A MECCS VÉGE A VILÁG ÁLLAPOTA, és ez a réteg legfontosabb sora.
+    // Ha kimaradna, a lockstep két gépen MÁS TICKRE tehetné a győzelmet, és a
+    // desync-detektor nem ott szólalna meg, ahol a hiba van: némán elmenne a
+    // vég mellett, és jóval később bukna ki egy ártatlannak látszó pozíció-
+    // eltérésen — vagyis a jelentés a MOZGÁSRA mutatna, nem a valódi okra.
+    // (Ugyanaz a megfontolás, ami a v0.10 térkép-presetjét is behozta ide.)
+    const gy = this.gyozelem;
+    h = fnvSzam(h, gy.gyoztes);
+    h = fnvSzam(h, gy.vegeTick);
+    for (let cs = 0; cs < gy.csapatDb; cs++) {
+      h = fnvSzam(h, gy.vereseg[cs]);
+      h = fnvSzam(h, gy.veresegTick[cs]);
+      h = fnvSzam(h, gy.veresegOk[cs]);
+      // A FELADÁS-JELZŐ IS. A parancs egy tickkel a hatása ELŐTT írja be, és a
+      // két gépnek már abban a résben egyet kell értenie.
+      h = fnvSzam(h, gy.feladott[cs]);
+    }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
     // v0.4 — a repülő lövedék is állapot: a becsapódás ideje és a sebzése
@@ -1267,4 +1328,5 @@ function kSin(x) {
 }
 
 export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA, TAMADAS, PANCEL };
+export { VEGE_OK, NINCS_GYOZTES };
 export { Beszallas };

@@ -32,7 +32,7 @@ elavult verzió-példa az `INTERFACES.md`-ben, a `vite.config.js` `base`-e és a
 `PLAN.md` kirakási kikötése nem ér össze, két fejléc nem az idióma szerinti, és
 a `src/audio/` még nincs lefedve az ellenőrzőben.
 
-**A kapuk mostani állása:** `npm run det` **13/13**, `npm run halo`,
+**A kapuk mostani állása:** `npm run det` **14/14**, `npm run halo`,
 `npm run civ`, `npm run menu`, `npm run hang`, `npm run kiadas`,
 `npx vite build` — mind zöld. `npm run fps` **továbbra sem futott**.
 
@@ -67,7 +67,7 @@ npm run relay          # másik terminálban
 |---|---|---|
 | `npm run dev` | Vite fejlesztői szerver (localhost) | — |
 | `npm run build` | éles build | ✅ zöld |
-| `npm run det` | determinizmus-szonda, 13 vizsgálat | ✅ **13/13 zöld** |
+| `npm run det` | determinizmus-szonda, 14 vizsgálat | ✅ **14/14 zöld** |
 | `npm run halo` | végpontok közti lockstep valódi socketen | ✅ zöld |
 | `npm run fps` | FPS-mérés | ❌ **SOHA nem futott** |
 | `npm run szonda` | mind a négy egyben | ❌ (az FPS miatt) |
@@ -143,6 +143,13 @@ new Sim({ seed: 1337, n: 256, maxEgyseg: 2000, terkep: TERKEP.FOLYAM })
 Részletek verziónként a `PLAN.md`-ben, „A v0.X állása" szakaszokban. Azok nem
 összefoglalók: minden szakasz leírja, **melyik hiba hogyan bújt el**, és melyik
 gát fogja meg legközelebb.
+
+**A táblázaton kívül: P0/1 — a meccset meg lehet nyerni. Kész.** Ez a tétel egy
+verzió-sorban sem szerepelt, mégis ez volt a legnagyobb hiányzó darab: tíz
+verzión át nem volt a simben győztes, a meccs technikailag örökké tartott. Az új
+réteg a `src/sim/gyozelem.js`, a determinizmus-szonda 14. vizsgálata őrzi. A
+döntések indoklása a fájl fejlécében és a `PLAN.md` „Győzelem és vereség"
+szakaszában; a mért számok a `TODO.md`-ben.
 
 ### Amit a v0.9–v0.10 alatt még nem kötöttünk be
 
@@ -223,9 +230,9 @@ reggel, 0,88 ms este. A tick-idő EGY FUTÁSON BELÜL összehasonlítható
 
 - `npm run det` → megmondja a PONTOS ticket, ahol a két futás széttart, és
   minden vizsgálatnál ki van írva, hol kezdd a keresést.
-- A determinizmus-szonda 13 vizsgálata közül a 12. és a 13. a legfrissebb
-  (v0.9 civek + egyedi egységek, v0.10 térképek) — ha valami elromlik, statisztikailag
-  ott.
+- A determinizmus-szonda 14 vizsgálata közül a 12–14. a legfrissebb
+  (v0.9 civek + egyedi egységek, v0.10 térképek, P0/1 győzelem) — ha valami
+  elromlik, statisztikailag ott.
 - `npm run halo` → ha a hálózat gyanús. Két valódi kliens, valódi socket,
   közös relay, és a végén szándékosan elrontja az egyik oldalt, hogy lássa,
   a desync-detektor tényleg elsül-e.

@@ -14,6 +14,40 @@ csak egy vigyen.
 
 ## P0 — enélkül a játék nem játék
 
+### ~~P0/1 · A MECCSET NEM LEHET MEGNYERNI~~ — **KÉSZ**
+
+**Sáv:** sim · **Fájl:** `src/sim/gyozelem.js` (új), plusz horog a `sim.js`-ben,
+`parancsok.js`-ben és a `mentes.js`-ben
+
+A meghozott döntések — a részletes indoklás a `gyozelem.js` fejlécében:
+
+- **Vereség:** nincs élő KÖZPONT **és** nincs élő MUNKÁS. Ez a kettő zárja be a
+  gazdasági kört (a munkást csak a központ képzi — `KEPEZ[KOZPONT]` —, gyűjteni
+  csak a munkás tud), tehát innen tényleg nincs visszaút. A fal és a torony
+  ettől még állhat, ahogy a feladat kérte.
+- **Feladás:** van, és **parancs** (`{ fajta: 'feladas', csapat }`), nem
+  kliens-oldali gomb — így a hálózaton is átmegy.
+- **A meccs vége után:** a sim **tovább lép**, a `vegeTick` viszont **latch** —
+  visszavonhatatlan. A megállás a kliens dolga. A `lep()` korai kilépése azért
+  nem jó: a lockstep körei (`KOR_TICK`) a tick-számlálóra épülnek.
+
+A csapda, amire a feladat figyelmeztetett, zárva: `gyoztes`, `vegeTick`,
+`vereseg`, `veresegTick`, `veresegOk` és `feladott` **mind benne van az
+`allapotHash()`-ben ÉS a mentésben** (`MENTES_VERZIO` 4 → 5).
+
+Mért számok (`npm run det`, 14. vizsgálat):
+
+| | |
+|---|---|
+| gépi meccs (v0.9 felállás, azonos nehézség) | az 1. csapat nyer a **11 223.** ticken, kiirtással |
+| feladás-kör | a győztes a **751.** ticken, ok: feladás |
+| kontroll-meccs (senki nem hal meg) | `vegeTick = -1` — a gát nem sül el vakon |
+| hash-szabotázs | mind a **6** mező elrontása megváltoztatja a hasht |
+| befejezett meccs mentése | átjött, a hash bitre egyezik |
+
+<details>
+<summary>az eredeti feladat-leírás</summary>
+
 ### P0/1 · A MECCSET NEM LEHET MEGNYERNI
 
 **Sáv:** sim · **Fájl:** új `src/sim/gyozelem.js`, plusz horog a `src/sim/sim.js`-ben
@@ -48,6 +82,8 @@ ami elárulja, hogy tényleg CSINÁL is valamit. A minimum: a v0.9-es
 forgatókönyvben (két gép, azonos nehézség, 16 000 tick) **el kell jutni valódi
 győzelemig legalább egyszer**, és a gátnak buknia kell, ha a `vegeTick` végig
 `-1` marad. Utána próbáld ki szabotázzsal, hogy a gát tényleg elsül-e.
+
+</details>
 
 ### P0/2 · `npm run fps` — a v0.2 óta nem futott le érvényesen
 
@@ -149,9 +185,10 @@ táblában `-1`-gyel kizárva a `units3d.js`-ből.
 
 **Sáv:** sim · **Fájl:** új `src/sim/kampany.js`
 
-Küldetések, célok, kiváltók. **A P0/1 UTÁN** csináld: a kampány-cél („pusztítsd
-el X-et", „élj túl N percet") a győzelmi feltétel általánosítása, és ha előbb
-születik meg, kétszer kell megírni.
+Küldetések, célok, kiváltók. **A P0/1 megvan, tehát ez elkezdhető:** a
+kampány-cél („pusztítsd el X-et", „élj túl N percet") a győzelmi feltétel
+általánosítása. A minta a `src/sim/gyozelem.js` — ugyanaz a szerkezet kell
+(latch, hash, mentés, szonda-gát), csak a `_vizsgal()` helyén egy cél-táblával.
 
 ### P2/4 · Balansz — a v0.13 QA-kör tárgya
 
@@ -192,7 +229,7 @@ felhasználói szövegről.
 
 | parancs | mit néz | most |
 |---|---|---|
-| `npm run det` | determinizmus, 13 vizsgálat | ✅ 13/13 |
+| `npm run det` | determinizmus, 14 vizsgálat | ✅ 14/14 |
 | `npm run halo` | lockstep valódi socketen | ✅ |
 | `npm run civ` / `menu` / `hang` | a három új réteg adatszondája | ✅ |
 | `npm run kiadas` | 61 statikus elvárás | ✅ (5 figyelmeztetés) |

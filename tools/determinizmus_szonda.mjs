@@ -11,7 +11,7 @@
 // ez a lényege: ha a `src/sim/` node-ban fejen állva is lefut, akkor tényleg
 // nem szivárgott bele render-függőség.
 //
-// ── TIZENHÁROM VIZSGÁLAT ──────────────────────────────────────────────────
+// ── TIZENNÉGY VIZSGÁLAT ───────────────────────────────────────────────────
 //   1. STATIKUS  — tiltott hívások keresése a `src/sim/` forrásában
 //   2. FUTÁSI    — két friss `Sim`, azonos seed, 10 000 tick, hash-egyezés
 //   3. KEVERT    — ugyanaz, de a tickek közé IDEGEN munkát ékelünk
@@ -22,6 +22,8 @@
 //   11. LOCKSTEP — két gép közös parancs-soron, késleltetéssel és desynccel
 //   12. CIVEK    — nyolc nép; a záró gát az, hogy civ NÉLKÜL más világ jön ki
 //   13. TÉRKÉPEK — hat preset; mind a hat JÁTSZHATÓ (bázistól bázisig van út)
+//   14. GYŐZELEM — a meccset meg lehet nyerni (kiirtás és feladás), a győzelem
+//       visszavonhatatlan, és benne van a hashben ÉS a mentésben
 //
 // ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
 // reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
@@ -40,12 +42,17 @@
 //   --tick=N --parancs=N --hash=N --egyseg=N   (alap: 10000 / 250 / 100 / 1600)
 // Kilépési kód: 0 = rendben, 1 = bukás.
 //
-// ⏱️ A teljes kör ~2 perc 20 mp (mérve, v0.6/3). A „~25 mp" itt sokáig ELAVULT
-//    adatként állt — a kör azóta öt verzió-körrel bővült. A két legdrágább:
-//    a 6. (v0.3 gazdaság, 29 mp: 1600 egység, 400 munkás, kimerülő lelőhelyek)
-//    és a 9. (v0.6 gépi ellenfél, 22 mp: két AI, valódi csatákkal). Ez tudatos
-//    költség — a lefedettség fontosabb, mint a kör hossza. Füstteszthez a
-//    `--v06tick=4000` és társai lejjebb veszik.
+// ⏱️ A teljes kör ~6 perc (mérve felhő-gépen, a P0/1 körével együtt). A „~25
+//    mp", majd a „~2 perc 20 mp" itt sokáig ELAVULT adatként állt — a kör azóta
+//    tizennégy vizsgálatra nőtt. A két legdrágább: a 12. (v0.9 civek, 143 mp:
+//    négy teljes 16 000 tickes gépi meccs) és a 14. (P0/1 győzelem, 38 mp: egy
+//    kiirtásig futó meccs). Ez tudatos költség — a lefedettség fontosabb, mint
+//    a kör hossza. Füstteszthez a `--v06tick=4000` és társai lejjebb veszik.
+//
+//    ⚠️ EZ A SZÁM TÁJÉKOZTATÓ, NEM MÉRÉS. A felhő-gép osztott CPU-n fut, és a
+//    terhelése óránként változik: ugyanez a kör ugyanezen a kódon mérve 145 és
+//    143 mp közt ingadozott CSAK a 12. vizsgálatban. Két különböző alkalom
+//    futásideje nem összehasonlítható — lásd a `CLAUDE.md` mérési csapdáit.
 //
 // TÖRTÉNETI JEGYZET, mert tanulság: az első futásnál
 //    ~9 PERC volt, és nem a tick-szám miatt — egyetlen `szondaParancs()` 1600
@@ -309,6 +316,16 @@ const FORGATOKONYVEK = {
     egysegSzam: 24,
     felallit: (sim, db) => sim.szondaFelallasV09(db),
     fut: () => {},
+  },
+  // A P0/1 köre a v0.9 felállásáé (két gép, két nép), de RÖVID, és egyetlen
+  // dolgot csinál: a 2. körben a 1. csapat FELADJA. Ez az egyetlen új
+  // parancsfajta, tehát ennek is a kapun BELÜL a helye — a drága kiirtásos
+  // győzelmet a 14. vizsgálat futtatja külön, egyszer.
+  gyozelem: {
+    nev: 'P0/1 győzelem (feladás)', tickek: ervSzam('gytick', 1500),
+    egysegSzam: 24,
+    felallit: (sim, db) => sim.szondaFelallasV09(db),
+    fut: (sim, kor) => sim.szondaParancsGyozelem(kor),
   },
   v04: {
     nev: 'v0.4 harc', tickek: V04_TICKEK,
@@ -2102,6 +2119,208 @@ let terkepBukas = bukas;
 sor('lefutott', ((Date.now() - t13) / 1000).toFixed(1) + ' mp');
 terkepBukas = bukas - terkepBukas;
 
+// ════════════════════════════════════════════════════════════════════════════
+// 14) P0/1 — GYŐZELEM ÉS VERESÉG
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ NÉGY DOLGOT KÉR SZÁMON, ÉS MINDEGYIK MÁS HIBAFAJTÁRA VALÓ. Ez a vizsgálat
+// pontosan azért ilyen hosszú, mert a győzelem az a fajta réteg, amit MIND A
+// NÉGY módon el lehet rontani úgy, hogy közben minden lámpa zölden ég:
+//
+//   A) DETERMINIZMUS — két futás + kevert futás a feladás-forgatókönyvvel.
+//   B) MŰKÖDÉS — a feladás tényleg eldönti a meccset, és a mentés át is viszi.
+//      ⚠️ A mentés-ág nem díszítés: ha a `gyozelem` blokk kimaradna, egy
+//      BEFEJEZETT meccs betöltve ÚJRAINDULNA (a latch felengedne).
+//   C) VALÓDI GYŐZELEM — a v0.9-es meccs kiirtásig fut, és a latch tartja is.
+//      A determinizmus-kapu nem működés-kapu: egy réteg, ami SOHA nem mond
+//      győztest, tökéletesen reprodukálható, és pontosan semmit nem ér.
+//   D) SZABOTÁZS — a gát tényleg elsül-e. Két irányból: (1) egy meccsben, ahol
+//      mindkét fél áll, a `vegeTick`-nek -1-nek KELL maradnia; (2) a győzelem
+//      mezőit kézzel elrontva az `allapotHash()`-nek MEG KELL VÁLTOZNIA.
+//      A (2) az, ami a TODO P0/1 csapdáját fogja meg: ha a `vegeTick` kimarad
+//      a hashből, minden más vizsgálat zölden hallgat, és a lockstep két gépen
+//      MÁS TICKRE teszi a meccs végét.
+cim('14) P0/1 GYŐZELEM — a meccset meg lehet nyerni');
+const t14 = Date.now();
+let gyozelemBukas = bukas;
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const { VEGE_OK, VEGE_OK_NEV, NINCS_GYOZTES } = await import(
+    pathToFileURL(join(SIM_DIR, 'gyozelem.js')).href);
+  const { mentesSzoveg, betoltesSzoveg } = await import(
+    pathToFileURL(join(SIM_DIR, 'mentes.js')).href);
+
+  const fk = FORGATOKONYVEK.gyozelem;
+
+  // ── A) DETERMINIZMUS ────────────────────────────────────────────────
+  const ketGy = ketFutas(fk);
+  sor('feladás-kör', ketGy.ok ? 'AZONOS' : 'DESYNC (tick ' + ketGy.tick + ')',
+    fk.tickek + ' tick, ' + (fk.tickek / HASH_KOZ) + ' ellenőrzőpont');
+  if (!ketGy.ok) {
+    console.log('\n  ⛔ DESYNC a(z) ' + ketGy.tick + '. ticken a feladás-körben.');
+    bukas++;
+  } else {
+    const kevertGy = kevertFutas(ketGy.hashek, fk);
+    if (!kevertGy.ok) {
+      console.log('\n  ⛔ ELTÉRÉS a(z) ' + kevertGy.tick + '. ticken a KEVERT futásban.');
+      bukas++;
+    }
+  }
+
+  // ── B) A FELADÁS ELDÖNTI A MECCSET, ÉS A MENTÉS ÁTVISZI ─────────────
+  const F = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  F.szondaFelallasV09(fk.egysegSzam);
+  let korF = 0;
+  for (let t = 1; t <= fk.tickek; t++) {
+    if ((t % PARANCS_KOZ) === 0) { fk.fut(F, korF); korF++; }
+    F.lep();
+  }
+  const gyF = F.gyozelem;
+  sor('feladás után a győztes',
+    gyF.gyoztes === NINCS_GYOZTES ? 'NINCS' : String(gyF.gyoztes),
+    'vege a(z) ' + gyF.vegeTick + '. ticken, ok: ' + (VEGE_OK_NEV[gyF.veresegOk[1]] || '—'));
+  if (gyF.gyoztes !== 0 || gyF.vegeTick < 0 || gyF.veresegOk[1] !== VEGE_OK.FELADAS) {
+    console.log('\n  ⛔ A FELADÁS NEM DÖNTÖTTE EL A MECCSET. A parancs a soron megy be');
+    console.log('     (`parancsok.js` → `feladas`), és a `Gyozelem.lep()` a `Sim.lep()`');
+    console.log('     legvégén fut. Ha a parancs csendben elveszett, a `fajta` nem');
+    console.log('     szerepel a `vegrehajt()` switchében.');
+    bukas++;
+  }
+
+  // A BEFEJEZETT MECCS MENTÉSE. A 10. vizsgálat ezt nem éri el: az a 3000.
+  // ticken ment, amikor még senki nem nyert — a `gyozelem` blokk ott végig a
+  // gyári értéken állna, tehát egy KIMARADÓ blokk is átmenne rajta.
+  {
+    const szoveg = mentesSzoveg(F);
+    const B = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+    const e = betoltesSzoveg(B, szoveg);
+    const atjott = e.ok && B.gyozelem.gyoztes === gyF.gyoztes
+      && B.gyozelem.vegeTick === gyF.vegeTick
+      && B.allapotHash() === F.allapotHash();
+    sor('befejezett meccs mentése', atjott ? 'átjött' : 'ELVESZETT',
+      e.ok ? 'győztes ' + B.gyozelem.gyoztes + ', vege ' + B.gyozelem.vegeTick : e.hiba);
+    if (!atjott) {
+      console.log('\n  ⛔ A MECCS VÉGE NEM JÖTT ÁT A MENTÉSEN. Betöltve a latch felengedne,');
+      console.log('     és a befejezett meccs ÚJRAINDULNA. A `mentes.js` `gyozelem` blokkja.');
+      bukas++;
+    }
+  }
+
+  // ── C) VALÓDI GYŐZELEM: KIIRTÁS ─────────────────────────────────────
+  // Ez a kör drága (a v0.9-es meccs teljes hossza), és pont ezért egyszer fut.
+  // Mérve: a 0. csapat a 11 224. ticken veszíti el az utolsó központját, és
+  // addigra munkása sincs — de a szonda SEMMILYEN konkrét tickhez nem köti
+  // magát, csak azt kéri, hogy a meccs a körön belül dőljön el.
+  const K = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  K.szondaFelallasV09(FORGATOKONYVEK.v09.egysegSzam);
+  const KTICK = FORGATOKONYVEK.v09.tickek;
+  for (let t = 1; t <= KTICK; t++) {
+    K.lep();
+    if ((t % 1000) === 0) halad(t, KTICK);
+  }
+  const gyK = K.gyozelem;
+  const vesztes = gyK.gyoztes === NINCS_GYOZTES ? -1 : 1 - gyK.gyoztes;
+  sor('gépi meccs kimenetele',
+    gyK.vegeTick < 0 ? 'NEM DŐLT EL' : gyK.gyoztes + '. csapat',
+    gyK.vegeTick < 0 ? KTICK + ' tick alatt sem' : 'nyert a(z) ' + gyK.vegeTick + '. ticken');
+  sor('mély pásztázás', gyK.melyPasztazas, 'a végjáték-ág lefutásai (0 = néma réteg)');
+  if (gyK.vegeTick < 0 || gyK.gyoztes === NINCS_GYOZTES) {
+    console.log('\n  ⛔ A MECCS NEM DŐLT EL ' + KTICK + ' TICK ALATT. Ez a P0/1 lényege:');
+    console.log('     a meccset meg KELL tudni nyerni. Vagy a vereség-feltétel túl szigorú');
+    console.log('     (`gyozelem.js` → `_vizsgal`), vagy a `Gyozelem.lep()` nincs bekötve a');
+    console.log('     `Sim.lep()`-be, vagy a `szondaFelallas` nullázása után nem indult újra.');
+    bukas++;
+  } else {
+    if (gyK.veresegOk[vesztes] !== VEGE_OK.KIIRTAS) {
+      console.log('\n  ⛔ A GÉPI MECCS NEM KIIRTÁSSAL ÉRT VÉGET, hanem ezzel: '
+        + (VEGE_OK_NEV[gyK.veresegOk[vesztes]] || '?') + '. Feladás itt nem hangzott el —');
+      console.log('     ha mégis ez jön ki, a `feladott` jelző szemetel a felállások között.');
+      bukas++;
+    }
+    if (gyK.melyPasztazas === 0) {
+      console.log('\n  ⛔ A MÉLY PÁSZTÁZÁS SOSEM FUTOTT, mégis lett győztes. Ez ellentmondás:');
+      console.log('     kiirtás csak úgy állapítható meg, hogy megnéztük az egységeket is.');
+      bukas++;
+    }
+    // LATCH: a győzelem után a világ még mozog (lövedékek csapódnak be, az AI
+    // tovább épít), de a győztes NEM változhat.
+    const gyoztes0 = gyK.gyoztes, vege0 = gyK.vegeTick;
+    for (let t = 0; t < 1000; t++) K.lep();
+    const tart = gyK.gyoztes === gyoztes0 && gyK.vegeTick === vege0;
+    sor('latch 1000 tick után', tart ? 'tartja' : 'ELMOZDULT',
+      'győztes ' + gyK.gyoztes + ', vege ' + gyK.vegeTick);
+    if (!tart) {
+      console.log('\n  ⛔ A GYŐZTES UTÓLAG MEGVÁLTOZOTT. A `Gyozelem.lep()` első sora a');
+      console.log('     `vegeTick >= 0` kilépés — enélkül a réteg tickenként újraszámol, és');
+      console.log('     a két gép akár EGY tick eltéréssel is más győztest jelentene.');
+      bukas++;
+    }
+  }
+
+  // ── D/1) SZABOTÁZS: AKI ÁLL, AZ NEM VESZÍT ──────────────────────────
+  // Egy szám, ami MINDIG pozitív, semmit nem bizonyít. Ha a réteg bármikor
+  // győzelmet kiáltana, ez a kontroll-meccs elbukna: itt senki nem hal meg.
+  {
+    const N = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+    N.szondaFelallas(200);
+    for (let t = 0; t < 1000; t++) N.lep();
+    const nyugodt = N.gyozelem.vegeTick === -1 && N.gyozelem.gyoztes === NINCS_GYOZTES;
+    sor('kontroll: mindkét fél áll', nyugodt ? 'nincs vége' : 'GYŐZELMET JELENT',
+      'itt senki nem hal meg — vegeTick = ' + N.gyozelem.vegeTick);
+    if (!nyugodt) {
+      console.log('\n  ⛔ A RÉTEG OLYAN MECCSET IS ELDÖNTÖTT, AHOL MINDKÉT FÉLNEK VAN');
+      console.log('     központja és munkása. Így a fenti „győzelem" számok semmit nem');
+      console.log('     bizonyítanának — a réteg egyszerűen mindig nyertest kiált.');
+      bukas++;
+    }
+  }
+
+  // ── D/2) SZABOTÁZS: BENNE VAN-E A HASHBEN? ──────────────────────────
+  // ⚠️ EZ A TODO P0/1 CSAPDÁJA, SZÓ SZERINT. Ha a `gyoztes` és a `vegeTick`
+  // kimarad az `allapotHash()`-ből, MINDEN eddigi vizsgálat zöld marad — két
+  // azonos futás úgyis azonos —, a lockstep viszont két gépen más tickre
+  // teheti a meccs végét, és a desync-detektor csak jóval később, egy
+  // ártatlannak látszó pozíció-eltérésen szólalna meg.
+  {
+    const H = new Sim({ seed: SEED, n: 128, maxEgyseg: 100 });
+    H.szondaFelallas(40, { munkasMinden: 2 });
+    const alap = H.allapotHash();
+    const probak = [
+      ['vegeTick', () => { H.gyozelem.vegeTick = 4242; }, () => { H.gyozelem.vegeTick = -1; }],
+      ['gyoztes', () => { H.gyozelem.gyoztes = 1; }, () => { H.gyozelem.gyoztes = NINCS_GYOZTES; }],
+      ['vereseg', () => { H.gyozelem.vereseg[1] = 1; }, () => { H.gyozelem.vereseg[1] = 0; }],
+      ['veresegTick', () => { H.gyozelem.veresegTick[0] = 7; }, () => { H.gyozelem.veresegTick[0] = -1; }],
+      ['veresegOk', () => { H.gyozelem.veresegOk[0] = VEGE_OK.KIIRTAS; },
+        () => { H.gyozelem.veresegOk[0] = VEGE_OK.NINCS; }],
+      ['feladott', () => { H.gyozelem.feladott[0] = 1; }, () => { H.gyozelem.feladott[0] = 0; }],
+    ];
+    const vak = [];
+    for (let i = 0; i < probak.length; i++) {
+      probak[i][1]();
+      if (H.allapotHash() === alap) vak.push(probak[i][0]);
+      probak[i][2]();
+    }
+    // A visszaállítás után az EREDETI hash-t kell kapnunk — különben a szabotázs
+    // maga szemetelt, és a fenti eredmény olvashatatlan.
+    const visszaall = H.allapotHash() === alap;
+    sor('a hash látja a győzelmet', vak.length === 0 ? 'mind a 6' : 'VAK: ' + vak.join(', '),
+      visszaall ? 'a szabotázs visszaállt' : 'A SZABOTÁZS NEM ÁLLT VISSZA');
+    if (vak.length || !visszaall) {
+      console.log('\n  ⛔ A GYŐZELEM NINCS BENNE AZ ÁLLAPOT-HASHBEN: ' + (vak.join(', ') || '—'));
+      console.log('     Ez a lockstep néma halála. A `Sim.allapotHash()` végén a `gyozelem`');
+      console.log('     blokknak mind a hat mezőt hasítania kell.');
+      bukas++;
+    }
+  }
+
+  if (bukas === gyozelemBukas) {
+    console.log('\n  ✓ A meccset meg lehet nyerni — kiirtással és feladással is —, a');
+    console.log('    győzelem visszavonhatatlan, benne van a hashben és a mentésben.');
+  }
+}
+sor('lefutott', ((Date.now() - t14) / 1000).toFixed(1) + ' mp');
+gyozelemBukas = bukas - gyozelemBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -2127,6 +2346,7 @@ sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('11) v0.8 lockstep', lockstepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('12) v0.9 civ + egyedi egység', civBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('13) v0.10 térkép-presetek', terkepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
+sor('14) P0/1 győzelem', gyozelemBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

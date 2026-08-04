@@ -664,6 +664,46 @@ A négy új gát mind ki lett próbálva szabotázzsal: minden preset a nyílt m
 állítva 6/6 → 1/6 ujjlenyomat; `folyoSzeles: 0` → 196 → 17 vizes sor;
 `gazloDb: 0` → 4 → 1 vízblokk; a nyílt mező amplitúdója 5.0 → 5.2 → elmozdulás.
 
+## Győzelem és vereség (P0/1) — a verzió-terv vakfoltja
+
+**Ez a tétel a fenti táblázat egyetlen sorában sem szerepelt, és ez volt a
+projekt legnagyobb hiányzó darabja.** Tíz verzión át épült harc, gazdaság, AI,
+lockstep és mentés — mind mérve, mind zölden —, miközben a `gyoztes`, `vegeTick`
+és `vereseg` azonosítókra a `src/` alatt NULLA találat volt. A meccs
+technikailag örökké tartott. Mérve is: a v0.9-es körben a 0. csapat a 12 444.
+tickre az utolsó egységéig elfogyott, a szimuláció mégis ugyanúgy pörgött
+tovább 40 000-ig.
+
+**Tanulság a további lépcsőkhöz:** a verzió-terv rétegekben gondolkodott
+(„harc", „gazdaság", „netcode"), és a rétegeket hibátlanul le is szállította.
+Ami kimaradt, az nem egy réteg volt, hanem a köztük lévő **záró kérdés** — az,
+ami az egészet játékká teszi. Érdemes minden további lépcsőnél megkérdezni: ez a
+funkció önmagában áll, vagy van egy kimondatlan feltétele, ami senkinél sincs
+számon kérve?
+
+A megvalósítás új réteg (`src/sim/gyozelem.js`), a döntések indoklása a fájl
+fejlécében. A lényeg röviden:
+
+| kérdés | döntés |
+|---|---|
+| mi a vereség | nincs élő KÖZPONT **és** nincs élő MUNKÁS |
+| miért pont ez | a munkást csak a központ képzi, gyűjteni csak a munkás tud — ez a pár zárja be a gazdasági kört |
+| van-e feladás | van, és **parancs** (`fajta: 'feladas'`), nem kliens-oldali gomb |
+| mi lesz a meccs után | a sim tovább lép, a `vegeTick` **latch** — a megállás a kliens dolga |
+
+A latch mellett szól a lockstep is: egy magától megálló sim azt jelentené, hogy
+a két végpont eltérő számú tickre jutott, holott a körök (`KOR_TICK`) a
+tick-számlálóra épülnek.
+
+**A gát (determinizmus-szonda, 14. vizsgálat) négy irányból zár**, és mind a
+négy ki lett próbálva szabotázzsal: a gépi meccs a 11 223. ticken dől el
+kiirtással; a feladás-kör a 751.-en; egy kontroll-meccsben, ahol senki nem hal
+meg, a `vegeTick` végig -1 marad; és a győzelem hat mezőjét egyenként elrontva
+az `allapotHash()`-nek mind a hatszor meg kell változnia. Ez utóbbi a
+legfontosabb: ha a `vegeTick` kimaradna a hashből, minden más vizsgálat zölden
+hallgatna, a lockstep viszont két gépen MÁS TICKRE tenné a meccs végét — és a
+desync-jelentés a mozgásra mutatna, nem a valódi okra.
+
 ## A záró lépcsők (v0.11–v0.13)
 
 **v0.11 — főmenü.** A minta a TELEPESEK főmenüje. Amíg nincs menü, a játék

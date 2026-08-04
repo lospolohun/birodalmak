@@ -28,6 +28,12 @@
 //   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
 //   { fajta:'csere',        csapat, ad, kap, mennyiseg }     ← v0.5 (piac kell hozzá)
 //   { fajta:'kutatas',      csapat, tech, epulet }           ← v0.5/4
+//   { fajta:'feladas',      csapat }                         ← P0/1
+//
+// ⚠️ A FELADÁS PARANCS, NEM GOMB. Kliens-oldali „kilépek" jelzésként a másik
+// gép sosem tudná meg, hogy feladtuk — a két meccs egy csapásra kettéválna. A
+// soron viszont ugyanarra a tickre érkezik mindenkihez, tehát a `vegeTick` is
+// mindenhol ugyanaz.
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -79,6 +85,7 @@ export function vegrehajt(sim, p) {
     case 'kepzes': return kepzes(sim, p);
     case 'csere': return csere(sim, p);
     case 'kutatas': return kutatas(sim, p);
+    case 'feladas': return feladas(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -410,6 +417,20 @@ function csere(sim, p) {
  */
 function kutatas(sim, p) {
   sim.technologia.indit(p.csapat | 0, p.tech | 0, p.epulet | 0);
+}
+
+/**
+ * FELADÁS. A `Gyozelem` dönt mindenről — hogy nem dőlt-e már el a meccs, és
+ * hogy a csapat-index értelmes-e. Itt szándékosan NINCS előzetes szűrés, ugyanaz
+ * a szabály, mint a kutatásnál: egy helyen legyen a döntés, különben a két
+ * ellenőrzés elcsúszik egymástól.
+ *
+ * ⚠️ NINCS VISSZAVONÁS. A feladás a hashben van, tehát egy „mégsem" utólag
+ * írná át a világ állapotát azon a ticken, ami a másik gépen már lefutott.
+ * @param {{csapat:number}} p
+ */
+function feladas(sim, p) {
+  sim.gyozelem.feladas(p.csapat | 0);
 }
 
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */

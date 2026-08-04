@@ -61,7 +61,8 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 4;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4)
+export const MENTES_VERZIO = 5;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4)
+                                  // P0/1: `gyozelem` (5)
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
@@ -99,6 +100,7 @@ export function mentes(sim) {
   const kd = sim.kod;
   const cv = sim.civ;
   const eg = sim.egyedi;
+  const gy = sim.gyozelem;
 
   // A PARANCS-SOR: csak a JÖVŐBELI tickek érdekesek. A `Map` bejárása itt
   // rendben van — nem a sim állapotát olvassuk belőle sorrendfüggően, hanem
@@ -277,6 +279,24 @@ export function mentes(sim) {
       keszult: Array.from(eg.keszult), elutasitva: Array.from(eg.elutasitva),
     },
 
+    // A MECCS VÉGE (P0/1). ⚠️ Enélkül egy BEFEJEZETT meccs betöltve
+    // ÚJRAINDULNA: a `vegeTick` -1-en állna, a latch felengedne, és a réteg
+    // újra vizsgálni kezdené a világot — a győztes oldal a következő ticken
+    // ismét „megnyerné" ugyanazt a meccset, csak más tickre írva. A `gyoztes`
+    // és a `vegeTick` a hashben is benne van, tehát ez a blokk nem kényelmi
+    // kérdés: nélküle a mentés-szonda folytatás-ága azonnal szétcsúszna.
+    gyozelem: {
+      gyoztes: gy.gyoztes,
+      vegeTick: gy.vegeTick,
+      vereseg: Array.from(gy.vereseg),
+      veresegTick: Array.from(gy.veresegTick),
+      veresegOk: Array.from(gy.veresegOk),
+      feladott: Array.from(gy.feladott),
+      // Működés-szám, ugyanazért, amiért az `egyedi.keszult` is megy: ha nem
+      // jönne át, a betöltött meccs jelentése hazudna a réteg munkájáról.
+      melyPasztazas: gy.melyPasztazas,
+    },
+
     kod: {
       latott: kd.latott.map((t) => Array.from(t)),
       lathato: kd.lathato.map((t) => Array.from(t)),
@@ -442,6 +462,15 @@ export function betoltes(sim, m) {
   be(eg.ar, m.egyedi.ar); be(eg.ido, m.egyedi.ido);
   be(eg.nep, m.egyedi.nep); be(eg.epulet, m.egyedi.epulet);
   be(eg.keszult, m.egyedi.keszult); be(eg.elutasitva, m.egyedi.elutasitva);
+
+  const gy = sim.gyozelem;
+  gy.gyoztes = m.gyozelem.gyoztes | 0;
+  gy.vegeTick = m.gyozelem.vegeTick | 0;
+  be(gy.vereseg, m.gyozelem.vereseg);
+  be(gy.veresegTick, m.gyozelem.veresegTick);
+  be(gy.veresegOk, m.gyozelem.veresegOk);
+  be(gy.feladott, m.gyozelem.feladott);
+  gy.melyPasztazas = m.gyozelem.melyPasztazas | 0;
 
   const kd = sim.kod;
   for (let cs = 0; cs < kd.csapatDb; cs++) {

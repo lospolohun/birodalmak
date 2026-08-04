@@ -54,6 +54,8 @@ sim.parancs({ fajta: 'alakzat',      egysegek: idk, alakzat: ALAKZAT.VONAL });
 sim.parancs({ fajta: 'gyujt',        egysegek: idk, x, y, nyers: NYERS.FA });  // `nyers`, NEM `fajta`!
 sim.parancs({ fajta: 'epit',         csapat: 0, tipus: EPULET.RAKTAR, x, y });
 sim.parancs({ fajta: 'korszak',      csapat: 0 });
+// P0/1
+sim.parancs({ fajta: 'feladas',      csapat: 0 });
 ```
 
 ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
@@ -116,6 +118,30 @@ meg, vagy átvezetnek egy frissen épült falon.
 munkás ugyanazt az egy cellát kapná célnak, a szeparáció szétlökné őket és
 egyikük sem érne oda — mérve 400-ból 285 ragadt be. A `valtozat` (jellemzően a
 munkás indexe) körbeosztja a jelölteket.
+
+## Győzelem és vereség — `src/sim/gyozelem.js` (P0/1)
+
+`gy = sim.gyozelem`. A **render és a UI csak OLVASSA** — hatni egyetlen úton
+lehet: `sim.parancs({ fajta: 'feladas', csapat })`.
+
+- `gy.gyoztes: number` — a győztes csapat, vagy `NINCS_GYOZTES` (-1)
+- `gy.vegeTick: number` — a meccs vége, vagy -1. Ez a **latch**
+- `gy.vereseg / veresegTick / veresegOk: typed array` — csapatonként
+- `gy.vege(): boolean` · `gy.osszesites(cs)` — jelentés a HUD-nak (allokál)
+
+**A vereség feltétele:** nincs élő KÖZPONT **és** nincs élő MUNKÁS. Ez a kettő
+zárja be a gazdasági kört (a munkást csak a központ képzi, gyűjteni csak a
+munkás tud), tehát innen nincs visszaút. A fal és a torony ettől még állhat.
+
+⚠️ **A sim NEM áll meg a meccs végén.** A `lep()` tovább fut, a tick tovább nő —
+a megállás a kliens dolga, az olvassa a `vegeTick`-et. A `Gyozelem.lep()` a
+`Sim.lep()` LEGVÉGÉN fut, még a `tick++` előtt, tehát a `vegeTick` pontosan
+arra a tickre esik, amelyiken a döntő csapás elért.
+
+⚠️ **Mind a hat mező benne van az `allapotHash()`-ben és a mentésben.** Enélkül a
+lockstep két gépen más tickre tenné a meccs végét, egy befejezett meccs pedig
+betöltve újraindulna. A determinizmus-szonda 14. vizsgálata mindkettőt
+szabotázzsal próbálja ki.
 
 ## Kliens-oldal — `src/ui/` (v0.2)
 
