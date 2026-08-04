@@ -14,11 +14,9 @@ Jelölés: `[ ]` nyitott · `[~]` félkész, van kód · `[x]` kész
 Sáv: **SIM** = `src/sim/` (determinizmus-szabály!) · **UI** = `src/ui/` ·
 **RND** = `src/render/` · **QA** = `tools/`
 
-> ⚠️ **EZ A LISTA MOZGÓ FÁRÓL KÉSZÜLT.** Öt agent dolgozott párhuzamosan, és
-> íráskor csak a `cb814b0` volt commitolva — a többiek munkája a
-> munkakönyvtárban állt. Amit a fából ellenőrizni tudtam, az itt tényként áll;
-> a többi mellett ott a szó: **ellenőrizendő**. Az első dolgod:
-> `git log --oneline -5` és `git status --short`.
+> Ez a lista eredetileg MOZGÓ FÁRÓL készült (öt párhuzamos agent), ezért volt
+> tele „ellenőrizendő" szóval. A v0.18.0 zárásakor MINDEN tétel vissza lett
+> ellenőrizve a commitolt fán — ami itt áll, az mért vagy olvasott tény.
 
 ---
 
@@ -67,12 +65,21 @@ A háromból kettő lezárva.
       (`fenyek_ciklus.js`, `core3d.js`)
 - [x] **A pálya sarkánál a kamera a ködlap ALÁ került.** A ködlap mostantól
       követi a kamerát; a köd HELYE változatlanul sim-oldali adat. (`kod3d.js`)
-- [~] **A törmelék nem süllyed elég mélyre és túl világos.**
-      `src/render/effekt_harc.js`, `src/render/effekt_keszlet.js`.
-      ⚠️ **ellenőrizendő:** az `effekt_keszlet.js` a kör végén módosítottként
-      állt a fán (+157 sor) — jó eséllyel épp ez készült el. Valódi GPU nélkül
-      viszont csak kód-olvasásból ítélhető meg, a lezárása **iMac-en** kell
-      hogy történjen.
+- [x] **A törmelék nem süllyed elég mélyre és túl világos.** KÉT KÜLÖN OK volt:
+      · a süllyedés a MÉRETBŐL számolt, nem az induló magasságból, ezért magas
+        épületnél elmaradt — a rom a lejáratkor a központnál +0,76, a toronynál
+        +1,28 egységgel a talaj FÖLÖTT tűnt el (a szilárd csoportnak nincs
+        alfája, tehát nem tud elhalványulni). 600 sorsolt szilánkból **600** a
+        levegőben pattant ki; most **0/600**.
+      · a „túl világos" SZÍNTÉR-HIBA volt, nem ízlés: a three az
+        `instanceColor`-t lineárisan szorozza, miközben az albedó a projektben
+        mindenhol sRGB-ből jön. A rom (138,140,133) volt — VILÁGOSABB, mint az
+        ép kőfal (106,111,119), amiből lett. Most (89,90,79).
+      ⚠️ A `porFelho`/`fustGomb`/`nyom` UGYANEZT a félreértést hordozza, de azok
+      nem törmelékek, és a hangolásuk a hívási helyekkel együtt eldöntendő — a
+      számok bent vannak az `effekt_keszlet.js` fejlécében.
+      ⚠️ A látvány megítélése (éjjel nem fordul-e feketébe, nem „lehúzás"-e a
+      tempó) **iMac-en** kell hogy történjen.
 
 ---
 
@@ -100,18 +107,45 @@ A háromból kettő lezárva.
       `src/sim/ai.js:481`. Mellékhaszon: a szonda „elveszett építési parancs"
       gátja megint arról szól, amiről szólnia kell — a koordináta-hibáról, nem
       a lefutott meccsről.
-- [~] **UI · Épület-kijelölés.** A `bevitel.js`-ben megvan a mező, az
-      `epuletKijelol()` / `epuletTorol()` és a `V` gyorsbillentyű, tehát a
-      kijelölés-panel épület-nézete megjelenik és látszik, ha elromlik.
-      ⚠️ **ellenőrizendő, de jó úton:** a kör végén a fán a `bevitel.js` már
-      beköti az `epuletKereso` horgot a `gazdasag3d.js` `epuletTalalat()`-jára,
-      tehát az egeres kijelölés is meglesz. Ha bement, ez `[x]`.
+- [x] **UI · Épület-kijelölés — TELJES.** A `bevitel.js` konstruktora
+      ALAPÉRTELMEZÉSBEN beköti az `epuletKereso`-t a `gazdasag3d.js`
+      `epuletTalalat()`-jára. ⚠️ Az nem `Raycaster`, hanem sugár × SIM-IGAZSÁG
+      doboz: az épülő ház példány-mátrixa a készültséggel van LELAPÍTVA, tehát
+      a hálóra metszés a félkész laktanyát alig találná el, holott az állványa
+      teljes magasságban áll.
+      Mellékhaszon: a `kijeloltEpulet` a `kijeloles.epulet` fölé került
+      getterként (egy tárolás, nem kettő), és ettől a `jeloles_kontur.js` már
+      megírt, de HOLT ága életre kelt — a kijelölt épület alapterülete is
+      kirajzolódik.
 
 ---
 
 ## P1 — amit MOST találtunk (a v0.17 kör hozadéka)
 
-### [~] RND · Az épület-sérülés bekötése — a KERÜLŐÚT még ott van
+### [x] UI · Az ELLENFÉL TERMELÉSE kiszivárgott a kijelölés-panelen
+A `panel_kijeloles_adat.js` `_epulet()`-je csapatfüggetlenül írta ki a képzési
+sort, a kutatást és az őrség létszámát — az épület-kattintás pedig ellenséges
+épületet is visszaad. Aki rákattintott az ellenfél laktanyájára, elolvasta, mit
+képez és mit kutat.
+
+⚠️ **Nem desync** (a kijelölés kliens-oldali), hanem annál rosszabb: a v0.8
+lockstepben a FELDERÍTÉS veszti értelmét, méghozzá némán — a felület ettől még
+tökéletesen helyesnek látszik.
+
+- A határ, amit meghúztunk: ami az épületen KÍVÜLRŐL látszik, az mehet (típus,
+  életerő, készültség — az állvány úgyis a képen van); ami a falon BELÜL van,
+  az nem (képzési sor, kutatás, őrség létszáma). Az `orsegMax` marad: az
+  statikus tábla-adat, nem titok.
+- A felület sem hazudhat: az ellenséges épületre a panel most **„idegen épület
+  — a belseje nem látszik"**-ot ír, nem „nem folyik benne semmi"-t, és az
+  őrségnél `? / 5`-öt, nem `0 / 5`-öt. A nem-tudást hiányként kell kiírni,
+  különben a gát maga válik hazugsággá.
+- Kapu: a `p:kijeloles` szonda **7/b** vizsgálata. Mind a három ág valódi
+  kontrollal indul (sor `3 → 0`, kutatás `"ekevas" → ""`, őrség `2 → 0`) —
+  üres épületen nem tud hamisan zöldülni. Szabotázzsal próbálva (`sajat = true`)
+  **8 gát** sül el.
+
+### [x] RND · Az épület-sérülés bekötése — a KERÜLŐÚT KIVÉVE
 A v0.16/2 megcsinálta a **látványt** (`epulet_formak.js` → `epAllapot`
 példány-attribútum), de az ADAT nem tudott odajutni, mert a `gazdasag3d.js`
 akkor MÁSIK AGENT sávja volt. Ezért a puffert egy
@@ -125,14 +159,21 @@ honnan van a sim). Ráadásul rajzoláskor fut, típusonként újra végigjárja
 összes épületet, és egy MÁSODIK, kézzel szinkronban tartott másolatát tartja a
 példány-huroknak.
 
-- ⚠️ **ellenőrizendő:** a kör végén a `gazdasag3d.js` már a példány-hurokban
-  viszi a `hp/maxHp`-t és a `nyitva`-t — egy bejárás, egy sorrend, egy igazság.
-- [ ] **HA az bement, TÖRÖLNI KELL a kerülőutat.** Az `epulet_formak.js`
-      fejléce azt ígéri, hogy „ha a sáv gazdája beköti, ez az ág magától
-      elnémul: elég a `simBead()`-et meghívni" — **de a `simBead()` a simet
-      ADJA, nem némít.** Ha mindkét oldal ír, két írás megy ugyanarra a
-      pufferre, és a hiba pont akkor jön elő, amikor a két sorrend eltér.
-      `grep -n "onBeforeRender" src/render/epulet_formak.js`
+- [x] A `gazdasag3d.js` példány-hurka viszi a `hp/maxHp`-t és a `nyitva`-t —
+      egy bejárás, egy sorrend, egy igazság.
+- [x] **A kerülőút TÖRÖLVE** (`allapotIr`, `simBead`, `simFelold`,
+      `onBeforeRender`). Egy ideig MINDKETTŐ írta ugyanazt a puffert, és ez a
+      fajta ütközés némán romlik el: a későbbi írás győz, tehát csak akkor
+      látszik, ha a két forrás elkülönbözik — például egy szonda-előnézet MÁSIK
+      simmel, mert a kerülőút a globális simet oldotta fel, nem a réteget.
+      Maradt a `defaultAttributeValues` (hiba esetén a v0.16-os kép jön vissza)
+      és a `serulesFokozat` export, amit a réteg importál.
+- [x] ⚠️ **A látvány VAK VOLT A SÉRÜLÉSRE.** A réteg változás-jele (`db`, élők
+      száma, `epulHatra` összege) ostrom alatt mind a három VÁLTOZATLAN — a
+      puffer soha nem íródott volna újra, és a repedés csak véletlenül, egy
+      másik épület felépülésekor jelent volna meg. Negyedik tag: a FOKOZATOK
+      hash-e (nem a nyers hp — azzal minden találat teljes újratöltést kérne,
+      miközben a képen a küszöbök között semmi nem változik).
 - [ ] **A PÉLDÁNY-SORREND SZERZŐDÉS** mindkét fájl fejlécében ki van mondva: a
       `t` típus `k`-adik példánya a `t` típus `k`-adik **ÉLŐ** épülete,
       `ep`-index szerint növekvő sorrendben. **Ne rendezd át** — a sérülés
@@ -152,22 +193,41 @@ közvetlenül is hívható), de **tudni kell róla két okból**:
    A v0.17 szondája első futásra pont ebbe futott bele;
 2. ha valaki lefedettséget mér, ez az ág holt kódnak fog látszani, pedig nem az.
 
-### [ ] SIM · ÖRÖKÖLT, NEM JAVÍTOTT: a munkások VÉGLEG tétlenné válnak
-Ha a bázistól `LELOHELY_SUGAR = 60`-on belül elfogynak a lelőhelyek, az érintett
-munkások nem keresnek tovább — véglegesen leállnak. Mérve: **12-ből 5** a
-seed 20260804 / v0.6-os futáson. (⚠️ Ez az előző kör mérése; ebben a
-munkamenetben nem reprodukáltam.)
+### [x] SIM · ~~A munkások VÉGLEG tétlenné válnak~~ — TÉVES DIAGNÓZIS, NINCS HIBA
+Az eredeti bejelentés szerint: ha a bázistól `LELOHELY_SUGAR = 60`-on belül
+elfogynak a lelőhelyek, az érintett munkások véglegesen leállnak (12-ből 5, seed
+20260804 / v0.6). **A v0.18-ban ez kimérve MEGDŐLT.**
 
-- Hely: `src/sim/ai.js:204` (a konstans) és `:1179`
-  (`ef.kornyek(fajta, bx, by, jeloltek, 8, LELOHELY_SUGAR)`).
-- **Miért lett ez most igazán fájó:** a győzelmi feltétellel végre végig lehet
-  játszani hosszú meccseket — és ez a hiba pont azokat öli meg.
-- ⚠️ A szonda 9. vizsgálatának „navigáció nélkül álló munkás: 0" invariánsa
-  **NEM fogja meg**: a beragadt munkásnak VAN navigációja, csak nincs hová
-  mennie. Ha javítod, kell mellé egy új szám, ami elárulja, hogy él — például
-  „tétlen munkás a kör végén".
-- Irány: **sugár-tágítás**, ha a szűk körben nincs jelölt — nem konstans-emelés,
-  az a bázis-közeli preferenciát ölné meg.
+Amit a mérés mond (seed 20260804, 16 000 tick, mindkét oldal nehéz):
+
+| tick | vörös munkás | tétlen |
+|---|---|---|
+| 2 000 … 12 000 | 10 → 26 | **0** |
+| 14 000 | 26 | 4 |
+| 16 000 | 26 | 10 |
+
+⚠️ **A meccs a 10 740. ticken VÉGET ÉRT** (a vörös nyert, a kék központja
+elesett), és abban a pillanatban **nulla** tétlen munkás volt. A tíz tétlen
+kizárólag UTÁNA gyűlt össze — mert az `ai.lep()` első sora azóta helyesen
+kilép a lefutott meccsben (`if (this.sim.gyozelem.vege) return;`, a v0.17-ben
+került be, épp azért, mert a gép addig a kukába rendelt tovább).
+
+A munkások tehát nem „ragadtak be": a játék véget ért, és senki nem osztja be
+őket. A `LELOHELY_SUGAR`-nak ehhez semmi köze — műszerezve az
+`_elerhetoLelohely()` a teljes futáson **49 hívásból 0-szor** adott `-1`-et.
+
+- ⚠️ **A tanulság a MÉRÉSRŐL szól, nem a kódról:** a „12-ből 5 beragadt" szám
+  egy már ELDŐLT meccsen készült. Egy 16 000 tickes futás vége ma már nem
+  ugyanaz, mint a v0.17 előtt — a győzelmi feltétel óta a meccs jóval korábban
+  lezárul. **Aki hosszú futáson mér AI-viselkedést, előbb nézze meg a
+  `gyozelem.vegeTick`-et**, különben a halott meccset méri.
+- Kipróbáltam a javasolt sugár-tágítást (két lépcső, 60 → 200, nagyobb
+  jelölt-korláttal). Az eredmény bitre azonos volt, a záró hash is
+  (`0xdd264890`) — vagyis **nem javított semmit, csak egy nem járt ágat adott
+  volna a gépnek.** Ezért nincs benne a fán.
+- Ha a jelenség valaha ELDŐLETLEN meccsben jelentkezik, akkor van valódi hiba,
+  és akkor a fenti két lépcső a kiindulás. Addig a `LELOHELY_SUGAR = 60`
+  bizonyítottan elég.
 
 ### [ ] SIM/AI · A `BOSEG` konstans KÉSÉLEN áll
 `src/sim/ai.js:141`, ma **700**. A fejléce őszintén leírja, hogy a küszöb nem
@@ -203,21 +263,40 @@ hétszer égett meg zöld kapu melletti halott rendszeren.
 
 ## P1 — ami nyitva maradt
 
-- [~] **SIM · Képzési sor törlése.** ⚠️ **ellenőrizendő:** a kör végén a fán a
-      `kepzes.js` és a `parancsok.js` már tartalmazta a `kepzes_torles` ágat,
-      **visszatérítés NÉLKÜL**. Az indoklás jó és le van írva: az érték nem a
+- [x] **SIM · Képzési sor törlése — KÉSZ, a szondában is (15. vizsgálat).**
+      `kepzes_torles`, **visszatérítés NÉLKÜL**, és BÁRMELYIK sor-elem
+      törölhető, a folyamatban lévő is. Az indoklás jó és le van írva: az érték nem a
       nyersanyag, hanem a **népesség és a sor-hely** felszabadítása — a sorban
       álló egység foglalja a `sorbanNepesseg`-et, egy elgépelt shift+kattintás
       öt ostromgépe percekre megbénítja a csapatot. A képzés-panel gombja és
-      parancs-ága eleve KÉSZEN ÁLLT, képesség-felismeréssel. **Ha bement, ez
-      `[x]` — de akkor be kell venni a determinizmus-forgatókönyvbe is**, és a
-      `torolve` / `torlesElutasitva` számoknak meg kell jelenniük a szonda
-      kiírásában.
-- [ ] **Korszak-gát az építésnél.** A sim `epit` ága nem néz korszakot, és az AI
-      sem — egy csak-UI-ban működő gát CSAK AZ EMBERT büntetné, és csendben
-      átírná a balanszt. Az ág kész és bizonyított (`EP_KORSZAK_JAVASLAT` a
-      `panel_epites_adat.js`-ben), egy sor kell hozzá, ha a követelmény bekerül
-      a simbe.
+      parancs-ága eleve KÉSZEN ÁLLT, képesség-felismeréssel — a ✕ gomb magától
+      életre kelt.
+      ⚠️ **A visszatérítés valódi veszélye nem a nullszaldós rendelés–törlés
+      kör**, hanem hogy létrejönne egy `keszlet += …` ág, ami a levonást
+      SORBAÁLLÁSKOR, a visszatérítést TÖRLÉSKOR számolná újra. Ma bitre
+      egyeznek; az első technológia vagy korszak-bónusz, ami az egység árához
+      nyúl, csendben nyersanyag-gyárat csinálna belőle (rendelj olcsón, töröld
+      drágán). A fej törlésekor a mögötte álló a TELJES idővel indul, különben
+      olcsó lándzsás + törlés = félidős lovag.
+      Mérve: 40 rendelés–törlés kör, 5000 → 3000 étel, **nulla növekedés**;
+      9/10 törlés átment, 11/10 elutasítva (idegen sor, tartományon kívüli index).
+- [~] **Korszak-gát az építésnél — A SIMBEN KÉSZ, DE NINCS ÉLESÍTVE.**
+      `EP_KORSZAK_IGENY`, `korszakKell()`, `korszakGat()`, `korszakElutasitva`,
+      és az ellenőrző sor a `parancsok.js` `epit` ágában, a levonás ELŐTT.
+      Az élő tábla viszont csupa nulla (= a mai szabály), és ez MÉRT DÖNTÉS:
+      élesítve nem visszafogja a gépet, hanem megszünteti ellenfélként —
+      16 000 tick, azonos seed: álló épület **13 → 4**, élő munkás **12 → 0**,
+      156 építési parancsból 148 korszak miatt elutasítva, és a gép a saját
+      központját is elveszti. Ok: a gép ebben a körben egyetlen korszakot sem
+      vált, tehát a kapu sosem nyílik ki előtte, az `ai.js` `_buildOrder`-e
+      pedig az első meg nem épülő tételnél `return`-öl, így beragad.
+      ⚠️ A szonda 15. köre **BEKAPCSOLVA** járatja a saját sim-jén (27/27
+      elutasítás, A/B kontrollal) — a kód a kapun belül van, csak a világon
+      nincs bekapcsolva.
+      **Az élesítés három előfeltétele:** (1) a gép tudjon korszakot váltani,
+      (2) a `_buildOrder` `continue`-oljon a tiltott tételen, ne `return`-öljön,
+      (3) a `panel_epites_adat.js` vegye át a sim tábláját, különben a gomb
+      engedi, amit a sim eldob.
 - [ ] **Böngészős ránézés minden panelre.** Az adat- és szerződés-kapuk zöldek,
       de a tördelést és a tényleges kattintásokat élőben még senki nem nézte meg.
       ⚠️ Ez csak valódi GPU-s gépen ér valamit.
@@ -258,16 +337,23 @@ hétszer égett meg zöld kapu melletti halott rendszeren.
 
 ## Örökölt figyelmeztetések (a `npm run kiadas` sárgái)
 
-Egyik sem buktat, de mind valódi. ⚠️ **ellenőrizendő**: ez a lista a v0.16-os
-futásból való, és a `kiadas_ellenorzo.mjs` MAGA is mozgott a kör végén (+189
-sor). **Futtasd újra**, mielőtt bármelyikre hivatkozol.
+**MIND LEZÁRVA — a kapu 61/61, nulla figyelmeztetés.** (v0.18)
 
-- [ ] 16. a sim-fejlécek nem mind követik a MIÉRT-idiómát
-- [ ] 24. az `INTERFACES.md` `__aoc.verzio` példája elavult verziót mutat —
-      **a mai VERZIO-emeléssel ez most BIZTOSAN sárga**, lásd a P0-t
-- [ ] 39. a tudatosan rövid `EPULET`-táblák védettsége (lágy gát)
-- [ ] 56. van halott fájl a `src/` alatt (main.js-ből vagy szondából elérhetetlen)
-- [ ] 57. a `vite.config.js` `base`-e és a `PLAN.md` kirakási kikötése nem ér össze
+- [x] 16. a `grid.js` és az `rng.js` fejléce szakaszcímet kapott, a meglévő
+      szöveg érintése nélkül.
+- [x] 24. az `INTERFACES.md` példasora `'0.18.0'`.
+- [x] 39. **CÍMKE VOLT, NEM GÁT:** csak visszamondta a `KEPEZ` hosszát, az
+      indoklását („az olvasói `!lista`-val védettek") SEMMI nem ellenőrizte — a
+      védelmet kivéve a szöveg bitre ugyanaz maradt. Ma mind a három olvasót
+      végignézi, négy szabotázs-ággal.
+- [x] 56. **HAMIS RIASZTÁS VOLT.** Nem volt halott fájl: a
+      `panel_technologia.js`-t és a `panel_uzenetek.js`-t a `main.js`
+      `import.meta.glob`-bal húzza be, és a `PANEL_TERV` modul-út-sztringgel
+      szereli fel. Az import-séta csak a `from '…'` alakot követte; a másik négy
+      panel VÉLETLENÜL menekült meg (a szondájuk szövegében ott a fájlnevük).
+      Aki a lista alapján takarít, két működő panelt töröl.
+- [x] 57. **maga is hibás volt:** akkor is sárgázott, ha a két oldal már
+      egyetértett. DÖNTÉS: relatív `base: './'`, a `PLAN.md` rögzíti.
 
 ---
 

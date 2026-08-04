@@ -555,6 +555,78 @@ sor('mérés', 'érték', 'megjegyzés');
   sor('laktanya kutatása', m7.ep.kutatNev || '(semmi)', 'a központé nem szivároghat át');
   gat(m7.ep.kutatNev === '', 'A KUTATÁS EGY MÁSIK ÉPÜLETNÉL IS MEGJELENIK.',
     'kapott: "' + m7.ep.kutatNev + '" — a `hol[]` szűrés hiányzik.');
+
+  // ── 7/b. AZ ELLENFÉL NEM OLVASHATÓ ───────────────────────────────────
+  //
+  // ⚠️ A v0.18-ig UGYANEZ a hívás az ELLENFÉL székéből is kiadta a képzési sort
+  // és a kutatást — az épület-kattintás pedig ellenségeset is visszaad. Nem
+  // desync (a kijelölés kliens-oldali), hanem annál rosszabb: a v0.8
+  // lockstepben a felderítés értelmét veszti, méghozzá némán.
+  //
+  // A vizsgálat SZÁNDÉKOSAN ugyanazt az épületet kérdezi, amiről az imént
+  // bizonyítottuk, hogy TELE van adattal — csak a `csapat` mezőt cseréli. Így
+  // nem tud „üres épületen" hamisan zöldülni.
+  cim('7/b. AZ ELLENFÉL BELSEJE NEM LÁTSZIK');
+
+  // A KUTATÁST a központ hordozza, a KÉPZÉSI SORT a laktanya — ezért mindkettőt
+  // meg kell kérdezni. Egyetlen épülettel a vizsgálat fele hamisan zöldülne:
+  // a központ sora amúgy is üres, tehát a „0 → 0" semmit nem bizonyítana.
+  A.kijelolesAdat(s7, { egysegek: null, db: 0, epulet: lak, csapat: 0 }, m7);
+  const sajatSor = m7.ep.sorDb;
+  gat(m7.ep.sajat === true, 'A SAJÁT LAKTANYA NEM `sajat`.');
+  gat(sajatSor > 0,
+    'A KONTROLL ÜRES: a saját laktanya sora nulla — így a sor-szivárgásról '
+    + 'ez a vizsgálat nem mond semmit.');
+
+  A.kijelolesAdat(s7, { egysegek: null, db: 0, epulet: lak, csapat: 1 }, m7);
+  sor('a laktanya az ELLENFÉL székéből', 'sor ' + sajatSor + ' → ' + m7.ep.sorDb,
+    'a sorban álló egységek típusa is titok');
+  gat(m7.ep.sajat === false, 'AZ ELLENSÉGES LAKTANYA `sajat`-nak látszik.');
+  gat(m7.ep.sorDb === 0, 'AZ ELLENFÉL KÉPZÉSI SORA KISZIVÁROG.',
+    'kapott: ' + m7.ep.sorDb + ' elem — a v0.8 lockstepben ez az ellenfél '
+    + 'termelésének kiolvasása.');
+  gat(m7.ep.kepzesSzaz === 0 && m7.ep.kepzesMp === 0,
+    'AZ ELLENFÉL KÉPZÉSI KÉSZÜLTSÉGE KISZIVÁROG.',
+    'a sor elrejtése után is megmaradt a százalék/idő — abból visszaszámolható, '
+    + 'mit képez.');
+
+  // ŐRSÉG a központba — enélkül az őrség-ág `0 → 0`-t mérne, ami semmit nem
+  // bizonyít. A központ 15 főt bír, tehát kettő biztosan befér.
+  const beszallok = [];
+  for (let i = 0; i < s7.egysegek.db && beszallok.length < 2; i++) {
+    if (s7.egysegek.csapat[i] === 0) beszallok.push(i);
+  }
+  s7.parancs({ fajta: 'beszallas', egysegek: beszallok, epulet: kozpont });
+  for (let k = 0; k < 400 && (s7.beszallas.letszam[kozpont] | 0) < 2; k++) s7.lep();
+
+  A.kijelolesAdat(s7, { egysegek: null, db: 0, epulet: kozpont, csapat: 0 }, m7);
+  const sajatKutat = m7.ep.kutatNev;
+  const sajatOrseg = m7.ep.orseg, sajatOrsegMax = m7.ep.orsegMax;
+  gat(sajatKutat !== '',
+    'A KONTROLL ÜRES: a saját központban nem folyik kutatás.');
+  gat(sajatOrseg > 0,
+    'A KONTROLL ÜRES: senki nem szállásolódott be a központba — így az '
+    + 'őrség-szivárgásról ez a vizsgálat nem mond semmit.');
+
+  A.kijelolesAdat(s7, { egysegek: null, db: 0, epulet: kozpont, csapat: 1 }, m7);
+  sor('a központ az ELLENFÉL székéből', 'kutatás "' + sajatKutat + '" → "'
+    + m7.ep.kutatNev + '"', 'őrség ' + sajatOrseg + ' → ' + m7.ep.orseg);
+  gat(m7.ep.sajat === false, 'AZ ELLENSÉGES KÖZPONT `sajat`-nak látszik.');
+  gat(m7.ep.kutatNev === '', 'AZ ELLENFÉL KUTATÁSA KISZIVÁROG.',
+    'kapott: "' + m7.ep.kutatNev + '"');
+  gat(m7.ep.kutatMp === 0, 'AZ ELLENFÉL KUTATÁSI IDEJE KISZIVÁROG.');
+  gat(m7.ep.orseg === 0, 'AZ ELLENFÉL ŐRSÉG-LÉTSZÁMA KISZIVÁROG.',
+    'kapott: ' + m7.ep.orseg + ' (a saját széken ' + sajatOrseg + ')');
+
+  // Ami KÍVÜLRŐL látszik, annak MEG KELL maradnia — különben a gát túllőtt, és
+  // az ellenséges épület a panelen üres dobozzá válna.
+  gat(m7.ep.van === true, 'AZ ELLENSÉGES ÉPÜLET ELTŰNT A PANELRŐL.');
+  gat(m7.ep.hp > 0 && m7.ep.nev !== '',
+    'AZ ELLENSÉGES ÉPÜLET NEVE VAGY ÉLETEREJE ELVESZETT.',
+    'név "' + m7.ep.nev + '", hp ' + m7.ep.hp + ' — ezek kívülről látszanak.');
+  gat(m7.ep.orsegMax === sajatOrsegMax,
+    'AZ ŐRSÉG-KAPACITÁS IS ELTŰNT.',
+    'statikus tábla-adat, nem titok: ' + sajatOrsegMax + ' → ' + m7.ep.orsegMax);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

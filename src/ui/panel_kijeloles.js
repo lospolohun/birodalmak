@@ -327,7 +327,12 @@ export class PanelKijeloles {
     } else if (m.fajta === 'epulet') {
       const p = m.ep;
       if (!p.kesz) this._adatPar('épül', p.epitSzaz + ' % · ' + p.epitMp + ' mp');
-      if (p.orsegMax > 0) this._adatPar('őrség', p.orseg + ' / ' + p.orsegMax);
+      // ⚠️ Idegen épületnél az adatréteg NULLÁT ad őrségre — az „0 / 5" viszont
+      // azt ÁLLÍTANÁ, hogy üres a torony, holott csak nem látunk bele. A hiányzó
+      // tudást hiányként kell kiírni, különben a gát hazugsággá válik.
+      if (p.orsegMax > 0) {
+        this._adatPar('őrség', (p.sajat ? String(p.orseg) : '?') + ' / ' + p.orsegMax);
+      }
       if (p.nepesseg > 0) this._adatPar('népesség', '+' + p.nepesseg);
       if (p.lerakat) this._adatPar('szerep', 'lerakat');
       if (p.kepzoE) this._adatPar('szerep', 'képző épület');
@@ -405,7 +410,14 @@ export class PanelKijeloles {
         folyik += (folyik ? '  ·  ' : '') + 'kutatás: ' + p.kutatNev
           + ' (' + p.kutatMp + ' mp)';
       }
-      if (!folyik) folyik = p.kesz ? 'nem folyik benne semmi' : '';
+      // ⚠️ „Nem folyik benne semmi" csak a SAJÁT épületről mondható ki. Idegen
+      // épületnél az adatréteg szándékosan üresen hagyja a sort és a kutatást
+      // (a v0.8 lockstepben az ellenfél termelése nem olvasható ki) — ha ide
+      // ugyanaz a mondat kerülne, a panel ÁLLÍTANÁ a tétlenséget, ahelyett hogy
+      // bevallaná a nem-tudást. Az ellenfél üres laktanyája és a dolgozó
+      // laktanyája ugyanúgy néz ki, és ez így helyes.
+      if (!folyik && !p.sajat && p.van) folyik = 'idegen épület — a belseje nem látszik';
+      else if (!folyik) folyik = p.kesz ? 'nem folyik benne semmi' : '';
     }
     this._ir('folyik', this._folyik, folyik);
 

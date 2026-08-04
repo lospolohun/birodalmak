@@ -311,6 +311,8 @@ export function ujModell(maxEgyseg = 2000) {
     /** Csak `fajta === 'epulet'` esetén értelmes. */
     ep: {
       van: false, index: -1, tipus: -1, nev: '', ikon: '',
+      /** A kijelölő csapaté-e. Hamis esetén a „mi folyik benne" mezők üresek. */
+      sajat: false,
       hp: 0, maxHp: 0, hpSzaz: 0,
       kesz: false, epitSzaz: 0, epitMp: 0,
       /** Mi folyik benne — képzési sor. */
@@ -407,7 +409,7 @@ export function kijelolesAdat(sim, valasztas, modell) {
 
   // ── 2. AZ ÉPÜLET ────────────────────────────────────────────────────
   const epIdx = valasztas && valasztas.epulet !== undefined ? (valasztas.epulet | 0) : -1;
-  _epulet(sim, epIdx, m.ep);
+  _epulet(sim, epIdx, m.ep, cs);
 
   // ── 3. FAJTA ────────────────────────────────────────────────────────
   m.fajta = osszDb === 0
@@ -526,7 +528,7 @@ export function kijelolesAdat(sim, valasztas, modell) {
  * @param {number} idx épület-index, vagy -1
  * @param {object} o a modell `ep` része
  */
-function _epulet(sim, idx, o) {
+function _epulet(sim, idx, o, cs) {
   const ep = sim.epuletek;
   o.sorDb = 0;
   o.kutatNev = ''; o.kutatMp = 0;
@@ -536,10 +538,23 @@ function _epulet(sim, idx, o) {
     o.hp = 0; o.maxHp = 0; o.hpSzaz = 0; o.kesz = false;
     o.epitSzaz = 0; o.epitMp = 0;
     o.orseg = 0; o.orsegMax = 0; o.nepesseg = 0;
-    o.lerakat = false; o.kepzoE = false;
+    o.lerakat = false; o.kepzoE = false; o.sajat = false;
     return o;
   }
   const t = ep.tipus[idx];
+  // ── MI LÁTSZIK KÍVÜLRŐL, ÉS MI NEM ──────────────────────────────────
+  // A v0.18-ig a panel MINDEN épületről mindent kiírt, csapattól függetlenül —
+  // az épület-kattintás pedig ellenségeset is visszaad. A kijelölés kliens-
+  // oldali, tehát ez nem desyncet okozott, hanem annál rosszabbat: a v0.8
+  // lockstepben az ELLENFÉL TERMELÉSE szivárgott ki. Aki rákattint az ellenség
+  // laktanyájára, elolvassa, hogy mit képez és mit kutat — vagyis a felderítés
+  // értelmét veszti, méghozzá NÉMÁN, mert a felület ettől még helyesnek látszik.
+  //
+  // A határ: ami az épületen KÍVÜLRŐL látszik, az mehet (típus, életerő,
+  // készültség — az állvány magassága úgyis a képen van). Ami a falon BELÜL
+  // van, az nem: képzési sor, kutatás, őrség létszáma.
+  const sajat = ep.csapat[idx] === (cs | 0);
+  o.sajat = sajat;
   o.van = true;
   o.index = idx;
   o.tipus = t;
@@ -559,7 +574,7 @@ function _epulet(sim, idx, o) {
     : (teljes > 0 ? _szazalek(teljes - hatra, teljes) : 0);
 
   // ── MI FOLYIK BENNE: KÉPZÉS ─────────────────────────────────────────
-  const kp = sim.kepzes;
+  const kp = sajat ? sim.kepzes : null;
   if (kp) {
     const db = Math.min(kp.sorDb[idx] | 0, SOR_HOSSZ);
     o.sorDb = db;
@@ -580,7 +595,7 @@ function _epulet(sim, idx, o) {
   // ── MI FOLYIK BENNE: KUTATÁS ────────────────────────────────────────
   // A `technologia.hol[]` mondja meg, MELYIK épületben folyik — enélkül a panel
   // csak azt tudná, hogy „valahol kutatnak".
-  const te = sim.technologia;
+  const te = sajat ? sim.technologia : null;
   if (te) {
     const csap = ep.csapat[idx];
     for (let tech = 0; tech < TECH_DB; tech++) {
@@ -593,7 +608,11 @@ function _epulet(sim, idx, o) {
   }
 
   // ── SZEREPEK ────────────────────────────────────────────────────────
-  o.orseg = sim.beszallas ? (sim.beszallas.letszam[idx] | 0) : 0;
+  // ⚠️ Az őrség LÉTSZÁMA is a falon belül van, tehát ugyanaz a szabály áll rá:
+  // egy ellenséges toronyról nem tudható meg, hány íjász ül benne — pedig épp
+  // az dönti el, érdemes-e megrohamozni. Az `orsegMax` viszont STATIKUS
+  // tábla-adat (a torony mindig ötöt bír), az nem titok.
+  o.orseg = (sajat && sim.beszallas) ? (sim.beszallas.letszam[idx] | 0) : 0;
   o.orsegMax = KAPACITAS[t] | 0;
   o.nepesseg = EP_NEPESSEG[t] | 0;
   // ⚠️ A `KEPEZ` tábla KILENC hosszú, nem tizenegy: a torony és a piac nem is
