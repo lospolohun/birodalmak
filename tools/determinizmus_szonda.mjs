@@ -1202,6 +1202,105 @@ if (ketV06.ok) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 10) v0.7/2 — MENTÉS ÉS BETÖLTÉS
+// ════════════════════════════════════════════════════════════════════════════
+//
+// EZ A VIZSGÁLAT ÖNMAGÁT ÍRJA. A `Sim.allapotHash()` a v0.1 óta pontosan azt
+// sorolja fel, ami a szimuláció állapota — a mentésnek UGYANEZT a halmazt kell
+// tárolnia. A kettő tehát egymást ellenőrzi:
+//
+//   ments a T. ticken → tölts FRISS simbe → futtasd mindkettőt T+M-ig
+//   → a két hash-nek BITRE egyeznie kell
+//
+// Ha bármi kimarad a mentésből, ez azonnal megbukik, és megmondja a pontos
+// ticket. Nincs szükség kézzel karbantartott mező-listára — a lista maga a
+// vizsgálat tárgya.
+//
+// ⚠️ A MENTÉS UTÁN TOVÁBB IS FUTTATUNK, nem csak összehasonlítjuk a
+// pillanatnyi hasht. Az azonnali egyezés ugyanis SOKKAL gyengébb állítás: egy
+// hiányzó belső számláló (egy visszaszámláló, egy szabad-lista) a mentés
+// pillanatában még nem látszik a hashben, csak akkor, amikor a következő
+// döntés RÁÉPÜL. A v0.5/1 slot-újrahasznosítása pont ilyen: a szabad-lista
+// nincs a hashben, mégis eldönti, melyik indexre születik a következő egység.
+cim('10) v0.7/2 MENTÉS ÉS BETÖLTÉS — a hash a mentés specifikációja');
+const t10 = Date.now();
+let mentesBukas = bukas;
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const { mentes, betoltes, mentesSzoveg, betoltesSzoveg } = await import(
+    pathToFileURL(join(SIM_DIR, 'mentes.js')).href);
+
+  const MENTES_TICK = ervSzam('mentestick', 3000);
+  const FOLYTATAS = ervSzam('folytatas', 3000);
+
+  // EREDETI futás: elmegy a mentés pontjáig, ott mentünk, majd fut tovább.
+  const A = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  A.szondaFelallasV06(FORGATOKONYVEK.v06.egysegSzam);
+  for (let t = 1; t <= MENTES_TICK; t++) A.lep();
+  const szoveg = mentesSzoveg(A);
+  const mentesHash = A.allapotHash();
+
+  // BETÖLTÖTT futás: friss sim, ugyanaz a seed, majd visszatöltés.
+  const B = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  const eredmeny = betoltesSzoveg(B, szoveg);
+  sor('mentés mérete', (szoveg.length / 1024).toFixed(0) + ' kB',
+    'a ' + MENTES_TICK + '. ticken, JSON');
+  if (!eredmeny.ok) {
+    console.log('\n  \u26d4 A BETÖLTÉS ELUTASÍTOTT: ' + eredmeny.hiba);
+    bukas++;
+  } else {
+    const betoltottHash = B.allapotHash();
+    sor('hash a mentés pillanatában',
+      '0x' + (mentesHash >>> 0).toString(16).padStart(8, '0')
+      + (betoltottHash === mentesHash ? '  =  ' : '  ≠  ')
+      + '0x' + (betoltottHash >>> 0).toString(16).padStart(8, '0'));
+    if (betoltottHash !== mentesHash) {
+      console.log('\n  \u26d4 A BETÖLTÖTT ÁLLAPOT AZONNAL ELTÉR. Valami olyan hiányzik a');
+      console.log('     mentésből, ami BENNE VAN az `allapotHash()`-ben. A két lista');
+      console.log('     ugyanaz kell legyen — a `mentes.js` fejléce erről szól.');
+      bukas++;
+    } else {
+      // FOLYTATÁS: itt derül ki, ami a pillanatnyi hashben nem látszik.
+      let elteres = -1;
+      for (let t = 1; t <= FOLYTATAS; t++) {
+        A.lep(); B.lep();
+        if ((t % HASH_KOZ) !== 0) continue;
+        if (A.allapotHash() !== B.allapotHash()) { elteres = MENTES_TICK + t; break; }
+      }
+      sor('folytatás', elteres < 0 ? 'AZONOS' : 'ELTÉR',
+        FOLYTATAS + ' tick, ' + (FOLYTATAS / HASH_KOZ) + ' ellenőrzőpont');
+      if (elteres >= 0) {
+        console.log('\n  \u26d4 A FOLYTATÁS ELTÉR a(z) ' + elteres + '. ticken.');
+        console.log('     A mentés pillanatában még egyezett, tehát a hiányzó dolog NINCS');
+        console.log('     benne a hashben, de a döntések RÁÉPÜLNEK. Elsőnek nézd meg a');
+        console.log('     belső számlálókat: `Egysegek._szabad` (melyik slotba születik a');
+        console.log('     következő egység), a `Munkasok.utolsoTav`, a `Kod` állapota,');
+        console.log('     és a `Sim.rng` generátor-állása.');
+        bukas++;
+      } else {
+        console.log('\n  \u2713 A mentés TELJES: a betöltött meccs bitre ugyanúgy folytatódik.');
+      }
+    }
+  }
+
+  // ROSSZ MENTÉSEK: a betöltésnek udvariasan el kell utasítania, nem összeomlania.
+  const C = new Sim({ seed: SEED ^ 0xff, n: 256, maxEgyseg: 2000 });
+  const masSeed = betoltesSzoveg(C, szoveg);
+  const romlott = betoltesSzoveg(new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 }), '{ nem json');
+  sor('idegen seed / romlott fájl',
+    (masSeed.ok ? 'ELFOGADVA' : 'elutasítva') + ' / ' + (romlott.ok ? 'ELFOGADVA' : 'elutasítva'),
+    'mindkettőt el KELL utasítani');
+  if (masSeed.ok || romlott.ok) {
+    console.log('\n  \u26d4 A BETÖLTÉS ELFOGAD HIBÁS MENTÉST. A terep a SEEDBŐL épül, és');
+    console.log('     nincs a mentésben — idegen seeddel a betöltött sereg más pályán');
+    console.log('     állna, mint amin a meccs zajlott.');
+    bukas++;
+  }
+}
+sor('lefutott', ((Date.now() - t10) / 1000).toFixed(1) + ' mp');
+mentesBukas = bukas - mentesBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -1223,6 +1322,7 @@ sor('8) v0.5 építkezés+tech',
 sor('9) v0.6 AI + v0.7 köd',
   ketV06.ok ? (kevertV06.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV06.tick + ')')
     : 'BUKOTT (tick ' + ketV06.tick + ')');
+sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

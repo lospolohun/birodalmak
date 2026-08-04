@@ -113,14 +113,36 @@ export class MezoTar {
   /** A mező irány-vektora egy cellában (egységhosszú, vagy 0,0 ha nincs út). */
   irany(mezoId, cellaIdx, ki) {
     const m = this.mezok[mezoId];
+    // ⚠️ AZ ÉRVÉNYTELENÍTETT MEZŐ NEM VEZET SENKIT (v0.7/2).
+    //
+    // A `cel = -1` azt jelenti, hogy ezt a rekeszt vagy kiürítettük (a pálya
+    // járhatósága változott), vagy egy másik cél kiszorította. A KÖLTSÉG-TÖMB
+    // viszont ilyenkor is ott marad, tele a RÉGI cél adataival — és aki még
+    // erre a rekeszre hivatkozik (`mezoId`), az azt ki is olvasta. Vagyis egy
+    // kiszorított mező után az egység csendben egy IDEGEN CÉLPONT felé
+    // navigált tovább, amíg a 15 tickenkénti egyenes-vizsgálat helyre nem
+    // tette.
+    //
+    // Lockstepben ez „csak" fura volt, mert minden gépen ugyanúgy történt. A
+    // MENTÉSNÉL viszont hibává vált: a betöltött világban a kiürített rekesz
+    // tényleg üres, tehát a betöltött meccs MÁSHOVA indult, mint az eredeti.
+    // Négy egység sebessége tért el az első tick után.
+    //
+    // A nulla irány nem megállás: a `units.js` mozgás-magja pont erre az esetre
+    // esik vissza a nyers célirányra („inkább nekimenjen a falnak, mint
+    // álljon"). Vagyis a helyes viselkedés eddig is ott volt, csak nem
+    // futhatott le.
+    if (m.cel < 0) { ki.x = 0; ki.y = 0; return ki; }
     ki.x = m.iranyX[cellaIdx];
     ki.y = m.iranyY[cellaIdx];
     return ki;
   }
 
-  /** Elérhető-e egyáltalán a cél ebből a cellából. */
+  /** Elérhető-e egyáltalán a cél ebből a cellából. Kiürített rekesz: nem. */
   elerheto(mezoId, cellaIdx) {
-    return this.mezok[mezoId].koltseg[cellaIdx] !== ELERHETETLEN;
+    const m = this.mezok[mezoId];
+    if (m.cel < 0) return false;
+    return m.koltseg[cellaIdx] !== ELERHETETLEN;
   }
 
   /** Dijkstra a CÉLBÓL kifelé, Dial-vödrökkel. */

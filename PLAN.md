@@ -196,7 +196,7 @@ megközelítését** az ellenséges központhoz.
 | szakasz | tartalom | állapot |
 |---|---|---|
 | v0.7/1 | hadi köd (sim-oldali láthatóság + GPU-textúra) | **kész** |
-| v0.7/2 | mentés / betöltés | hátravan |
+| v0.7/2 | mentés / betöltés | **kész** |
 | v0.7/3 | minimap és rendes HUD | hátravan |
 
 **A köd a SIMBEN él, nem a renderben** — pedig elsőre látványnak tűnik. Három
@@ -234,6 +234,54 @@ A szonda köd-számai közül a legfontosabb az, hogy **maradt-e felfedezetlen
 terület**. Enélkül a köd „működne" akkor is, ha egy hibás sugár-számítás az
 egész pályát felfedezettnek jelölné: determinisztikus, a számai nem nullák, és
 mégis pontosan semmit nem takar el.
+
+### v0.7/2 — az állapot-hash a mentés specifikációja
+
+Ez a szakasz szerencsés helyzetben volt. A `Sim.allapotHash()` a v0.1 óta
+pontosan azt sorolja fel, ami a szimuláció állapota — mert ha valami kimaradna,
+a desync-detektor vak lenne rá. A mentésnek **ugyanezt a halmazt** kell
+tárolnia, ugyanabból az okból. A kettő tehát egymást ellenőrzi, és a szonda 10.
+vizsgálata pont ezt használja ki:
+
+> ments a T. ticken → tölts FRISS simbe → futtasd mindkettőt T+M-ig → a két
+> hash-nek bitre egyeznie kell
+
+⚠️ **A mentés utáni FOLYTATÁS a lényeg, nem a pillanatnyi egyezés.** Az
+azonnali egyezés sokkal gyengébb állítás: ami nincs a hashben, de a döntések
+ráépülnek, csak később mutatkozik meg. Mind a három hiba, amit ez a szakasz
+talált, pontosan ilyen volt:
+
+1. **A generáció-tömb a `db` fölött is élő adat.** Minden más réteget az
+   `egysegKepez()` felülír születéskor, a generáció viszont szándékosan túléli
+   a slot újrahasznosítását — épp az a dolga, hogy egy elavult hivatkozásról
+   kiderüljön, hogy elavult. Nullával induló generációkkal az `ervenyes()` a
+   két futásban más választ ad.
+2. **A mező-tár nem tiszta gyorsítótár.** Az egységek `mezoId`-je INDEX a tár
+   rekeszeibe. Betöltéskor érvényteleníteni nem elég: minden `mezoId` üres
+   rekeszre mutatna, és a sereg a következő ticken már máshova indul. Ezért a
+   célcellákat mentjük, és ugyanabba a rekeszbe számoljuk újra.
+3. **Az LRU-bélyeg a kiürített rekeszen is számít.** A kiszorítás a legrégebben
+   használt rekeszt írja felül; nulla bélyegekkel más rekeszt választana, és az
+   egységek `mezoId`-je száz tickkel később csúszott el.
+
+**És ami közben kiderült a motorról:** az érvénytelenített áramlási mező
+KÖLTSÉG-TÖMBJE ottmaradt, tele a régi cél adataival, és aki még arra a rekeszre
+hivatkozott, az ki is olvasta — vagyis egy kiszorított mező után az egység
+csendben egy **idegen célpont** felé navigált tovább, amíg a 15 tickenkénti
+egyenes-vizsgálat helyre nem tette. Lockstepben ez „csak" fura volt (minden
+gépen ugyanúgy történt), a mentésnél viszont hibává vált. Mostantól a
+`cel < 0` rekesz nulla irányt ad, a mozgás-mag pedig pont erre az esetre esik
+vissza a nyers célirányra — a helyes viselkedés eddig is ott volt, csak nem
+futhatott le.
+
+A `Racs.jarhato` **benne van** a mentésben, pedig levezethető lenne (terep +
+nyersanyagok + épületek). Nem vezetjük le: a levezetés sorrendfüggő (a v0.5
+felállásánál egyszer már meg is bukott), és egy elrontott sorrendből származó
+egyetlen nyitott cella olyan útvonalat ad, ami az eredeti meccsben nem létezett.
+
+Játékosnak: **F5** mentés, **F9** betöltés (böngésző-tároló, egy rekesz). A
+mentés mérete a 3000. ticken 184 kB JSON — a tömör bináris formátum a v0.8
+hálózati kódjának dolga, ahol tényleg számít.
 
 ## A záró lépcsők (v0.11–v0.13)
 

@@ -47,6 +47,7 @@
 //   M                 piaci csere: 100 fa → 70 kő          (v0.5/3)
 //   C                 KÉPZÉS a kurzorhoz legközelebbi saját épületben (v0.5)
 //   R                 KUTATÁS ugyanott — a sorban első kutatható (v0.5/4)
+//   F5 / F9           mentés / betöltés (v0.7/2)
 //
 // A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
 // nyersanyagra kattintva gyűjtés, minden más esetben menet.
@@ -57,8 +58,12 @@ import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
 import { NYERS, NYERS_NEV } from '../sim/eroforras.js';
 import { EPULET, EPULET_NEV } from '../sim/epuletek.js';
 import { TECH_DB, TECH_NEV, TECH_LEIRAS, techEpulete } from '../sim/technologia.js';
+import { mentesSzoveg, betoltesSzoveg } from '../sim/mentes.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
 import { TIPUS } from '../sim/units.js';
+
+/** A böngésző-tároló kulcsa a mentéshez. */
+const MENTES_KULCS = 'aotc-mentes';
 
 /** Ezen belül két csoport-gombnyomás dupla kattintásnak számít (ms). */
 const DUPLA_MS = 350;
@@ -311,6 +316,39 @@ export class Bevitel {
   }
 
   /**
+   * MENTÉS a böngésző tárolójába (v0.7/2).
+   *
+   * Egyetlen rekesz, felülíródik — a több mentés-hely a v0.11 főmenüjének
+   * dolga, mert ott van hozzá felület. Ami itt fontos: a mentés a SIM-ből
+   * megy, a UI csak elindítja. A képernyő állapota (kamera, kijelölés) nincs
+   * benne, és ez szándékos — a v0.8-ban a mentést a HÁLÓZAT is használni
+   * fogja újracsatlakozáshoz, oda pedig nem tartozik, hogy a másik játékos
+   * épp hova nézett.
+   */
+  _mentes() {
+    try {
+      localStorage.setItem(MENTES_KULCS, mentesSzoveg(this.sim));
+      this._uzenet = 'mentve (' + this.sim.tick + '. tick)';
+    } catch (h) {
+      // A tároló megtelhet vagy tiltott lehet — ez nem összeomlás-ok.
+      this._uzenet = 'a mentés nem fért el a böngésző tárolójában';
+    }
+  }
+
+  /** BETÖLTÉS. A `Sim` maga utasítja el, ami nem hozzá való. */
+  _betoltes() {
+    const sz = localStorage.getItem(MENTES_KULCS);
+    if (!sz) { this._uzenet = 'nincs mentés'; return; }
+    const e = betoltesSzoveg(this.sim, sz);
+    if (!e.ok) { this._uzenet = 'betöltés: ' + e.hiba; return; }
+    // A kijelölés INDEXEKET tart, és a betöltött világban azok mást
+    // jelentenek. Eldobjuk — ez a v0.5/1 generációs tanulságának UI-oldali
+    // párja: az elavult hivatkozást nem elrontani kell, hanem elengedni.
+    this.kijeloles.urit();
+    this._uzenet = 'betöltve (' + this.sim.tick + '. tick)';
+  }
+
+  /**
    * PIACI CSERE (v0.5/3) — egyetlen billentyűvel: 100 fa → 70 kő.
    *
    * Szándékosan a legegyszerűbb változat, mert a v0.5-ben még nincs épület-
@@ -428,6 +466,8 @@ export class Bevitel {
       case 'KeyM': this._csereParancs(); break;
       case 'KeyC': this._kepzesParancs(); break;
       case 'KeyR': this._kutatasParancs(); break;
+      case 'F5': this._mentes(); break;
+      case 'F9': this._betoltes(); break;
       case 'KeyK':
         this._ad({ fajta: 'korszak', csapat: this.kijeloles.sajatCsapat });
         break;

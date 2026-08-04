@@ -14,12 +14,22 @@
  */
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function () {
+  const gen = function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  // ── A GENERÁTOR ÁLLAPOTA KIOLVASHATÓ ÉS VISSZAÁLLÍTHATÓ (v0.7/2) ────────
+  // A zárvány szép, de a MENTÉS nem tud belenyúlni — és a generátor egyetlen
+  // 32 bites száma ugyanúgy a szimuláció állapota, mint egy egység pozíciója.
+  // Ha egy betöltött meccs friss generátorral folytatódna, MÁS sorozatot
+  // kapna, és a folytatás elcsúszna az eredetitől. Ez a fajta eltérés
+  // ráadásul csak akkor jelentkezne, amikor legközelebb véletlent kérünk —
+  // vagyis órákkal a valódi ok után.
+  gen.allapot = () => a | 0;
+  gen.beallit = (uj) => { a = uj | 0; };
+  return gen;
 }
 
 /**
