@@ -55,8 +55,9 @@ import { TIPUS } from './units.js';
 import { NYERS } from './eroforras.js';
 import { EPULET, EP_AR, EP_MERET } from './epuletek.js';
 import { MUNKA } from './munkas.js';
-import { TECH_DB, techEpulete } from './technologia.js';
+import { TECH_DB, techEpulete, techKorszaka, techAra } from './technologia.js';
 import { EGYSEG_AR } from './kepzes.js';
+import { KORSZAK, KORSZAK_AR } from './gazdasag.js';
 import { Civ } from './civ.js';
 
 /**
@@ -87,13 +88,117 @@ const MUNKAS_CEL = [12, 20, 30];
 const HAZ_TARTALEK = [3, 8, 14];
 
 /**
- * A MUNKAERŐ CÉLARÁNYA nyersanyagonként, százalékban (étel, fa, kő, kristály).
+ * A MUNKAERŐ KIINDULÓ CÉLARÁNYA nyersanyagonként (étel, fa, kő, kristály).
  *
- * Fa-nehéz, és ez szándékos: a v0.5 mérése szerint az egész építési sor fából
- * megy (ház 30, laktanya 150, piac 175), az étel viszont csak a képzést eteti.
- * A kristály a korszakváltás miatt kell, de keveset és lassan.
+ * Fa-nehéz, és ez a NYITÁSRA szándékos: a v0.5 mérése szerint az egész építési
+ * sor fából megy (ház 30, laktanya 150, piac 175).
+ *
+ * ⚠️ EZ MÁR CSAK A KIINDULÁS — a tényleges célt a `_celArany` számolja belőle,
+ * a raktár állása szerint. Lásd ott a mérést: a fix arány pontosan azt a
+ * hibát okozta, amiért a TODO „étel-szűkös gépi gazdaság"-ot ír.
  */
 const ARANY = [30, 45, 15, 10];
+
+// ── v0.16 BALANSZ: KERESLET-VEZÉRELT MUNKAERŐ-ELOSZTÁS ───────────────────
+//
+// ⚠️ A FIX CÉLARÁNY VOLT AZ ÉTEL-SZŰKE OKA, ÉS EZT MÉRNI KELLETT. A gép
+// makacsul 45 % embert tartott a fán és 15 %-ot a kövön, akkor is, ha abból már
+// hegyekben állt. Mérve (12 000 tick, nehéz vs nehéz, semleges nép):
+//
+//     raktár a kör végén:  étel 0–65 · fa 480–1180 · kő 190–1305 · kristály 110–1000
+//
+// Vagyis a fából és a kőből TÖBB MINT EZER egység állt kihasználatlanul,
+// miközben az étel végig nullán tapadt, és a képzés emiatt utasításba futott
+// (155–208 elutasított sorbaállás csapatonként). A gép szorgalmasan dolgozott,
+// csak nem azon, amire szüksége volt — pontosan az a hibafajta, amit a
+// determinizmus-kapu sosem fog meg, mert tökéletesen reprodukálható.
+//
+// A javítás nem új célarány-tábla (azt a következő pálya vagy civ megint
+// elrontaná), hanem VISSZACSATOLÁS: a raktár állása mondja meg, hol kell ember.
+// Ami feltorlódik, arról lejön a munkaerő; ami nullán áll, oda megy.
+//
+// ── ÉS EZ EGYBEN A CIV-KÉRDÉSRE IS VÁLASZ ─────────────────────────────────
+// A gép SEHOL nem kérdezi meg, milyen népet játszik — nem is kell. Aki 20 %-kal
+// gyorsabban fejt követ, annál a kő HAMARABB torlódik fel, tehát a szabály
+// magától vesz le róla embert, és teszi oda, ahol tényleg hiány van. Egy
+// „ha Hegyi bányász, akkor…" ág ugyanezt adná, csak népenként külön hibával.
+/**
+ * E fölött a készlet fölött már BŐVEN van belőle.
+ *
+ * A szám nem hasraütés: a gép legdrágább EGYSZERI tétele a raktár (250 fa +
+ * 100 kő = 350), a küszöb ennek a kétszerese. Vagyis „bőség" az, amiből még
+ * egy teljes legdrágább rendelés UTÁN is maradna ugyanannyi.
+ *
+ * ⚠️ MÉRÉSI FIGYELMEZTETÉS A KÖVETKEZŐ HANGOLÓNAK: ez a küszöb a v0.6-os
+ * szonda-forgatókönyv KIMENETELÉT is billenti, mert a gépi ellenfél
+ * gazdaságán át a csatát is. 500-nál a nehéz gép a 12 994. tickre le is rombolja
+ * a könnyű bázisát; 700-nál a 16 000. tickig nem dől el a meccs, csak a nehéz
+ * gép áll jobban (34 kontra 16 élő egység). A KETTŐ KÖZÖTT a különbség nem a
+ * gazdaságban van — a t=8000-es termelési számok betűre azonosak —, hanem
+ * abban, hogy egy szoros csata melyik oldalra dől el. Ne ebből a számból
+ * próbáld a nehézséget hangolni: arra a `SEREG_CEL` és a `TAMADAS_KUSZOB` való.
+ */
+const BOSEG = 700;
+/**
+ * E alatt SZŰKÖS. A mérés szerint EZ az oldal hoz többet: a gazdaság
+ * gyorsításának nem az a titka, hogy a fölöslegtől elvegyünk, hanem hogy a
+ * nullán álló nyersanyaghoz azonnal embert küldjünk.
+ */
+const SZUKOSSEG = 120;
+/** A célarány súlya bőségben, illetve szűkében — SZÁZALÉK, egész osztással. */
+const BO_SULY = 45;
+const SZUK_SULY = 165;
+
+// ── v0.16 BALANSZ: KORSZAKVÁLTÁS ─────────────────────────────────────────
+//
+// ⚠️ A GÉP EDDIG EGYETLEN SORT SEM ÍRT A KORSZAKRÓL. A TODO úgy fogalmaz, hogy
+// „az ételt elköltik képzésre, mire az 500-as váltási ár összejönne" — a kód
+// olvasva ennél egyszerűbb a helyzet: `korszak` PARANCSFAJTA nem szerepelt az
+// `ai.js`-ben sehol. A gép nem elkésett a váltással, hanem SOSEM PRÓBÁLTA.
+// Mérve: 12 000 tick, mindkét oldal nehéz — mindkét csapat a sötét korban zárt.
+//
+// Ezért ez két külön dolog, és mindkettő kell:
+//
+//   1. `_korszakot` — ha összejött az ár, ADJA BE a parancsot;
+//   2. `_korszakTartalek` — és addig NE KÖLTSE EL az árát képzésre.
+//
+// A tartalék önmagában nem elég, és a parancs önmagában sem: tartalék nélkül a
+// gép 500 ételig sosem jut el (a képzés folyamatosan lecsapolja), parancs
+// nélkül pedig csak gyűjtene rá.
+/**
+ * MEDDIG MEGY EL a gép a korszakokban. Ugyanaz az elv, mint a `KUTATAS_CEL`-é
+ * (`[0, 3, 6]`): a könnyű gép a rendszert EGYÁLTALÁN NEM használja, a nehéz
+ * végigmegy a fény koráig. Nem szorzót kap, hanem messzebbre lát.
+ *
+ * ⚠️ A KÖNNYŰ SZINT NULLÁJA MÉRÉS EREDMÉNYE, NEM ELV. Először `[1, 2, 3]` volt,
+ * és a könnyű gép gazdasága 20 %-ot ZUHANT tőle (2510 → 2021 összegyűjtött
+ * nyersanyag ugyanazon a forgatókönyvön). Az ok kézenfekvő, ha kimondjuk: a
+ * könnyű gép 12 munkást tart, a váltás 500 étel — az a teljes termelésének
+ * több mint egyharmada. Amíg félretette, nem képzett és nem épített, és a
+ * hadserege ezalatt megfogyott. A könnyű szintnek nincs akkora gazdasága, hogy
+ * megengedhesse magának — és pont ezért könnyű.
+ */
+const KORSZAK_CEL = [0, 2, 3];
+/**
+ * A váltási ár HÁNY SZÁZALÉKA a tartalékolás egyik belépője (a másik lentebb).
+ *
+ * ⚠️ EZ A KÜSZÖB ÖNMAGÁBAN NEM MŰKÖDIK, ÉS EZT MÉRNI KELLETT. Az első változat
+ * CSAK ezt nézte: „ha már megvan a fele, arra spórolunk". A gép EGYSZER SEM
+ * váltott korszakot tőle — mert a raktárban SOHA nem gyűlt össze 250 étel.
+ * Mérve (12 000 tick, nehéz, Folyami kereskedők): 3413 étel jött be, és a
+ * raktár állása végig 10 és 80 között mozgott, mert a képzés ugyanolyan ütemben
+ * itta meg, ahogy érkezett. Klasszikus tyúk-tojás: a tartalék akkor kapcsolna
+ * be, amikor már gyűlik a készlet, de a készlet csak akkor gyűlik, ha a
+ * tartalék bekapcsolt.
+ *
+ * Ezért a második belépő a HALMOZOTT TERMELÉS (`osszegyujtott`): ha a csapat a
+ * meccs során ÖSSZESEN már megtermelte a váltás árát, akkor bizonyítottan bírja
+ * az ütemet, csak eddig másra költötte. Ez a szám monoton nő, tehát a döntés
+ * nem billeg oda-vissza — és egyben megvédi a gépet a HOLTPONTTÓL is: arra a
+ * nyersanyagra, amiből a pályán nem tud termelni (elérhetetlen kristály-fürt),
+ * egyik feltétel sem teljesül, tehát sosem áll le miatta a képzése.
+ */
+const KORSZAK_TARTALEK_TOL = 50;
 
 /** Ekkora sugárban keres lelőhelyet a bázis körül. */
 const LELOHELY_SUGAR = 60;
@@ -258,6 +363,12 @@ export class Ai {
     this.epitDb = new Int32Array(this.csapatDb);
     this.kepzesDb = new Int32Array(this.csapatDb);
     this.kutatasDb = new Int32Array(this.csapatDb);
+    /**
+     * Hány KORSZAKVÁLTÁST indított (v0.16). Külön szám, mert a `gazdasag.korszak`
+     * végállapota nem árulja el, hogy a gép PRÓBÁLKOZOTT-e: ha a bázisát a
+     * váltás előtt lerohanják, mindkettő ugyanaz a nulla.
+     */
+    this.korszakDb = new Int32Array(this.csapatDb);
 
     /**
      * Újrahasznált ár-puffer a civ-szorzókhoz (v0.9).
@@ -300,6 +411,17 @@ export class Ai {
     this._tetlenek = [];
     /** Munkás-eloszlás nyersanyagonként — szintén újrahasznált. */
     this._eloszlas = new Int32Array(4);
+    /**
+     * A KÖR CÉLARÁNYA (`_celArany`) és a korszakra FÉLRETETT nyersanyag
+     * (`_korszakTartalek`). Mindkettő újrahasznált: a döntési kör nem allokál.
+     *
+     * ⚠️ A tartalék KÜLÖN puffer az `_ar`-tól. Az `_ar`-ba a `_epAr`/`_egysegAr`
+     * írja a civ-szorzott árat, és a kettő ugyanabban a kifejezésben találkozik
+     * (`telik(ár + tartalék)`) — közös pufferrel a tartalék felülírná az árat,
+     * és a gép a saját tartalékát nézné árnak.
+     */
+    this._cel = new Int32Array(4);
+    this._tartalekAr = new Int32Array(4);
     /** A kör elején egyszer megszámolt létszámok (lásd `_szamlal`). */
     this._munkasDb = 0;
     this._seregDb = 0;
@@ -326,6 +448,7 @@ export class Ai {
     this.epitDb.fill(0);
     this.kepzesDb.fill(0);
     this.kutatasDb.fill(0);
+    this.korszakDb.fill(0);
     this.egyediDb.fill(0);
     this.ismertX.fill(-1);
     this.ismertY.fill(-1);
@@ -345,6 +468,17 @@ export class Ai {
    * tehát a parancsok sorrendje is az.
    */
   lep(tick) {
+    // ⚠️ A MECCS VÉGE UTÁN A GÉP SEM GONDOLKODIK TOVÁBB (v0.17 + v0.16 balansz).
+    // A `parancsok.js` `vegrehajt()`-ja a vége után MINDEN parancsot eldob — a
+    // gép viszont eddig nem tudott róla, és zavartalanul rendelt tovább.
+    // Mérve, a v0.6-os forgatókönyvön: a győztes gép a 12 169. tickig 12
+    // építési parancsot adott ki, a 16 000. tickig pedig 61-et — vagyis
+    // NEGYVENKILENC olyat, amit a végrehajtás azonnal a kukába tett. A v0.8
+    // lockstepjén ezek a csomagok a HÁLÓZATON is végigmennének, egy már eldőlt
+    // meccsben. Egy sor, és a szonda „elvesző építési parancs" gátja is újra
+    // arról szól, amiről szólnia kell: a koordináta-hibáról, nem a lefutott
+    // meccsről.
+    if (this.sim.gyozelem && this.sim.gyozelem.vege) return;
     for (let cs = 0; cs < this.csapatDb; cs++) {
       if (this.aktiv[cs] === 0) continue;
       const koz = DONTES_KOZ[this.nehezseg[cs]];
@@ -377,6 +511,14 @@ export class Ai {
     // háromszor. Egy döntési kör nem forró út, de a v0.1 óta tudjuk, hogy a
     // „csak egy kis ciklus" hozzáállásból lesz a 40 ms-os tick.
     this._szamlal(cs);
+    // v0.16 — A KORSZAK A LEGELSŐ KÖLTÉS. Ha ebben a körben összejött az ár, a
+    // parancsnak MEG KELL ELŐZNIE a képzést és az építést: fordítva ugyanaz a
+    // körhinta indulna, ami eddig is ment — a hosszú tartalékolás után az utolsó
+    // körben egy lándzsás vinné el az 500. ételt, és kezdődhetne elölről.
+    this._korszakot(cs);
+    // …és ami a váltásból még hiányzik, arra ettől a ponttól SPÓROLUNK.
+    this._korszakTartalek(cs);
+    this._celArany(cs);
     this._munkaraFog(cs, bx, by);
     this._atcsoportosit(cs, bx, by);
     this._hazatEpit(cs, bx, by);
@@ -392,6 +534,137 @@ export class Ai {
     // tudásra épül, amit a felderítés ebben a körben szerzett.
     this._felderit(cs, bx, by);
     this._hadmuvelet(cs, bx, by);
+  }
+
+  /**
+   * ÉRETT-E A GAZDASÁG ahhoz, hogy nagy tételre költsön?
+   *
+   * Ugyanaz a kétharmados küszöb, amit a `_katonatKepez` használ, és ugyanabból
+   * az okból: aki a munkás-célszáma előtt költ, a saját utánpótlását fojtja meg.
+   * A korszakváltásnál ez még élesebb — 500 étel a nyitó gazdaság sok órányi
+   * termelése, és ha a gép azért tenné félre, mert éppen négy munkása van, a
+   * meccs első harmadában megállna az egész lánc.
+   */
+  _gazdasagErett(cs) {
+    return this._munkasDb * 3 >= MUNKAS_CEL[this.nehezseg[cs]] * 2;
+  }
+
+  /**
+   * KORSZAKVÁLTÁS INDÍTÁSA, ha összejött az ár és van hova lépni.
+   *
+   * Az ellenőrzések nagy részét a `Gazdasag.korszakIndit()` úgyis elvégzi — itt
+   * mégis előre megnézzük, ugyanabból az okból, amiért a képzésnél is
+   * (`_katonatKepez`): a vakon beadott parancs a v0.8 hálózatán is átmegy, és
+   * egy gép, ami körönként halott parancsot küld, ott már nem csak zaj.
+   */
+  _korszakot(cs) {
+    const g = this.sim.gazdasag;
+    if (g.korszakHatra[cs] > 0) return;                       // már fut egy váltás
+    const k = g.korszak[cs];
+    if (k >= KORSZAK.FENY || k >= KORSZAK_AR.length) return;   // nincs tovább
+    if (k >= KORSZAK_CEL[this.nehezseg[cs]]) return;           // a szint plafonja
+    if (!this._gazdasagErett(cs)) return;
+    if (!g.telik(cs, KORSZAK_AR[k])) return;
+    this.sim.parancs({ fajta: 'korszak', csapat: cs });
+    this.korszakDb[cs]++;
+  }
+
+  /**
+   * MENNYIT TESZ FÉLRE a következő korszakváltásra — a `_tartalekAr` pufferbe.
+   *
+   * ⚠️ OSTROM ALATT NEM SPÓROLUNK. Ha ellenség áll a bázison, a félretett 500
+   * étel pontosan annyit ér, mint a kifosztott raktár: a gép a saját
+   * védekezését fojtaná meg egy olyan beruházás kedvéért, amit már nem él meg.
+   * Ez a `HAD.VEDEKEZIK` egyetlen sora, de enélkül a tartalék a legrosszabb
+   * pillanatban kapcsolna be.
+   *
+   * ⚠️ ÉS CSAK KÉSZ HADSEREG MELLETT — EZ A LEGDRÁGÁBB TANULSÁG. A tartalék
+   * első működő változata nem nézte a sereget, és a gép ATTÓL FOGVA, hogy a
+   * gazdasága beérett, SOHA TÖBBÉ nem képzett katonát: a kristály korába jutott
+   * csapat a fény korának árát (1000 étel + 400 kő + 800 kristály) tette félre,
+   * ami a teljes termelése — vagyis örökre. Mérve, 12 000 tick: 33 élő katona
+   * helyett 7, és NULLA indított támadás. A gép nyugodtan, determinisztikusan
+   * fejlődött, és közben megszűnt ellenfélnek lenni.
+   *
+   * A küszöb a SEREG-CÉL FELE (5 / 10 / 16), és ez is mérés. Először a
+   * `TAMADAS_KUSZOB` volt (9 / 14 / 20) — az „úgyis támadni indulna" logika
+   * szép, csak épp a gép RITKÁN áll akkora sereggel: 16 000 ticken át mérve a
+   * két nehéz gép csúcslétszáma 12 és 24 volt, vagyis az egyik oldal SOHA nem
+   * érte el a húszat, és a tartaléka egyszer sem kapcsolt be. Tíz felállásból
+   * kettő váltott korszakot. A fél sereg-cél olyan küszöb, amit a gép tényleg
+   * elér, és még mindig elég ahhoz, hogy ne rohanják le spórolás közben. Ha a
+   * hullám elfogy, a tartalék magától kikapcsol, és a gép előbb újraépíti a
+   * hadseregét — a korszakváltás annak jár, aki kivívta magának a nyugalmat.
+   */
+  _korszakTartalek(cs) {
+    const g = this.sim.gazdasag;
+    const t = this._tartalekAr;
+    t[0] = 0; t[1] = 0; t[2] = 0; t[3] = 0;
+    if (this.had[cs] === HAD.VEDEKEZIK) return;
+    if (this._seregDb < (SEREG_CEL[this.nehezseg[cs]] >> 1)) return;
+    if (g.korszakHatra[cs] > 0) return;
+    const k = g.korszak[cs];
+    if (k >= KORSZAK.FENY || k >= KORSZAK_AR.length) return;
+    if (k >= KORSZAK_CEL[this.nehezseg[cs]]) return;
+    if (!this._gazdasagErett(cs)) return;
+
+    const ar = KORSZAK_AR[k];
+    const o = cs * 4;
+    for (let f = 0; f < 4; f++) {
+      if (ar[f] === 0) continue;
+      // FAJTÁNKÉNT külön kapcsol be, KÉT belépővel — a `KORSZAK_TARTALEK_TOL`
+      // indoklása mondja el, miért nem elég az első magában:
+      //   · már megvan a fele a raktárban, VAGY
+      //   · a csapat a meccs során összesen már megtermelte ennyit.
+      const megvan = g.keszlet[o + f] * 100 >= ar[f] * KORSZAK_TARTALEK_TOL;
+      const birja = g.osszegyujtott[o + f] >= ar[f];
+      if (!megvan && !birja) continue;
+      t[f] = ar[f];
+    }
+  }
+
+  /**
+   * TELIK-E RÁ ÚGY, HOGY A KORSZAK-TARTALÉK IS MEGMARAD?
+   *
+   * Minden költő ág ezen megy át a `gazdasag.telik()` helyett — a ház
+   * kivételével. A ház azért marad kint, mert a népesség-plafon a gazdaság
+   * életfunkciója (30 fa), a váltási árakban pedig fa EGYÁLTALÁN nem szerepel:
+   * a tartaléka mindig nulla lenne, tehát a kivétel a gyakorlatban ingyen van,
+   * és megvédi a gépet attól, hogy egy jövőbeli, fát is kérő váltási ár némán
+   * beállítsa a népességét.
+   */
+  _telikTartalekkal(cs, ar) {
+    const g = this.sim.gazdasag;
+    const t = this._tartalekAr;
+    const o = cs * 4;
+    for (let f = 0; f < 4; f++) {
+      if (g.keszlet[o + f] < ar[f] + t[f]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A KÖR MUNKAERŐ-CÉLARÁNYA a raktár állása szerint — a `_cel` pufferbe.
+   *
+   * A részletes indoklás és a mért számok a `BOSEG`/`SZUKOSSEG` konstansoknál
+   * állnak. Röviden: az `ARANY` a kiindulás, és amiből feltorlódott a készlet,
+   * arról leveszünk embert; amiből kifogytunk, oda küldünk.
+   *
+   * Három lépcső, nem folytonos görbe: egész osztással számol (determinizmus),
+   * és a `_atcsoportosit` körönként EGY munkást mozdít, tehát a finom felbontás
+   * úgysem érne el a viselkedésig — csak a lépcsőt kellene indokolni kétszer.
+   */
+  _celArany(cs) {
+    const g = this.sim.gazdasag;
+    const cel = this._cel;
+    const o = cs * 4;
+    for (let f = 0; f < 4; f++) {
+      const k = g.keszlet[o + f];
+      let suly = 100;
+      if (k >= BOSEG) suly = BO_SULY;
+      else if (k <= SZUKOSSEG) suly = SZUK_SULY;
+      cel[f] = ((ARANY[f] * suly) / 100) | 0;
+    }
   }
 
   /**
@@ -597,7 +870,7 @@ export class Ai {
       // nullát mond rá (az ostromműhelyre mond nullát).
       const cel = egyediHely ? 1 : EPULET_CEL[tipus];
       if (this._epuletDb(cs, tipus) >= cel) continue;
-      if (!sim.gazdasag.telik(cs, this._epAr(cs, tipus))) {
+      if (!this._telikTartalekkal(cs, this._epAr(cs, tipus))) {
         // ⚠️ AZ EGYEDI KÉPZŐRE NEM GYŰJTÜNK, A TÖBBIRE IGEN. A `return` azt
         // jelenti: „erre spórolunk, addig semmi mást". Az ostromműhely 250 kő,
         // és ha a gép arra várna, a laktanyája és a háza is állna — a v0.6
@@ -693,7 +966,7 @@ export class Ai {
         // nehéz gép, aminek a túlnyomó része elutasításba futott. A v0.8-ban
         // ezek a parancsok a HÁLÓZATON is átmennének — egy AI, ami másodpercenként
         // tucat halott parancsot küld, ott már nem csak zaj.
-        if (!sim.gazdasag.telik(cs, this._egysegAr(cs, t))) {
+        if (!this._telikTartalekkal(cs, this._egysegAr(cs, t))) {
           // ⚠️ AZ EGYEDI EGYSÉGNÉL `continue`, MINDEN MÁSNÁL `break`. A `break`
           // azt jelenti: „erre gyűjtünk". Az egyedi egység viszont
           // SZÁNDÉKOSAN drágább, és ha rá is gyűjtene a gép, a laktanyája
@@ -728,6 +1001,15 @@ export class Ai {
     const ep = this.sim.epuletek;
     for (let t = 0; t < TECH_DB; t++) {
       if (tech.allapot[cs * TECH_DB + t] !== 0) continue;
+      // ⚠️ KORSZAK ÉS ÁR ELŐRE (v0.16). A `Technologia.indit()` mindkettőt
+      // ellenőrzi, de csak ELUTASÍTÁSSAL — és ez mérhető zaj volt: 12 000 tick
+      // alatt 238–239 elutasított kutatási parancs csapatonként, MINDEGYIK
+      // ugyanarra a korszak-zárra futva, mert a ciklus minden körben ugyanazt
+      // az első kutatatlan tételt találta meg. A v0.8-ban ezek a parancsok a
+      // hálózaton is átmennének. Ugyanaz az elv, mint a képzés előzetes
+      // ár-vizsgálatánál: a gép ne adjon be olyat, amiről tudja, hogy elhal.
+      if (this.sim.gazdasag.korszak[cs] < techKorszaka(t)) continue;
+      if (!this._telikTartalekkal(cs, techAra(t))) continue;
       const kellEp = techEpulete(t);
       for (let k = 0; k < ep.db; k++) {
         if (ep.csapat[k] !== cs || !ep.kesz(k) || ep.tipus[k] !== kellEp) continue;
@@ -847,9 +1129,10 @@ export class Ai {
    */
   _hianyzoFajta(el, osszes, kizart = 0) {
     let legjobb = -1, legjobbHiany = -0x7fffffff;
+    const arany = this._cel;
     for (let f = 0; f < 4; f++) {
       if (kizart & (1 << f)) continue;
-      const cel = ((osszes * ARANY[f]) / 100) | 0;
+      const cel = ((osszes * arany[f]) / 100) | 0;
       const hiany = cel - el[f];
       if (hiany > legjobbHiany) { legjobbHiany = hiany; legjobb = f; }
     }
@@ -933,8 +1216,9 @@ export class Ai {
 
     let hianyF = -1, hianyMax = 0;
     let tobblF = -1, tobblMax = 0;
+    const arany = this._cel;
     for (let f = 0; f < 4; f++) {
-      const cel = ((osszes * ARANY[f]) / 100) | 0;
+      const cel = ((osszes * arany[f]) / 100) | 0;
       const d = cel - el[f];
       if (d > hianyMax) { hianyMax = d; hianyF = f; }
       if (-d > tobblMax) { tobblMax = -d; tobblF = f; }
@@ -1021,6 +1305,13 @@ export class Ai {
     const munkas = this._munkasDb + sim.kepzes.sorbanTipus(kozp, TIPUS.MUNKAS);
     if (munkas >= MUNKAS_CEL[this.nehezseg[cs]]) return;
     if (sim.kepzes.sorDb[kozp] >= SOR_KORLAT) return;
+    // A KORSZAK-TARTALÉK A MUNKÁSRA IS ÁLL, és ez nem szigor, hanem
+    // következetesség: a munkás 50 ételbe kerül, tehát tíz munkás pont annyi,
+    // mint egy korszakváltás. Ha csak a katonát fognánk vissza, a gép az
+    // ugyanabból a fazékból evő munkással költené el a tartalékot — a
+    // `_gazdasagErett` küszöb pedig gondoskodik róla, hogy ez csak akkor
+    // kapcsoljon be, amikor a munkás-célszám kétharmada már megvan.
+    if (!this._telikTartalekkal(cs, this._egysegAr(cs, TIPUS.MUNKAS))) return;
     sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: kozp, egyseg: TIPUS.MUNKAS });
     this.kepzesDb[cs]++;
   }
@@ -1035,6 +1326,7 @@ export class Ai {
       epit: this.epitDb[csapat],
       kepzes: this.kepzesDb[csapat],
       kutatas: this.kutatasDb[csapat],
+      korszak: this.korszakDb[csapat],
       felderit: this.felderitDb[csapat],
       felfedez: this.felfedezDb[csapat],
       tamadas: this.tamadasDb[csapat],

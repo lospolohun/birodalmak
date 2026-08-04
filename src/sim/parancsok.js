@@ -28,6 +28,7 @@
 //   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
 //   { fajta:'csere',        csapat, ad, kap, mennyiseg }     ← v0.5 (piac kell hozzá)
 //   { fajta:'kutatas',      csapat, tech, epulet }           ← v0.5/4
+//   { fajta:'feladas',      csapat }                         ← v0.17
 //
 // ⚠️ A `fajta` a PARANCS típusa. A gyűjtésnél a nyersanyagot ezért `nyers`-nek
 // hívjuk, nem `fajta`-nak — a névütközésből `'gyujt' | 0 === 0` lenne, vagyis
@@ -63,6 +64,20 @@ const _arPuffer = [0, 0, 0, 0];
  * @param {{fajta:string, [k:string]:any}} p
  */
 export function vegrehajt(sim, p) {
+  // ── v0.17: A MECCS VÉGE UTÁN EGYETLEN PARANCS SEM HAT ────────────────
+  //
+  // ⚠️ ITT SZŰRÜNK, ÉS NEM A SORBA ÁLLÍTÁSNÁL (`Sim.parancsTickre`). A beadás
+  // a hálózatról TETSZŐLEGES helyi pillanatban érkezik: az egyik gép még az
+  // 1000. ticknél tart, a másik már az 1060.-nál, amikor ugyanaz a csomag
+  // befut. Ha a beadás dobná el a parancsot a „vége" alapján, az egyik gép
+  // sorba tenné, a másik nem — és ez pont az a desync, ami ellen a győzelmi
+  // feltétel szól. A VÉGREHAJTÁS viszont a tickben történik, tehát minden
+  // gépen ugyanabban a pillanatban.
+  //
+  // A már SORBAN ÁLLÓ, de a vége előtt kiadott parancsok is itt esnek ki — a
+  // `KESLELTETES` miatt van ilyen —, és ez a helyes: a meccs eredményét egy
+  // két tickkel korábban elindított kattintás sem írhatja át.
+  if (sim.gyozelem.vege) { sim.gyozelem.elutasitottParancs++; return; }
   switch (p.fajta) {
     case 'menet': return menet(sim, p, false);
     case 'tamado_menet': return menet(sim, p, true);
@@ -79,6 +94,7 @@ export function vegrehajt(sim, p) {
     case 'kepzes': return kepzes(sim, p);
     case 'csere': return csere(sim, p);
     case 'kutatas': return kutatas(sim, p);
+    case 'feladas': return feladas(sim, p);
     default: return;   // ismeretlen parancs: csendben eldobjuk, nem dobunk hibát
   }
 }
@@ -415,4 +431,30 @@ function kutatas(sim, p) {
 /** KORSZAKVÁLTÁS indítása. A `Gazdasag` dönt arról, hogy telik-e. */
 function korszak(sim, p) {
   sim.gazdasag.korszakIndit(p.csapat | 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// v0.17 — A MECCS VÉGE
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * FELADÁS. A csapat kiesik; hogy ettől VÉGE lett-e a meccsnek, azt a
+ * `Gyozelem.lep()` dönti el ugyanabban a tickben, ugyanazon a szabályon, mint
+ * a lerombolt központot.
+ *
+ * ⚠️ MIÉRT PARANCS ÉS NEM METÓDUSHÍVÁS. A feladás a felületről jön („kilépek"
+ * gomb), és a felület SOSEM ír sim-állapotot: a v0.8 lockstepjében a másik
+ * gépnek is pontosan ugyanazon a ticken kell megtudnia. Egy közvetlen
+ * `sim.gyozelem.felad()` hívás a kliensből azonnali desync lenne — a
+ * feladó gépen egy tickkel korábban érne véget a meccs, mint a másikon.
+ *
+ * A csapat a PARANCSBAN van, nem „az én csapatom": a sim nem tudja, ki ül a
+ * gép előtt. Hogy valaki más nevében ne lehessen feladni, az a hálózati réteg
+ * dolga (a csomag küldőjének egyeznie kell a `csapat`-tal) — ugyanaz a
+ * szabály, mint az `epit` vagy a `kepzes` csapat-mezőjénél.
+ *
+ * @param {{csapat:number}} p
+ */
+function feladas(sim, p) {
+  sim.gyozelem.felad(p.csapat | 0);
 }

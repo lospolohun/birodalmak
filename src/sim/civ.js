@@ -109,8 +109,8 @@ export const CIV_LEIRAS = [
   + 'Cserébe könnyű szerkezetekben laknak — az épületeik hamar leégnek.',
   'Az erdő az otthonuk: gyorsan fát vágnak és jól lőnek. '
   + 'A kőfejtéshez viszont nincs türelmük.',
-  'A hegy gyomrában dolgoznak: sokkal gyorsabban fejtik a követ, és olcsóbban '
-  + 'építenek. A katonáikat viszont lassan képzik ki.',
+  'A hegy gyomrában dolgoznak: sokkal gyorsabban fejtik a követ és a kristályt, '
+  + 'és olcsóbban építenek. A katonáikat viszont lassan képzik ki.',
   'Kereskedő nép: a munkásaik többet cipelnek, és több embert bírnak el. '
   + 'A közelharchoz nem sok kedvük van.',
   'Falak mögött élnek: az épületeik sokkal többet bírnak, a katonáik '
@@ -179,15 +179,48 @@ const CIV_BONUSZ = [
     [HATAS.SEBZES, TAMADAS.NYIL, +1],
     [HATAS.UTEM, NYERS.KO, -10],
   ],
-  // 3 — HEGYI BÁNYÁSZOK: kő és olcsó építkezés, lassú kaszárnyával fizetve.
+  // 3 — HEGYI BÁNYÁSZOK: a kő ÉS a kristály népe, lassú kaszárnyával fizetve.
+  //
+  // ⚠️ A +20 A GYAKORLATBAN +12,5 % VOLT. A kő alap-üteme 8
+  // (`munkas.js` → `UTEM`), és a százalék EGÉSZ osztással megy: 8·120/100 = 9,6
+  // → 9. A tábla tehát húsz százalékot ígért, és tizenkettő és felet adott. A
+  // +25 pont egész eredményt ad (8·125/100 = 10), vagyis a leírt szám végre
+  // IGAZ is. A kicsi alapütemű nyersanyagoknál ez általános csapda.
+  //
+  // ⚠️ ÉS EZ MÉG ÍGY IS CSAK A GAZDASÁG HATODA. Mérve (t=8000, nehéz, mindkét
+  // oldalon ugyanaz a nép, hogy a pályaoldal kiessen): a Hegyi bányász
+  // −4,6 %-kal termelt a semleges felálláshoz képest, a Folyami kereskedő
+  // +29,5 %-kal. A KŐ-bónusz a munkaerő ~15 %-ára hat, tehát a teljes
+  // gazdaságon +2–4 % — miközben a nép egy MINDENRE ható −10 %-os képzési
+  // idővel fizet érte. Egy szűk előny és egy széles hátrány: ez volt a
+  // „2050 vs 6885" mögött, nem a gép ügyetlensége.
+  //
+  // A második ütem-sor ezt teszi helyre, és nem véletlenül a KRISTÁLYON: a
+  // kristály a hegy gyomrában terem (téma), a v0.16 óta pedig két korszak ÉS
+  // két technológia fizetőeszköze (`technologia.js`) — vagyis a bányász népnek
+  // most már van mire váltania a földalatti előnyét. 9·125/100 = 11,25 → 11.
   [
-    [HATAS.UTEM, NYERS.KO, +20],
+    [HATAS.UTEM, NYERS.KO, +25],
+    [HATAS.UTEM, NYERS.KRISTALY, +25],
     [HATAS.EPULET_AR, MIND, -10],
     [HATAS.EGYSEG_IDO, MIND, +10],
   ],
   // 4 — FOLYAMI KERESKEDŐK: logisztika és népesség, gyenge közelharccal.
+  //
+  // ⚠️ A +5 CIPELÉS A TÁBLA LEGERŐSEBB TÉTELE VOLT, ÉS EZ NEM LÁTSZOTT RAJTA.
+  // A munkás alapból 10-et bír el (`munkas.js` → `KAPACITAS`), tehát a +5
+  // ÖTVEN SZÁZALÉK — a fejléc viszont ±5–20 %-os sávot mond ki magára a
+  // táblázatra nézve. Ráadásul MINDEN nyersanyagra és minden fordulóra hat,
+  // vagyis az egyetlen GLOBÁLIS gazdasági szorzó a nyolc nép között, és a nép
+  // hátránya (−1 közelharci sebzés) a gazdaságához hozzá sem ér.
+  //
+  // Mérve (t=8000, ugyanaz a nép mindkét oldalon): +29,5 % összes termelés a
+  // semlegeshez képest — a második legjobb gazdaságú nép ennek a töredéke.
+  // A +3 (30 % kapacitás) így is a tábla legerősebb gazdasági tétele marad, és
+  // a „kereskedő nép" ígéretét is tartja; csak nem kétszer akkora, mint amit a
+  // saját fejlécünk megenged.
   [
-    [HATAS.CIPEL, MIND, +5],
+    [HATAS.CIPEL, MIND, +3],
     [HATAS.NEPESSEG, MIND, +10],
     [HATAS.SEBZES, TAMADAS.VAGO, -1],
     [HATAS.SEBZES, TAMADAS.SZURO, -1],

@@ -43,6 +43,7 @@ import { Kod } from './kod.js';
 import { Civ, CIV, CIV_NINCS } from './civ.js';
 import { Egyedi } from './egyedi.js';
 import { TERKEP, terkepErvenyes } from './terkep.js';
+import { Gyozelem, VEG_OK } from './gyozelem.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -136,6 +137,15 @@ export class Sim {
     // Egyetlen `TIPUS`, nyolc nép. A számokat ez tartja csapatonként — a
     // `harc.js` és a `kepzes.js` innen kérdez, ha a típus `TIPUS.EGYEDI`.
     this.egyedi = new Egyedi(2, this);
+
+    // ── v0.17: a meccs vége ─────────────────────────────────────────────
+    // A v0.16-ig a `lep()` a végtelenségig lépett: a játékot NEM LEHETETT
+    // megnyerni. A győzelmi feltétel a VILÁG állapota (nem a felületé), ezért
+    // van a simben és ezért van a hashben — enélkül a lockstep két gépen MÁS
+    // tickre tenné a meccs végét. A részletes indoklás a `gyozelem.js`
+    // fejlécében; a legfontosabb: a `lep()` a vége után is lép, csak PARANCSOT
+    // nem fogad el (`parancsok.js`).
+    this.gyozelem = new Gyozelem(2, this);
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -160,8 +170,27 @@ export class Sim {
   }
 
   /**
+   * A GYŐZTES csapat, vagy -1, ha a meccs még fut VAGY döntetlen lett.
+   *
+   * ⚠️ Ez NEM a „vége" jelző — arra a `vegeTick` való. A döntetlennél (mindkét
+   * fél ugyanazon a ticken esik ki) a győztes -1, miközben a meccsnek nagyon is
+   * vége van. Aki a `gyoztes >= 0`-t kérdezi „vége-e", az a döntetlen meccset
+   * örökké futóként látja.
+   */
+  get gyoztes() { return this.gyozelem.gyoztes; }
+  /** A tick, amelyen a meccs eldőlt, vagy -1. EZ mondja meg, hogy vége van-e. */
+  get vegeTick() { return this.gyozelem.vegeTick; }
+  /** Vége van-e a meccsnek? */
+  get vege() { return this.gyozelem.vege; }
+
+  /**
    * Parancs beadása. A `tick + KESLELTETES`-re kerül — MINDEN játékosnál
    * ugyanoda, tehát a sorrend gépfüggetlen.
+   *
+   * ⚠️ A MECCS VÉGE UTÁN IS SORBA ÁLL, és ez szándékos: az eldobás a
+   * VÉGREHAJTÁSNÁL történik (`parancsok.js`). A beadás a hálózatról tetszőleges
+   * helyi pillanatban érkezik — ha itt szűrnénk, két gép két különböző
+   * eredményre jutna ugyanarra a csomagra. Lásd a `gyozelem.js` fejlécét.
    * @param {{fajta:string, [k:string]:any}} parancs
    */
   parancs(parancs) {
@@ -211,6 +240,12 @@ export class Sim {
     this.kepzes.lep();
     this.egysegek.lep(this.tick, this._tickHorog);
     this._mezoErvenytelenites();
+    // A GYŐZELEM A TICK LEGVÉGÉN dől el, a sebzés és a képzés UTÁN. Így a
+    // `vegeTick` pontosan az a tick, amelyiken a központ ledőlt — nem a
+    // következő. Egy tick csúszás önmagában nem desync (mindkét gépen ugyanaz
+    // lenne), de a mentés, a statisztika és a hálózati jelentés más számot
+    // mondana ugyanarról a pillanatról.
+    this.gyozelem.lep(this.tick);
     this.tick++;
   }
 
@@ -288,6 +323,12 @@ export class Sim {
     this.eroforrasok.nullaz();
     this.gazdasag.nullaz();
     this.munkasok.nullaz();
+    // ⚠️ A GYŐZELEM-RÉTEG IS NULLÁZÓDIK, ÉS EZ NEM FORMASÁG. A `voltKozpont`
+    // jelző TAPADÓS: ha az előző meccsből ottmaradna, az új felállás a
+    // központok lerakása ELŐTTI első tickjén azonnal kiesésnek látszana —
+    // vagyis a meccs véget érne, mielőtt elkezdődött. A mező a hashben van,
+    // tehát ez csendes desync-forrás lenne a szonda lépcsői között.
+    this.gyozelem.nullaz();
 
     // Minden csapat kap egy KÉSZ központot — ez a kezdő lerakat. Az egységek
     // ELŐTT rakjuk le, hogy a felállás ne tegyen senkit az épület alá.
@@ -1064,6 +1105,115 @@ export class Sim {
     return db;
   }
 
+  /**
+   * A csapat ÁLLÓ központja, vagy -1. Kis tömb, lineáris keresés — épületből
+   * néhány tucat van, és ezt csak forgatókönyv és felület kérdezi, nem a
+   * forró út.
+   * @returns {number} épület-index vagy -1
+   */
+  kozpontja(csapat) {
+    const ep = this.epuletek;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.csapat[i] === csapat && ep.elo[i] === 1 && ep.tipus[i] === EPULET.KOZPONT) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * v0.17 SZONDA-FORGATÓKÖNYV — A MECCS VÉGE: KÖZPONT-ROMBOLÁS.
+   *
+   * ⚠️ MIÉRT NEM „V06" A NEVE, HOLOTT A KÉRÉS AZ VOLT: a `szondaFelallasV06` a
+   * GÉPI ELLENFÉL köre, és két, egymásra nem hasonlító forgatókönyv ugyanazon a
+   * verziószámon a szonda kimenetét tenné olvashatatlanná. A győzelmi réteg a
+   * v0.17, tehát ez a `V17`.
+   *
+   * ── MIÉRT KIS SEREG ÉS MIÉRT OSTROMGÉP ────────────────────────────────
+   * A kapunak azt kell látnia, hogy a meccs TÉNYLEG VÉGET ÉR — a determinizmus
+   * önmagában néma erre: egy soha el nem dőlő meccs bitre reprodukálható. A
+   * központ 1200 életerő, és az ostromgép az egyetlen, ami ezt belátható időn
+   * belül lebontja (90 alapsebzés × 400 % épületre). Enélkül a kör 4000 tick
+   * alatt sem érne véget, és a győzelmi ág maradna a kapun kívül — pontosan az
+   * a hibafajta, amiből ebben a projektben már hét volt.
+   *
+   * ── MINDKÉT FÉL TÁMAD, ÉS EZ SZÁNDÉKOS ────────────────────────────────
+   * Az első változatban csak a 0. csapat rohamozott, az 1. védekezett. Az a
+   * kör azon állt vagy bukott, hogy a támadó sereg túlél-e — ha elfogy, a
+   * meccs sosem dől el, és a gát ok nélkül pirosodik. Kölcsönös rohamnál
+   * valamelyik központ BIZTOSAN ledől, és a döntetlen ága (mindkettő ugyanazon
+   * a ticken) is elérhető marad — az is érvényes vég.
+   *
+   * A kör a VÉGE UTÁN IS ad parancsot, és ez sem lustaság: a `parancsok.js`
+   * elutasító ága különben ki sem futna. Az `elutasitottParancs` számláló
+   * mutatja meg, hogy tényleg lefutott.
+   *
+   * @param {number} kor
+   */
+  szondaParancsV17(kor) {
+    const e = this.egysegek;
+    const elo = this.harc.elo;
+    for (let cs = 0; cs < 2; cs++) {
+      const ellen = 1 - cs;
+      // A célpont az ELLENSÉGES KÖZPONT. Ha már nincs (leomlott), a bázisa
+      // pontja — így a parancs akkor is kimegy, amikor a meccsnek vége, és az
+      // elutasító ág kap munkát.
+      const kozp = this.kozpontja(ellen);
+      const cx = kozp >= 0 ? this.epuletek.x[kozp] : (ellen === 0 ? this.n * 0.22 : this.n * 0.78);
+      const cy = kozp >= 0 ? this.epuletek.y[kozp] : this.n * 0.5;
+      const c = this._jarhatoKozel(cx, cy);
+
+      const katonak = [];
+      for (let i = 0; i < e.db; i++) {
+        if (e.csapat[i] !== cs || elo[i] === 0) continue;
+        if (e.tipus[i] === TIPUS.MUNKAS) continue;
+        katonak.push(i);
+      }
+      if (katonak.length === 0) continue;
+      // Alakzat-váltás körönként: a hozzárendelés ága is fusson, ne csak a
+      // menet. (A v0.2 köre ezt 1600 egységen járatja; itt az a kérdés, hogy a
+      // győzelem-réteg mellett is ugyanúgy viselkedik-e.)
+      const alak = (kor & 1) ? ALAKZAT.EK : ALAKZAT.VONAL;
+      this.parancs({ fajta: 'tamado_menet', egysegek: katonak, x: c.x, y: c.y, alakzat: alak });
+      if ((kor & 3) === 2) {
+        this.parancs({ fajta: 'allas', egysegek: katonak, allas: ALLAS.AGRESSZIV });
+      }
+    }
+  }
+
+  /**
+   * v0.17 SZONDA-FORGATÓKÖNYV — A MECCS VÉGE: FELADÁS.
+   *
+   * Külön kör, és nem a fenti kibővítése: egy meccs EGYSZER ér véget, tehát ha
+   * ugyanabban a futásban adnánk fel, a központ-rombolás ága már ki sem futna
+   * (vagy fordítva). Így viszont MINDKÉT ok végigmegy a determinizmus-kapun.
+   *
+   * A kör rövid, mert a feladás azonnal hat: a lényeg az utána következő
+   * tickekben van — a világ még lép (lövedék becsapódik, sereg megáll), de
+   * egyetlen parancs sem hat többé.
+   *
+   * @param {number} kor
+   */
+  szondaParancsV17Feladas(kor) {
+    const e = this.egysegek;
+    const elo = this.harc.elo;
+    const a = [], b = [];
+    for (let i = 0; i < e.db; i++) {
+      if (elo[i] === 0) continue;
+      (e.csapat[i] === 0 ? a : b).push(i);
+    }
+    // Előbb egy valódi menet, hogy a feladás ne üres világot érjen: a mozgó
+    // seregnek a feladás UTÁN is be kell fejeznie a megkezdett menetét, és
+    // pont az a kérdés, hogy ez bitre ugyanúgy történik-e mindkét gépen.
+    const kozep = this._jarhatoKozel(this.n * 0.5, this.n * 0.5);
+    if (a.length) this.parancs({ fajta: 'tamado_menet', egysegek: a, x: kozep.x, y: kozep.y });
+    if (b.length) this.parancs({ fajta: 'tamado_menet', egysegek: b, x: kozep.x, y: kozep.y });
+    // A 2. körben a 0. csapat FELADJA. A 3. körben a másik is „feladna" — az a
+    // parancs már a vége UTÁN érkezik, tehát el KELL utasítani. Ha mégis
+    // átmenne, a győztes átbillenne, és a hash-en is látszana: pont ezt a
+    // hibát fogja meg a kör.
+    if (kor === 2) this.parancs({ fajta: 'feladas', csapat: 0 });
+    if (kor === 3) this.parancs({ fajta: 'feladas', csapat: 1 });
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -1217,6 +1367,22 @@ export class Sim {
     // más civet játszana ugyanaz a csapat, minden csapás és minden ár eltérne.
     const cv = this.civ;
     for (let cs = 0; cs < cv.csapatDb; cs++) h = fnvSzam(h, cv.civ[cs]);
+    // v0.17 — A MECCS VÉGE A VILÁG ÁLLAPOTA, tehát a hashben a helye. Ha
+    // kimaradna, két gép futhatna azonos hash-sel úgy, hogy az egyiken már
+    // eldőlt a meccs, a másikon még nem: az egyiken elveszne a következő
+    // parancs (a vége után nem hajtjuk végre), a másikon lefutna — és onnantól
+    // két külön meccs menne. A `feladta` és a `voltKozpont` is benne van: az
+    // előbbi parancsból jön (tehát desyncelhet), az utóbbi TAPADÓS jelző, amit
+    // a világ mostani állapotából már nem lehet visszafejteni.
+    const gy = this.gyozelem;
+    h = fnvSzam(h, gy.gyoztes);
+    h = fnvSzam(h, gy.vegeTick);
+    h = fnvSzam(h, gy.ok);
+    for (let cs = 0; cs < gy.csapatDb; cs++) {
+      h = fnvSzam(h, gy.voltKozpont[cs]);
+      h = fnvSzam(h, gy.feladta[cs]);
+      h = fnvSzam(h, gy.kiesett[cs]);
+    }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
     // v0.4 — a repülő lövedék is állapot: a becsapódás ideje és a sebzése
@@ -1268,3 +1434,4 @@ function kSin(x) {
 
 export { ALLAPOT, TIPUS, TEREP, DT, ALAKZAT, PARANCS, ALLAS, NYERS, EPULET, KORSZAK, MUNKA, TAMADAS, PANCEL };
 export { Beszallas };
+export { VEG_OK };

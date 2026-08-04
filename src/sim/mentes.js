@@ -61,7 +61,7 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 4;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4)
+export const MENTES_VERZIO = 5;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4) · v0.17: `gyozelem` (5)
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
@@ -277,6 +277,17 @@ export function mentes(sim) {
       keszult: Array.from(eg.keszult), elutasitva: Array.from(eg.elutasitva),
     },
 
+    // A MECCS VÉGE (v0.17). A fejléc szabálya szerint MINDEN, ami a hashben van,
+    // ide is kell — a `gyoztes`, a `vegeTick`, az `ok` és a három csapat-jelző
+    // pedig ott van. Enélkül egy LEJÁTSZOTT meccs mentése a betöltés után
+    // futóként támadna fel, és a hash az első ticken elcsúszna.
+    //
+    // ⚠️ A réteg három SZÁMLÁLÓJA (`elutasitottParancs`, `feladasDb`,
+    // `feladasElutasitva`) szándékosan MARAD KI: azok diagnosztika, nincsenek a
+    // hashben, és a `mentesAllapot()` sem adja őket. A halmaz tehát pontosan a
+    // hash halmaza — a kettő továbbra is egymást ellenőrzi.
+    gyozelem: sim.gyozelem.mentesAllapot(),
+
     kod: {
       latott: kd.latott.map((t) => Array.from(t)),
       lathato: kd.lathato.map((t) => Array.from(t)),
@@ -442,6 +453,11 @@ export function betoltes(sim, m) {
   be(eg.ar, m.egyedi.ar); be(eg.ido, m.egyedi.ido);
   be(eg.nep, m.egyedi.nep); be(eg.epulet, m.egyedi.epulet);
   be(eg.keszult, m.egyedi.keszult); be(eg.elutasitva, m.egyedi.elutasitva);
+
+  // A MECCS VÉGE. A `betoltesAllapot()` hiányzó blokkra `false`-szal tér vissza
+  // és nem nyúl semmihez — a `verzio`-kapu miatt ilyen mentés ide már nem jut el,
+  // de a réteg így akkor sem hagy félig beállított állapotot maga után.
+  sim.gyozelem.betoltesAllapot(m.gyozelem);
 
   const kd = sim.kod;
   for (let cs = 0; cs < kd.csapatDb; cs++) {

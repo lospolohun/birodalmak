@@ -363,6 +363,13 @@ export class PanelEpites {
    * Világpont a vászon-képpontból. A `bevitel` már tud sugarat vetni a talajra;
    * nem írjuk meg még egyszer, mert két különböző vetítésből két különböző hely
    * lenne — a játékos azt látná, hogy „nem oda épült".
+   *
+   * ⚠️ A `bevitel.celPont()` a v0.16/2 óta PUBLIKUS felület, és a normál út az.
+   * Az aláhúzott `_celPont` csak visszaesés, a v0.16 előtti állapotra: akkor a
+   * panel egy PRIVÁT metódusra támaszkodott, és egy átnevezés NÉMÁN ölte volna
+   * meg a lerakást — a panel nem dobott volna, csak sosem épült volna semmi.
+   * Ha a `bevitel` egyiket sem adja, `null`-t adunk vissza, és a `_lerak()`
+   * megmondja a játékosnak, hogy nem a pályára mutat; néma elhalás nincs.
    */
   _vilagPont(x, y) {
     const b = this.bevitel;

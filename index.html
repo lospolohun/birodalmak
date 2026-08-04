@@ -4,6 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Age of the Crystals</title>
+  <!--
+    ⚠️ EZ A SOR EGY ÖRÖK HAMIS RIASZTÁST SZÜNTET MEG.
+    Ha egy lapon nincs ikon-hivatkozás, a böngésző MAGÁTÓL kér egy `/favicon.ico`-t.
+    Nálunk az nem létezik, tehát 404 — és a mérőpad ezt „1 konzol-hiba"-ként
+    jelentette MINDEN futáson (`fps_szonda.mjs` → `konzolHibak`). Mérve, a
+    `vite preview`-n: `GET /favicon.ico → 404`, a lapon pedig egyetlen konzol-hiba,
+    a „Failed to load resource: … 404". Egy örökös sárga jelzés a legrosszabb
+    fajta: megtanítja az embert, hogy nézzen át rajta — és a következő, VALÓDI
+    hiba is átcsúszik vele.
+
+    MIÉRT ADAT-URI ÉS NEM `.ico` FÁJL: az `ikonok.js` fejléce (és az ikon-szonda)
+    azt ígéri, hogy nincs képfájl és nincs külső betűtípus — a `dist/` másolható
+    bárhová, és nincs második kérés, ami 404-re futhat. Egy bináris ikonfájl ezt
+    az ígéretet törné meg egy 404 kedvéért. Az adat-URI-t a vite érintetlenül
+    viszi ki a `dist/index.html`-be (a `base` sem kerül elé), tehát a kirakott
+    játékban is működik, alkönyvtárból is.
+
+    A rajz a `src/ui/ikonok.js` `kristaly` ikonjának mértana és színe
+    (`NYERS_SZIN.kristaly` = #6fd0e8) — a játék neve a kristályokról szól.
+  -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='5'%20fill='%23101a24'/%3E%3Cpolygon%20points='12,3%2017,10%2012,21%207,10'%20fill='%236fd0e8'/%3E%3Cpolygon%20points='12,3%2017,10%2012,12'%20fill='%23a9e7f5'/%3E%3C/svg%3E">
 </head>
 <body>
   <canvas id="vaszon"></canvas>

@@ -42,12 +42,36 @@
 // fordulás megtörténik, nincs mit fordítani. A `_ero()` görbéje az egyetlen
 // oka, hogy a napnyugta nem villan.
 //
+// ── MIÉRT VAN ITT EGY LAMBERT-KÉPLET IS (v0.16/2) ─────────────────────────
+// A `core3d.js` azon a döntésen áll, hogy NINCS tónus-leképezés: egyetlen
+// görbe sem szedheti szét a jelenetet két családra. Egy ilyen döntésnek két
+// ára van, és mindkettőt SZÁMBAN kell tudni:
+//
+//   1. lent: nem fullad-e feketébe az éjszakai terep,
+//   2. fent: nem ég-e ki délben a világos felület (görbe nélkül nincs
+//      csúcs-lekerekítés, ami 1,0 fölött megfogná).
+//
+// Az előző kör fejléce hivatkozott is egy ilyen vizsgálatra („a ciklus
+// szondája ellenőrzi…") — csak épp SEHOL NEM VOLT MEG. Pontosan az a fajta
+// hivatkozott, de nem létező kapu, amiből ez a projekt már többször ivott.
+// Most itt van, és node-ban fut: `lambertKimenet()` egy diffúz lap lineáris
+// kimenetét adja, `napiMerleg()` végigjátssza vele az egész napot.
+//
+// A képlet NEM közelítés, hanem a `three` r170 Lambert-útvonala:
+//   irányfény:  dotNL · szín · erő            (`RE_Direct_Lambert`)
+//   féggömb:    szín · erő                    (felfelé néző lapra a súly 1)
+//   BRDF:       · albedó / π                  (`BRDF_Lambert`)
+// Ha valaki a `three`-t frissíti és ez a három sor változik, ITT kell utána
+// menni — különben a szám csendben elszakad attól, ami a képernyőn van.
+//
 // ── HASZNÁLAT ─────────────────────────────────────────────────────────────
 //   const all = ujNapAllapot();       // EGYSZER, betöltéskor
 //   napAllapot(sim.tick, all);        // képkockánként — NULLA allokáció
 //
 // A `napAllapot()` mindig UGYANABBA az objektumba ír. Nincs visszaadott új
 // objektum, nincs tömb, nincs string — a képkockánkénti hívás szemétmentes.
+// A `lambertKimenet()` ugyanígy kimenő tömbbe ír; a `napiMerleg()` viszont
+// DIAGNOSZTIKA, nem képkocka-útvonal, ott az allokáció megengedett.
 
 /** Egy teljes nap hossza tickben. 20 Hz mellett 12000 tick = 10 valós perc. */
 export const NAPHOSSZ_TICK = 12000;
@@ -253,4 +277,93 @@ export function napAllapot(tick, ki, naphossz = NAPHOSSZ_TICK) {
   else ki.napszak = NAPSZAK.DEL;
 
   return ki;
+}
+
+// ── A KIMENET MÉRTÉKEGYSÉGE ────────────────────────────────────────────────
+// Idáig minden szám LINEÁRIS. A képernyőre viszont sRGB kerül, és a két tér
+// között pont a sötét tartományban a legnagyobb a különbség — 0,0146 lineáris
+// az sRGB 32/255. Aki a menetrendet lineárisan nézi, azt hiszi, vaksötét van;
+// aki sRGB-ben, az látja, hogy nem. Ezért van itt mindkét irány.
+
+/** Lineáris → sRGB [0,1]. Ugyanaz a görbe, amit a `colorspace_fragment` alkalmaz. */
+export function linSzrgb(x) {
+  if (!(x > 0)) return 0;
+  if (x >= 1) return 1;
+  return x <= 0.0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+}
+
+/** sRGB → lineáris [0,1]. A hex-palettákból ezzel lesz albedó. */
+export function szrgbLin(x) {
+  if (!(x > 0)) return 0;
+  if (x >= 1) return 1;
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+
+/** Nyolcbites képernyő-érték egy lineáris számból — ebben beszél a hibajelentés. */
+export function bajt(x) { return Math.round(linSzrgb(x) * 255); }
+
+/** 1/π — a `BRDF_Lambert` osztója. Konstans, hogy a képkocka-úton se legyen osztás. */
+const RECIPROK_PI = 0.3183098861837907;
+
+/**
+ * Egy DIFFÚZ (Lambert) lap lineáris kimenete adott nap-állapotban.
+ *
+ * A `dotNL` alapértelmezése a FELFELÉ néző lap esete (`irY`), mert a hibát,
+ * ami ezt a függvényt kikényszerítette, a TEREP mutatta meg — és a féggömb-
+ * fény súlya is pontosan erre a normálisra 1, tehát a képlet itt zárt alakú.
+ *
+ * @param {ReturnType<typeof ujNapAllapot>} all
+ * @param {number} albR lineáris albedó (a `szrgbLin` adja hexből)
+ * @param {number} albG
+ * @param {number} albB
+ * @param {Float64Array|number[]} ki 3 elemű kimenet — NEM allokálunk
+ * @param {number} [dotNL] ha megadod, ezzel számol az irányfény
+ * @returns {Float64Array|number[]} ugyanaz a `ki`
+ */
+export function lambertKimenet(all, albR, albG, albB, ki, dotNL) {
+  let d = dotNL === undefined ? all.irY : dotNL;
+  if (d < 0) d = 0;
+  ki[0] = albR * (all.napR * all.napEro * d + all.egR * all.egEro) * RECIPROK_PI;
+  ki[1] = albG * (all.napG * all.napEro * d + all.egG * all.egEro) * RECIPROK_PI;
+  ki[2] = albB * (all.napB * all.napEro * d + all.egB * all.egEro) * RECIPROK_PI;
+  return ki;
+}
+
+/**
+ * A NAP VÉGIGJÁTSZÁSA egy albedóval. Ez az a szám, amivel a „nincs tónus-
+ * leképezés" döntés GPU nélkül is megvédhető vagy megbuktatható:
+ *
+ *   `legvilagosabb` ≥ 1  →  görbe nélkül KIÉG (nincs mit lekerekíteni),
+ *   `legsotetebb` bájtja 0 →  az éjszaka tényleg vaksötét.
+ *
+ * A `dotNL = 1` a legrosszabb eset (a lap pont a napnak fordul); a terep
+ * valós esete `undefined`, azaz a felfelé néző lap.
+ *
+ * ⚠️ DIAGNOSZTIKA, nem képkocka-útvonal: allokál, és végigmintázza a napot.
+ *
+ * @param {number} albR lineáris albedó
+ * @param {number} albG
+ * @param {number} albB
+ * @param {{lepes?:number, dotNL?:number}} [opciok]
+ */
+export function napiMerleg(albR, albG, albB, opciok = {}) {
+  const lepes = opciok.lepes || 480;
+  const all = ujNapAllapot();
+  const ki = [0, 0, 0];
+  let legsotetebb = Infinity, legvilagosabb = -Infinity;
+  let sotetOra = 0, vilagosOra = 0;
+  for (let i = 0; i < lepes; i++) {
+    napAllapot((i / lepes) * NAPHOSSZ_TICK - KEZDO_FAZIS * NAPHOSSZ_TICK, all);
+    lambertKimenet(all, albR, albG, albB, ki, opciok.dotNL);
+    const m = ki[0] > ki[1] ? (ki[0] > ki[2] ? ki[0] : ki[2]) : (ki[1] > ki[2] ? ki[1] : ki[2]);
+    if (m < legsotetebb) { legsotetebb = m; sotetOra = all.ora; }
+    if (m > legvilagosabb) { legvilagosabb = m; vilagosOra = all.ora; }
+  }
+  return {
+    legsotetebb, legvilagosabb, sotetOra, vilagosOra,
+    /** A képernyőn látott legsötétebb és legfényesebb csatorna-érték. */
+    sotetBajt: bajt(legsotetebb), vilagosBajt: bajt(legvilagosabb),
+    /** Mennyi hely maradt a kiégésig. Negatív = görbe nélkül levágódik. */
+    tartalek: 1 - legvilagosabb,
+  };
 }

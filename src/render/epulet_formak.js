@@ -75,10 +75,51 @@
 //
 // A `fenyero` az építkezés visszajelzése (az épülő ház fakóbb) — ugyanaz a
 // jelzés, ami a doboz-korszakban is volt, csak most nem nyeli el a formát.
+//
+// ── v0.16/2: AMI EDDIG LÁTHATATLAN VOLT ───────────────────────────────────
+// Két sim-állapot nem jutott el a képre, és mindkettő JÁTÉK-információ, nem
+// dísz:
+//
+//   `epuletek.nyitva`   a kapu szárnyai MINDIG csukva álltak. A játékos nem
+//                       látta, merre van szabad út a saját falán — miközben a
+//                       sim szerint a cella járható. Ez a rosszabbik fajta
+//                       hiba: a kép AKTÍVAN mást állít, mint a világ.
+//   `epuletek.hp`       az épület vagy állt, vagy eltűnt. Egy 10 %-on álló
+//                       központ ugyanúgy nézett ki, mint egy érintetlen —
+//                       tehát a védőnek semmi nem szólt, hogy baj van.
+//
+// Mindkettő ugyanazzal az egy mechanizmussal oldódik meg: a darabok
+// ÁLLAPOT-ABLAKOT hoznak magukkal (`epulet_reszek.js` → `SERULES`, `KAPUALL`),
+// a példány pedig egy `epAllapot` attribútumban mondja meg, hol tart. Ami nem
+// illik az állapotba, azt a vertex shader egyetlen pontba húzza — tehát nincs
+// se új háló, se új rajzhívás, se futásidejű geometria-építés.
+//
+// ⚠️ A sérülés HÁROM fokozat, nem folytonos átmenet, és a fokozatok RÁRAKÓDNAK
+// egymásra (a sérült repedése a súlyoson is ott van). Ha fokozatonként
+// cserélődne a jelkészlet, a romlás villanásnak látszana, nem halmozódásnak —
+// és pont a halmozódásból olvasható ki, merre tart az épület.
+//
+// ⚠️ A ROM nincs itt, és nem is lehet: a `sim/epuletek.js` `sebez()`-e a
+// pusztuláskor FELSZABADÍTJA a cellákat, tehát az épület megszűnik létezni. A
+// leomlás látványa ezért az `effekt_esemeny.js`-é (süllyedő rom + por + nyom);
+// ide a MÉG ÁLLÓ épület fokozatai tartoznak.
 
 import { THREE } from './core3d.js';
 import { EPULET, EP_MERET, EP_MAGASSAG } from '../sim/epuletek.js';
-import { Forma, SZIN, TETO_CS, osszefuz } from './epulet_reszek.js';
+import { Forma, SZIN, TETO_CS, SERULES, KAPUALL, osszefuz } from './epulet_reszek.js';
+
+/**
+ * A kapuszárny PÁNTJA — a nyílás pereme. A csukott és a nyitott változat
+ * ugyanerről a pontról indul, tehát a kettő között a szárny fordul, nem ugrik.
+ */
+const KAPU_PANT = 0.193;
+/**
+ * Mennyire fordul ki a szárny. 79° (nem 90°): a derékszögben kifordult szárny
+ * a meredek RTS-kamerából ÉLÉRŐL látszik, tehát eltűnik — pont az veszne el,
+ * amit meg akarunk mutatni. Ennyinél még van látható lapja, de a nyílás már
+ * szabad.
+ */
+const KAPU_NYITAS = Math.PI * 0.44;
 
 // ── A TIZENEGY SZILUETT ────────────────────────────────────────────────────
 // Az `EPULET` kulcsaival nevesítve. Minden építő egy üres `Forma`-t kap, amiben
@@ -133,7 +174,12 @@ const FORMAK = {
 
     e.satorteto(1.26, 1.12, 0.5, 0.5, 0, 1.77, bz, SZIN.CSEREP, 0.1,
       { flare: 0.13, gerinc: SZIN.CSEREP_SOTET });
+    // A tetőablakok a SÚLYOS fokozaton eltűnnek, és a helyükre szakadás kerül.
+    // Ez a „hiányzó tetőelem": nem elég sötét foltot rakni a tetőre, LÁTSZANIA
+    // kell, hogy valami, ami eddig ott volt, már nincs ott.
+    e.allapot(SERULES.NEM_SULYOS);
     for (const ux of [-1, 1]) e.tetoablak(ux * 0.5, 1.9, 0.5, 0.32, 0.22);
+    e.allapot();
 
     // SAROKTORONY az ELÜLSŐ sarkon. A v0.16 első változatában a hátsó sarokban
     // állt — és ott TELJES EGÉSZÉBEN a magház tömegébe temetődött: a kúpja
@@ -155,6 +201,10 @@ const FORMAK = {
     e.lada(1.2, 0.13, 1.06, 0.32);
     e.lada(-1.2, 0.13, -0.62, 0.3);
     e.kazal(-1.16, 0.13, -1.1, 0.26, 0.38);
+    e.serulesJelek({
+      homlok, falFel: 0.98, falY: 0.2, falMag: 0.84, talpY: 0.13, omladekZ: 0.9,
+      tetoX: -0.44, tetoY: 2.02, tetoZ: bz + 0.34, tetoFel: 0.3, tetoMely: 0.26,
+    });
     return e;
   },
 
@@ -189,6 +239,10 @@ const FORMAK = {
     e.lada(-0.66, 0.12, 0.7, 0.3);
     e.hordo(-0.16, 0.12, 0.78, 0.15, 0.32);
     e.zaszlo(-0.82, 0.98, -0.86, 0.44, 0.24, 0.32, 2, 0.4);
+    e.serulesJelek({
+      homlok, falFel: 0.78, falY: 0.18, falMag: 0.62, talpY: 0.12, omladekZ: 0.6,
+      tetoX: 0.24, tetoY: 1.2, tetoZ: -0.1, tetoFel: 0.19, tetoMely: 0.24,
+    });
     return e;
   },
 
@@ -209,6 +263,18 @@ const FORMAK = {
     e.doboz(2 * E - 0.04, 0.04, 2 * E - 0.04, 0, 0.34, 0, SZIN.CSAPAT, 1);
     e.doboz(2 * E - 0.18, 0.05, 2 * E - 0.18, 0, 0.38, 0, SZIN.DESZKA);
     e.oromzat(E - 0.03, 0.43, 0.13, 3);
+    // A fal sérülése a GYILOKJÁRÓRA kerül, nem a homlokzatára — és ez nem
+    // ízlés kérdése: a fal a celláját HÉZAG NÉLKÜL kitölti (±0,49), tehát a
+    // falsík elé nem fér ki egy 5 cm-es repedés az `EP_MERET`-szerződés
+    // megsértése nélkül. Fölfelé viszont van hely, és a meredek RTS-kamera
+    // úgyis a járószintet látja a falból, nem az oldalát.
+    e.allapot(SERULES.SERULT);
+    e.doboz(0.5, 0.03, 0.44, -0.08, 0.43, 0.06, SZIN.KOROM);
+    e.omladek(0.24, 0.43, -0.1, 0.08);
+    e.allapot(SERULES.SULYOS);
+    e.doboz(0.62, 0.035, 0.56, 0.1, 0.43, -0.02, SZIN.KOROM);
+    e.omladek(-0.2, 0.43, 0.14, 0.1);
+    e.allapot();
     return e;
   },
 
@@ -217,6 +283,18 @@ const FORMAK = {
    * nem a tömeg — és a pillérek koronája SZÁNDÉKOSAN magasabb a szomszédos fal
    * pártázatánál (0,60 vs 0,56): egy kapu, ami nem emelkedik ki a falból, a
    * falsorban észrevehetetlen.
+   *
+   * ── A NYITOTT ÁLLÁS (v0.16/2) ────────────────────────────────────────────
+   * A `sim.epuletek.nyitva` a v0.4 óta él, a rajzon viszont semmi nem mutatta:
+   * a szárnyak MINDIG csukva álltak, tehát a játékos a saját kapuját nem tudta
+   * megkülönböztetni egy fal-szakasztól, és nem látta, merre van szabad út.
+   *
+   * A különbség HÁROM jelen múlik, mert egy önmagában kevés a meredek kameránál:
+   *   1. a két szárny kifordul a pántja körül (`kapuszarny`),
+   *   2. a záró vasrúd eltűnik — csukott kapun van mit zárni, nyitotton nincs,
+   *   3. a nyílásban megjelenik a sötét KÜSZÖB. Ez a legfontosabb: felülnézetből
+   *      a kifordult szárny keskeny csík, a küszöb viszont egy összefüggő sötét
+   *      sáv a falsorban — messziről EZ mondja meg, hogy itt át lehet menni.
    */
   KAPU(e) {
     const E = e.eresz;
@@ -229,11 +307,29 @@ const FORMAK = {
     }
     e.doboz(2 * E - 0.06, 0.13, 0.5, 0, 0.44, 0, SZIN.FA);
     e.doboz(2 * E - 0.2, 0.05, 0.42, 0, 0.57, 0, SZIN.FA_SOTET);
+
+    e.allapot(SERULES.MINDIG, KAPUALL.NYITVA);
+    e.doboz(2 * KAPU_PANT, 0.05, 0.44, 0, 0.02, 0.06, SZIN.NYILAS);
     for (const ux of [-1, 1]) {
-      e.doboz(0.19, 0.42, 0.07, ux * 0.098, 0.02, 0.13, SZIN.CSAPAT, 1);
+      e.kapuszarny(ux * KAPU_PANT, 0.02, 0.13, 0.19, 0.42, 0.07, ux, ux * KAPU_NYITAS);
+    }
+    e.allapot(SERULES.MINDIG, KAPUALL.CSUKVA);
+    for (const ux of [-1, 1]) {
+      e.kapuszarny(ux * KAPU_PANT, 0.02, 0.13, 0.19, 0.42, 0.07, ux, 0);
     }
     e.doboz(0.05, 0.42, 0.05, 0, 0.02, 0.17, SZIN.VAS);
+    e.allapot();
+
     e.doboz(0.28, 0.14, 0.05, 0, 0.44, 0.26, SZIN.CSAPAT, 1);
+    // A sérülés a PILLÉREKRE megy: a nyílásban nincs mit megrepeszteni.
+    e.allapot(SERULES.SERULT);
+    for (const ux of [-1, 1]) e.repedes(ux * px, 0.13, 0.42, 0.24);
+    e.allapot(SERULES.SULYOS);
+    e.korom(-px, 0.26, 0.42, 0.2, 0.18);
+    // A LÁBAZATRA, nem a földre: a pillér lábazata 0,1 magasan kiül, tehát a
+    // talajra tett omladék belelógna és eltűnne benne.
+    e.omladek(px, 0.1, 0.34, 0.09);
+    e.allapot();
     return e;
   },
 
@@ -257,6 +353,10 @@ const FORMAK = {
     e.doboz(0.4, 0.16, 0.2, 0.54, 0.32, 0.76, SZIN.FA_SOTET);
     e.kerites(-0.4, 0.12, 0.86, 0.7, 1, 0.4);
     e.zaszlo(0.6, 1.24, bz + 0.3, 0.34, 0.2, 0.28, 2, 0.7);
+    e.serulesJelek({
+      homlok, falFel: 0.72, falY: 0.16, falMag: 0.72, talpY: 0.12, omladekZ: 0.7,
+      tetoX: 0.3, tetoY: 1.26, tetoZ: bz + 0.2, tetoFel: 0.18, tetoMely: 0.22,
+    });
     return e;
   },
 
@@ -289,6 +389,10 @@ const FORMAK = {
     }
     e.hordo(1.24, 0.12, 0.3, 0.15, 0.32);
     e.zaszlo(-1.24, 1.6, cz - 0.5, 0.68, 0.34, 0.5, 3);
+    e.serulesJelek({
+      homlok, falFel: 1.2, falY: 0.2, falMag: 0.78, talpY: 0.12, omladekZ: 0.5,
+      tetoX: -0.7, tetoY: 1.78, tetoZ: cz + 0.32, tetoFel: 0.24, tetoMely: 0.26,
+    });
     return e;
   },
 
@@ -326,6 +430,12 @@ const FORMAK = {
       e.dontDoboz(0.03, 0.44, 0.03, 1.26 + dx, 0.6, 0.1, dx * 4, 'z', SZIN.VASZON);
     }
     e.zaszlo(-1.24, 1.34, cz - 0.5, 0.6, 0.3, 0.44, 3, 0.2);
+    // Az íjászda „homlokzata" a HÁTFAL, mert az az egyetlen zárt lapja.
+    e.serulesJelek({
+      homlok: cz - 0.52, falFel: 1.16, falY: 0.24, falMag: 0.8, talpY: 0.12,
+      omladekZ: cz - 0.3, tetoX: 0.5, tetoY: 1.56, tetoZ: cz + 0.1,
+      tetoFel: 0.22, tetoMely: 0.24,
+    });
     return e;
   },
 
@@ -361,6 +471,12 @@ const FORMAK = {
     e.doboz(0.56, 0.2, 0.3, -0.9, 0.12, 0.72, SZIN.FA);
     e.doboz(0.48, 0.06, 0.22, -0.9, 0.26, 0.72, SZIN.VAS);
     e.zaszlo(-1.26, 1.16, cz - 0.44, 0.58, 0.3, 0.44, 3, 0.55);
+    e.serulesJelek({
+      // A jelek a DESZKA-falra mennek: a kőlábazat homlokzata 3 cm-rel elébb
+      // ugrik, tehát ami alatta van, azt a kő elnyelné.
+      homlok, falFel: 1.16, falY: 0.52, falMag: 0.56, talpY: 0.12, omladekZ: 0.12,
+      tetoX: 0.8, tetoY: 1.42, tetoZ: cz + 0.28, tetoFel: 0.22, tetoMely: 0.24,
+    });
     return e;
   },
 
@@ -410,6 +526,16 @@ const FORMAK = {
     // Faanyag-rakás és bak.
     for (let i = 0; i < 3; i++) e.rud(0.09, 1.0, 6, 0.9, 0.21 + i * 0.17, -1.14 + (i % 2) * 0.2, SZIN.FA);
     e.zaszlo(-E + 0.22, 1.7, -E + 0.22, 0.62, 0.3, 0.44, 3, 0.85);
+    // Nyitott ácsváz: nincs falsík, amire repedés kerülhetne. A jel ezért a
+    // KORMOS OSZLOP és a földön heverő omladék — az udvar úgyis a látható rész.
+    e.allapot(SERULES.SERULT);
+    e.korom(-(E - 0.18), 0.5, E - 0.06, 0.22, 0.7);
+    e.omladek(0.9, 0.12, 1.16, 0.16);
+    e.allapot(SERULES.SULYOS);
+    e.korom(E - 0.18, 0.7, E - 0.06, 0.22, 0.62);
+    e.omladek(-1.0, 0.12, 0.86, 0.2);
+    e.tetoseb(-0.5, 1.92, -0.68, 0.24, 0.26);
+    e.allapot();
     return e;
   },
 
@@ -440,12 +566,23 @@ const FORMAK = {
     // torony jellegzetes „gombás" sziluettjét.
     e.henger(0.68, 0.93, 0.26, 8, 0, 2.85, 0, SZIN.KO_VILAG, 0.15, false);
     e.henger(0.93, 0.9, 0.16, 8, 0, 3.11, 0, SZIN.KO, 0, false);
+    // A PÁRTÁZAT két foga a súlyos fokozaton leomlik. A torony sziluettjét a
+    // fogsor adja — egy hiányzó fog messzebbről is elárulja a bajt, mint bármi,
+    // amit a falra festhetnénk.
     for (let i = 0; i < 8; i++) {
       const a = i * Math.PI / 4;
+      e.allapot(i === 2 || i === 5 ? SERULES.NEM_SULYOS : SERULES.MINDIG);
       e.doboz(0.24, 0.22, 0.24, Math.cos(a) * 0.72, 3.27, Math.sin(a) * 0.72, SZIN.KO_VILAG);
     }
+    e.allapot();
     e.gula(0.66, 0.44, 8, 0, 3.27, 0, SZIN.ZSINDELY, TETO_CS);
     e.zaszlo(0, 3.66, 0, 0.5, 0.26, 0.4, 2);
+    e.serulesJelek({
+      // A torony teste RÉZSŰS, tehát a lapos repedés csak egy rövid szakaszon
+      // simul rá — ezért alacsony és rövid a falszakasz, közel a lábazathoz.
+      homlok: 0.75, falFel: 0.5, falY: 0.55, falMag: 0.7, talpY: 0.33, omladekZ: 0.66,
+      tetoX: 0, tetoY: 3.42, tetoZ: 0.16, tetoFel: 0.2, tetoMely: 0.2,
+    });
     return e;
   },
 
@@ -486,6 +623,15 @@ const FORMAK = {
     e.lada(-1.2, 0.12, 0.3, 0.32);
     e.kazal(1.1, 0.12, 1.06, 0.24, 0.34);
     e.zaszlo(-1.26, 0.12, 1.06, 1.15, 0.32, 0.46, 3, 0.6);
+    // A piacnak sincs fala: a jel a KORMOS PULT és a beszakadt ponyva.
+    e.allapot(SERULES.SERULT);
+    e.korom(-0.1, 0.2, 1.04, 0.4, 0.28);
+    e.omladek(1.0, 0.12, 1.24, 0.16);
+    e.allapot(SERULES.SULYOS);
+    e.korom(0.76, 0.2, -0.38, 0.36, 0.26);
+    e.omladek(-1.1, 0.12, -0.24, 0.2);
+    e.tetoseb(-0.1, 1.24, 0.76, 0.22, 0.3);
+    e.allapot();
     return e;
   },
 };
@@ -574,6 +720,9 @@ export function epitEpuletGeometriak() {
   const haromszog = [];
   for (let t = 0; t < FORMA_TABLA.length; t++) {
     const geo = osszefuz(epitForma(t).reszek);
+    // A típus a GEOMETRIÁN utazik, mert a `Material.onBeforeRender` csak a
+    // geometriát és a hálót kapja meg — a réteg nyilvántartását nem látja.
+    geo.userData.epTipus = t;
     tipus[t] = geo;
     haromszog[t] = geo.attributes.position.count / 3;
   }
@@ -582,6 +731,93 @@ export function epitEpuletGeometriak() {
     tipus, allvany, haromszog,
     allvanyHaromszog: allvany.attributes.position.count / 3,
   };
+}
+
+// ── ÁLLAPOT: A SIM-BŐL A PÉLDÁNY-PUFFERBE ──────────────────────────────────
+
+/**
+ * A sérülés-fokozat KÜSZÖBEI az életerő százalékában.
+ *
+ * Két küszöb van, nem folytonos átmenet, és ez szándékos: a repedés vagy ott
+ * van, vagy nincs — egy „30 %-ban látszó" repedés csak halványabb festék volna,
+ * nem több információ. A küszöb viszont ESEMÉNY: a játékos látja, hogy az
+ * épülete átlépett egy határt. A számok a `harc.js` ütemével együtt élnek: 70 %
+ * még néhány csapás, 33 % már az utolsó harmad.
+ */
+export const SERULT_SZAZ = 70;
+export const SULYOS_SZAZ = 33;
+
+/**
+ * Az épület sérülés-fokozata: 0 = ép, 1 = sérült, 2 = súlyosan sérült.
+ *
+ * ⚠️ Egészben osztunk vissza százalékra, ahogy a sim is (`Int32Array` életerő).
+ * Nincs hiszterézis, mert nincs is rá szükség: a sim NEM javít épületet, tehát
+ * a fokozat monoton — oda-vissza villogás nem keletkezhet.
+ */
+export function serulesFokozat(hp, maxHp) {
+  if (maxHp <= 0 || hp >= maxHp) return 0;
+  const szaz = (hp * 100) / maxHp;
+  if (szaz <= SULYOS_SZAZ) return 2;
+  return szaz <= SERULT_SZAZ ? 1 : 0;
+}
+
+/**
+ * Egy típus példány-állapotainak feltöltése. A `Material.onBeforeRender` hívja,
+ * tehát pontosan azelőtt fut le, hogy az a háló kirajzolódna.
+ *
+ * ── MIÉRT ITT, ÉS MIÉRT NEM A RAJZOLÓ RÉTEGBEN ───────────────────────────
+ * Ennek a helye természetesen a `gazdasag3d.js` példány-hurka volna: az úgyis
+ * végigjárja az épületeket, és ott EGY sor volna. Az a fájl viszont MÁSIK AGENT
+ * sávja, és a v0.16 tanulsága szerint a „majd valaki beköti" pont az, amitől a
+ * kész rendszer kapun kívül marad. Ezért a réteg érintése nélkül is működik —
+ * és ha a sáv gazdája beköti, ez az ág magától elnémul: elég a `simBead()`-et
+ * meghívni, a puffer-írás pedig ugyanaz marad.
+ *
+ * ── A PÉLDÁNY-SORREND SZERZŐDÉS ──────────────────────────────────────────
+ * ⚠️ A `k`-adik példány a `t` típus `k`-adik ÉLŐ épülete, `ep`-index szerint
+ * növekvő sorrendben. Ez a `gazdasag3d.js` írási sorrendje; ha az megváltozik,
+ * ITT is változnia kell, különben a sérülés jó épületről rossz épületre kerül.
+ * A halott épületek kihagyása a közös pont — azokat a réteg sem rajzolja.
+ *
+ * NULLA allokáció: a puffer a geometriáé, a hurok csak egész-összehasonlításokat
+ * végez, és a GPU-ra CSAK VÁLTOZÁSKOR küldünk (a `jel` ugyanaz a fogás, amit a
+ * réteg a példány-mátrixokra használ).
+ */
+function allapotIr(geo, targy, sim) {
+  const t = geo.userData.epTipus;
+  // Az ÁLLVÁNY ugyanezt az anyagot használja, tehát ide is befut — de nincs
+  // típusa, és nincs is állapota: az épülő ház még sértetlen, kapuja nincs.
+  if (t === undefined || !sim) return;
+  const db = targy.count | 0;
+  if (db <= 0) return;
+
+  let attr = geo.getAttribute('epAllapot');
+  const max = targy.instanceMatrix.count;
+  if (!attr || attr.count < max) {
+    // EGYSZER, az első kirajzoláskor. A hosszt a réteg példány-mátrixa mondja
+    // meg — az a `sim.epuletek.maxDb`, amit itt nem ismerünk, és nem is
+    // akarunk megtippelni: egy rövidebb puffer tartományon kívüli olvasás lenne.
+    attr = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2);
+    attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('epAllapot', attr);
+  }
+
+  const ep = sim.epuletek;
+  const arr = attr.array;
+  let k = 0, jel = 0;
+  for (let i = 0; i < ep.db && k < db; i++) {
+    if (ep.elo[i] === 0 || ep.tipus[i] !== t) continue;
+    const fok = serulesFokozat(ep.hp[i], ep.maxHp[i]);
+    const ny = ep.nyitva[i] ? 1 : 0;
+    arr[k * 2] = fok;
+    arr[k * 2 + 1] = ny;
+    jel = (Math.imul(jel, 31) + fok * 3 + ny + 1) | 0;
+    k++;
+  }
+  jel = (Math.imul(jel, 31) + k) | 0;
+  if (jel === geo.userData.epJel) return;
+  geo.userData.epJel = jel;
+  attr.needsUpdate = true;
 }
 
 /**
@@ -608,13 +844,68 @@ export function epitEpuletGeometriak() {
  * A füst NEM átlágszó: a pamacs a saját középpontja körül zsugorodik NULLÁRA.
  * Egy átlátszó anyag külön, rendezett rajzhívást és `depthWrite:false`-t kérne.
  *
- * @returns {THREE.MeshLambertMaterial} az `userData.ido` a képkockánként
- *   frissítendő idő-uniform (`{ value: masodperc }`).
+ * ── AZ ÁLLAPOT-CSATORNA (v0.16/2) ────────────────────────────────────────
+ * A kapu nyitottsága és az épület sérülése egyetlen PÉLDÁNY-attribútumon megy
+ * be (`epAllapot`: x = sérülés-fokozat 0/1/2, y = kapu 0/1), a darabok pedig a
+ * saját ablakukat hozzák magukkal (`allapotAdat`, lásd `epulet_reszek.js`).
+ * Az ablakán kívüli darab minden csúcsa egyetlen pontba esik, tehát a
+ * háromszögei elfajulnak. NULLA extra rajzhívás, NULLA geometria-építés.
+ *
+ * ⚠️ Ha az attribútum nincs feltöltve, a WebGL az általános alapértéket adja,
+ * amit a `defaultAttributeValues` állít 0-ra: ép épület, csukott kapu — vagyis
+ * PONTOSAN a v0.16-os kép. A rendszer tehát nem tud „elromlani láthatatlanul":
+ * hiba esetén a régi látvány jön vissza, nem egy üres épület.
+ *
+ * @param {{sim?: import('../sim/sim.js').Sim}} [opciok]
+ * @returns {THREE.MeshLambertMaterial} `userData.ido` az idő-uniform,
+ *   `userData.simBead(sim)` az állapot-forrás beadása.
  */
-export function epuletAnyag() {
+export function epuletAnyag(opciok = {}) {
   const anyag = new THREE.MeshLambertMaterial({ toneMapped: false });
-  const ido = { value: 0 };
+
+  // ── AZ ÓRA ───────────────────────────────────────────────────────────────
+  // A `value` KIOLVASOTT, nem beírt: a Three képkockánként lekérdezi az uniform
+  // értékét, tehát a getter maga az óra. Így a lengő zászló, a szálló füst és a
+  // forgó köszörűkő akkor is él, ha a rajzoló réteg (`gazdasag3d.js`, MÁSIK
+  // AGENT SÁVJA) sosem írja be az időt — a v0.16-ban pont ez történt, és a
+  // három mozgásfajta ezért állt egy helyben, némán, zöld kapuk mellett.
+  // A setter megmarad: aki beírja az időt, attól kezdve az övé az óra.
+  const kezdet = typeof performance !== 'undefined' ? performance.now() : 0;
+  let kezi = -1;
+  const ido = {
+    get value() {
+      if (kezi >= 0) return kezi;
+      return typeof performance !== 'undefined' ? (performance.now() - kezdet) * 0.001 : 0;
+    },
+    set value(v) { kezi = v; },
+  };
   anyag.userData.ido = ido;
+
+  // ── AZ ÁLLAPOT-FORRÁS ────────────────────────────────────────────────────
+  // Ugyanaz a három lépcső, mint a `core3d.js`-ben, és ugyanabból az okból: a
+  // hívó réteg másik agenté, tehát nem támaszkodhatunk arra, hogy átadja a
+  // simet. Beadható (`simBead`), különben a `window.__aoc.jatek.sim`-ből
+  // oldjuk fel — az az `INTERFACES.md`-ben DOKUMENTÁLT felület, tehát nem
+  // kerülőút. Csak OLVASSUK, és ritkítva keressük: a `Jatek` konstruktora alatt
+  // a globális hivatkozás még üres.
+  let sim = opciok.sim || null;
+  let keres = 1;
+  const simFelold = () => {
+    if (sim) return sim;
+    if (--keres > 0) return null;
+    keres = 30;
+    if (typeof window === 'undefined') return null;
+    const g = window.__aoc;
+    const s = g && g.jatek && g.jatek.sim;
+    if (s && s.epuletek) sim = s;
+    return sim;
+  };
+  anyag.userData.simBead = (s) => { if (s && s.epuletek) sim = s; };
+  anyag.defaultAttributeValues = { epAllapot: [0, 0], allapotAdat: [0, 0] };
+  anyag.onBeforeRender = (renderer, jelenet, kamera, geo, targy) => {
+    allapotIr(geo, targy, simFelold());
+  };
+
   anyag.onBeforeCompile = (sh) => {
     sh.uniforms.aocIdo = ido;
     sh.vertexShader = `
@@ -622,7 +913,9 @@ export function epuletAnyag() {
       attribute float csapatArany;
       attribute vec2 eletAdat;     // x = mozgásfajta, y = fázis
       attribute vec3 eletKozep;    // a mozgás origója
+      attribute vec2 allapotAdat;  // x = sérülés-ablak, y = kapu-ablak
       attribute vec4 csapatAdat;   // rgb = csapatszín, a = fényerő
+      attribute vec2 epAllapot;    // PÉLDÁNY: x = sérülés-fokozat, y = kapu
       uniform float aocIdo;
       varying vec3 vEpSzin;
     ` + sh.vertexShader.replace(
@@ -657,7 +950,27 @@ export function epuletAnyag() {
              transformed.y * ca - transformed.z * sa,
              transformed.y * sa + transformed.z * ca);
          }
-       }`,
+       }
+       // ── ÁLLAPOT-ABLAK ───────────────────────────────────────────────
+       // A darab az ablakán kívül egyetlen pontba esik, tehát MINDEN
+       // háromszöge elfajul (nulla terület → nincs raszterizálás). A pont a
+       // talp alatt van, hogy egy esetleges vastagító hatás se ússzon ki a
+       // földből. Ez a rejtés ága: a MEGJELENÍTETT darab számítása változatlan.
+       float aocSA = allapotAdat.x;
+       float aocKA = allapotAdat.y;
+       float aocLat = 1.0;
+       if (aocSA > 0.5) {
+         float f = epAllapot.x;
+         if (aocSA < 1.5)      aocLat = step(f, 0.5);   // csak ÉP
+         else if (aocSA < 2.5) aocLat = step(f, 1.5);   // amíg nem SÚLYOS
+         else if (aocSA < 3.5) aocLat = step(0.5, f);   // SÉRÜLT-től
+         else                  aocLat = step(1.5, f);   // csak SÚLYOS
+       }
+       if (aocKA > 0.5) {
+         float ny = epAllapot.y;
+         aocLat *= (aocKA < 1.5) ? step(ny, 0.5) : step(0.5, ny);
+       }
+       if (aocLat < 0.5) transformed = vec3(0.0, -0.6, 0.0);`,
     );
     sh.fragmentShader = 'varying vec3 vEpSzin;\n' + sh.fragmentShader.replace(
       '#include <color_fragment>',
@@ -687,10 +1000,15 @@ export function formaOsszefoglalo() {
     const geo = osszefuz(epitForma(t).reszek);
     const p = geo.attributes.position.array;
     const el = geo.attributes.eletAdat.array;
-    let maxXZ = 0, maxY = 0, jegy = 0, eloDb = 0;
+    const al = geo.attributes.allapotAdat.array;
+    let maxXZ = 0, maxY = 0, jegy = 0, eloDb = 0, serultDb = 0, kapuDb = 0;
     for (let i = 0; i < p.length; i += 3) {
       const fajta = el[(i / 3) * 2];
       if (fajta > 0.5) eloDb++;
+      // A két állapot-csatorna KÜLÖN számlálva: ebből derül ki, hogy a típus
+      // tényleg kapott sérülés-jeleket, és hogy a kapu tényleg két arcú.
+      if (al[(i / 3) * 2] > 0.5) serultDb++;
+      if (al[(i / 3) * 2 + 1] > 0.5) kapuDb++;
       // A ZÁSZLÓ a helyén épül, tehát MÉRENDŐ (egy hosszú lobogó könnyen
       // kilóg a cellából). A füst és a forgó darab az origóban épül — azokat a
       // mérés nem látná értelmesen, és területet sem foglalnak.
@@ -709,6 +1027,8 @@ export function formaOsszefoglalo() {
       keret: epuletMagassag(t),
       haromszog: geo.attributes.position.count / 3,
       eloCsucs: eloDb,
+      serulesCsucs: serultDb,
+      kapuCsucs: kapuDb,
       szelesFel: maxXZ,
       tullogas: maxXZ - EP_MERET[t] * 0.5,
       magassag: maxY,

@@ -178,10 +178,13 @@ export class PanelStatisztika {
     this._allasB = this._div(this._allasSav, 'aoc-stat-sav-resz aoc-stat-cs1');
     this._allasSzoveg = this._div(lab, 'aoc-stat-allas-szoveg');
     const megjegyzes = this._div(lab, 'aoc-stat-megjegyzes');
-    // ⚠️ EZ A MONDAT NEM DÍSZ. A sim ma nem ismer győzelmi feltételt; ha ezt
-    // elhallgatnánk, a panel eredményt sugallna ott, ahol csak állás van.
+    // ⚠️ EZ A MONDAT NEM DÍSZ, és a v0.17-ben sem lett azzá. A meccsnek MOST
+    // MÁR van hivatalos vége (`gyozelem.js`) — de ez a sáv nem azt mutatja,
+    // hanem a MÉRCÉK szerinti állást, ami a futó meccs alatt is olvasható.
+    // A kettő nem ugyanaz: vezethet az, aki utána veszít. A hivatalos eredmény
+    // a meccs-vége képernyőn jelenik meg, `veg.hivatalos` alapján.
     megjegyzes.textContent =
-      'Állás-olvasat: a szimuláció ma nem ismer győzelmi feltételt, ezért ez nem hivatalos eredmény.';
+      'Állás-olvasat a mércék súlyozása szerint — nem ez dönti el a meccset.';
 
     // ── MECCS VÉGE KÉPERNYŐ ────────────────────────────────────────
     this._vege = this._div(gy, 'aoc-stat-vege aoc-stat-rejtve');
@@ -489,9 +492,15 @@ export class PanelStatisztika {
     this._vegeOk.textContent = (m.veg.ok || m.allas.szoveg) + ' · ' + m.ido + ' játékidő';
     this._tablaRajz(this._vegeTabla, m);
     this._forduloRajz(this._vegeFordulok, m.fordulopontok);
+    // A v0.17 óta a `hivatalos: true` a normális eset — akkor nincs mit
+    // mentegetni, az eredmény eredmény. A megjegyzés arra a KÉT esetre maradt,
+    // amikor a mérleg nem a sim ítélete: a még futó meccsre, és a de facto
+    // kiesésre (a sim szabálya nem sült el, de az egyik félnek nem maradt semmi).
     this._vegeMegjegyzes.textContent = m.hivatalos
       ? ''
-      : 'A szimuláció ma nem ismer győzelmi feltételt — ez a mérleg az állásból olvasott kép.';
+      : (m.veg.vege
+        ? 'Nem hivatalos: a szimuláció győzelmi szabálya nem sült el, ez a kép a de facto kiesésből olvasva.'
+        : 'A meccs még tart — ez az állásból olvasott kép, nem végeredmény.');
   }
 
   /** A táblázat teljes újraépítése. Ritka esemény (fül-váltás, meccs vége). */

@@ -181,7 +181,7 @@ window.__aoc = {
   reteg(nev, be),                  // 'terep'|'props'|'egysegek'|'viz'|'ui' ki/be
   meres(masodperc) -> Promise<{fps, kepkocka, atlagMs, p95Ms, simMs, renderMs, haromszog, rajzhivas}>,
   simHash(),                       // sim.allapotHash()
-  verzio: '0.3.0',
+  verzio: '0.10.1',                // MINDIG a src/core/config.js VERZIO-ja
 
   // ── v0.2 ────────────────────────────────────────────────────────────
   kijeloles(),                     // a kijelölt indexek MÁSOLATA
@@ -199,6 +199,11 @@ alatt a kijelölés üres, tehát a réteg költsége nulla — a v0.1 lépcsői
 
 `src/core/config.js` → `export const VERZIO`. A `package.json` verziója **nem**
 ez (a TELEPESEK-ben ez rendszeresen félrevezetett).
+
+⚠️ A fenti `verzio:` példa a kiadás-ellenőrző 24. elvárása: ha eltér a
+`config.js` VERZIO-jától, sárga jelzést ad. Ha a VERZIO-t emeled, **ezt a sort
+is emeld** — a példa különben lassan hazugsággá öregszik, ahogy a v0.3.0-val
+történt.
 
 ---
 
@@ -273,6 +278,51 @@ hud.helyek                 // { felso, also_bal, also_kozep, also_jobb, jobb_als
 hud.uzenet(szoveg, fajta)  // 'info' | 'figyelem' | 'baj' — a tanácsadó-sáv
 hud.panel(nev)             // egy felmountolt panel, ha kell
 ```
+
+## A `Bevitel` publikus felülete (`src/ui/bevitel.js` — EGY gazdája van)
+
+Minden panel megkapja a `bevitel`-t a konstruktorában. **Csak az alábbi felület
+a szerződés** — aláhúzott (`_valami`) metódust panel NE hívjon: az átnevezhető,
+és az ilyen függés NÉMÁN hal el (a panel nem dob, csak sosem csinál semmit).
+
+```js
+bevitel.kijeloles              // Kijeloles — .lista, .db, .sajatCsapat
+bevitel.vaszon                 // a HTMLCanvasElement (eseményekhez)
+bevitel.kamera                 // Kamera3D
+bevitel.alakzat / .allas       // ALAKZAT.* / ALLAS.* — a KÖVETKEZŐ parancs kapcsolói
+bevitel.tamadoMod              // bool, a `T` egyszeri módja
+bevitel.celPont(kepX, kepY)    // → {x, y} világpont vagy null (v0.16/2)
+bevitel.kijeloltEpulet         // -1 = nincs · különben index a sim.epuletek-be
+bevitel.epuletKijelol(i)       // → bool (halott/tartományon kívüli indexet elutasít)
+bevitel.epuletTorol()          // az épület-kijelölés elengedése
+bevitel.epuletKereso           // ⬅ EZT A RENDER-SÁV ÁLLÍTJA BE, lásd alább
+```
+
+⚠️ A `celPont()` visszaadott pontja **újrahasznált objektum** (nulla allokáció a
+kattintás-úton). Olvasd ki (`p.x`, `p.y`), ne tedd el — a következő hívás
+felülírja.
+
+### Épület-kijelölés: mi kész, és mi hiányzik még
+
+- **kész (UI):** a `kijeloltEpulet` mező, a beállítás/törlés útja, és a `V`
+  billentyű, ami a kurzorhoz legközelebbi saját épületet választja ki. A
+  `panel_kijeloles.js` épület-nézete ebből él, és MOST is megjelenik.
+- **hiányzik (RND):** a 3D-s épület-kattintás — sugárvetés az épület-példány-
+  hálókra. Ez a `src/render/` sávja (`gazdasag3d.js` / `epulet_formak.js` tudja,
+  hol állnak a példányok), a `bevitel.js` pedig szándékosan nem ismeri a
+  `three`-t. A becsatlakozási pont EGY sor, a render-oldalról:
+
+```js
+// A visszaadott szám ÉPÜLET-INDEX a sim.epuletek-be, vagy -1, ha ott nincs
+// épület. A bevitel a bal kattintás után CSAK AKKOR kérdezi, ha a kattintás
+// egyetlen egységet sem talált (az egység erősebb: rá kattintani gyakoribb).
+// Az élet-ellenőrzést a bevitel elvégzi, a keresőnek nem kell.
+bevitel.epuletKereso = (kepX, kepY, szel, mag, kamera) => epuletIndexVagyMinusz1;
+```
+
+⚠️ A kereső **nem írhat sim-állapotot**, és nem a látvány-hálóból kell
+válaszolnia, ha az LOD-ol: ugyanaz a csapda, mint a `talajPont()`-nál (a
+terep-hálóra metszés zoomfüggő célpontot adna).
 
 ## Ikonok (`src/ui/ikonok.js` — EGY gazdája van)
 

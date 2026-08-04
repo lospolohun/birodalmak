@@ -55,14 +55,27 @@ export const TECH_LEIRAS = [
   'az EZUTÁN épült házak életereje +25 %',
 ];
 
-/** Ára: [étel, fa, kő, kristály]. */
+/**
+ * Ára: [étel, fa, kő, kristály].
+ *
+ * ── MIÉRT KRISTÁLYOS A KÉT KÉSEI TECHNOLÓGIA (v0.16 balansz) ──────────────
+ * A kristály a v0.5 óta gyakorlatilag CSAK a korszakváltás pénze volt, és a gép
+ * sosem váltott korszakot — vagyis a kristálynak NEM VOLT NYELŐJE. Mérve
+ * (12 000 tick, nehéz vs nehéz): a csapatok raktárában 910–1000 kristály állt
+ * érintetlenül, miközben az étel végig 0–65 között tengődött. Egy nyersanyag,
+ * amit begyűjtünk és sosem költünk el, nem gazdasági döntés, hanem üres munka.
+ *
+ * A páncélozás és a falazás mostantól a két KRISTÁLYOS korszak jutalma (lásd a
+ * `TECH_KORSZAK`-ot), tehát az áruk is oda tartozik. A többi tétel ára
+ * változatlan: azok a korai kor technológiái, ott a kristály még nincs is.
+ */
 const TECH_AR = [
   [0, 100, 60, 0],      // kovácsolás
   [80, 100, 0, 0],      // illesztett íj
-  [0, 80, 120, 0],      // páncélozás
+  [0, 80, 120, 60],     // páncélozás   — kristály kora
   [120, 60, 0, 0],      // ekevas
   [60, 120, 0, 0],      // talicska
-  [0, 60, 180, 0],      // falazás
+  [0, 60, 180, 120],    // falazás      — fény kora
 ];
 
 /** Kutatási idő tickben (20 Hz → 15–25 mp). */
@@ -82,8 +95,39 @@ const TECH_EPULET = [
   EPULET.TORONY,
 ];
 
-/** Melyik korszaktól kutatható. 0 = az elsőtől. */
-const TECH_KORSZAK = [0, 0, 1, 0, 0, 1];
+/**
+ * MELYIK KORSZAKTÓL kutatható. 0 = az elsőtől.
+ *
+ * ── MIÉRT NEM ÚJ TECHNOLÓGIÁK, HANEM ÚJRAOSZTÁS (v0.16 balansz) ───────────
+ * A kérdés az volt, „mit adjon a kristály és a fény kora", mert azokhoz eddig
+ * NULLA technológia tartozott — a fa ezt őszintén ki is írta. A kézenfekvő
+ * válasz két új technológia lett volna. Nem az lett, és ennek MÉRT oka van:
+ *
+ *   1. A hat technológiából NÉGY az első korban nyílt meg, kettő a másodikban.
+ *      Vagyis a fa a 2. korra teljesen kifutott, és onnantól a korszakváltás
+ *      500 / 800+200 / 1000+400+800 nyersanyagért CSERÉBE SEMMIT nem adott.
+ *      Nem az volt a baj, hogy kevés a technológia, hanem hogy mind elöl volt.
+ *   2. A `TECH_DB` bővítése a sim-en KÍVÜLRE is átnyúlik: a
+ *      `panel_technologia_adat.js` `HATAS_MONDAT` és `TECH_IDO_UI` táblái a
+ *      technológia-számra vannak méretezve, és betöltéskor DOBNAK, ha nem
+ *      stimmelnek. Egy hetedik sor a simben azonnal betölthetetlenné tenné a
+ *      felületet. (Ha később mégis bővül a fa, EZ A KÉT TÁBLA a párja.)
+ *
+ * Az új osztás: minden kor nyit valamit, és a késeiek a DRÁGÁBBAT.
+ *
+ *   sötét   (0) — ekevas, kovácsolás   → gazdaság és az első fegyver
+ *   hajnal  (1) — illesztett íj, talicska → a második gazdasági és íjász-lépcső
+ *   kristály(2) — PÁNCÉLOZÁS           → minden találatból −1; ez a legerősebb
+ *                                        egyetlen szám a kő-papír-ollóban,
+ *                                        ezért ér meg 800 ételt és 200 kristályt
+ *   fény    (3) — FALAZÁS              → a védekező zárókő, torony-kutatással
+ *
+ * ⚠️ A hatás-értékek SZÁNDÉKOSAN nem változtak (páncél +1, épület-HP +25 %):
+ * a `TECH_LEIRAS` és a UI `HATAS_MONDAT`-ja szó szerint ezeket a számokat
+ * mondja ki, és a felület a sim-en kívül van. Ami itt változott, az kizárólag
+ * a KAPU és az ÁR — vagyis mikor és mennyiért juthatsz hozzá.
+ */
+const TECH_KORSZAK = [0, 1, 2, 0, 1, 3];
 
 /** Állapotok. */
 export const KUTAT = { NINCS: 0, FOLYIK: 1, KESZ: 2 };

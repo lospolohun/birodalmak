@@ -45,11 +45,32 @@
 // ezért nem viszem `ALFA_EMLEK`-et 0,46 alá. Magasság-korlát viszont MÁR
 // NINCS: a lap mélységteszt nélkül, mindenre rárajzol.
 //
-// ⚠️ A SIMET NEM ÍRJUK. A `Kod` rácsát csak olvassuk. A ködnek nincs
-// render-oldali állapota — ha lenne, a v0.8 lockstepjében a két kliens
-// képernyője eltérhetne attól, amit a szimuláció mond. (A sodródó felhő az
-// EGYETLEN idő-függő elem, és az szándékosan csak fényerőt moduláló dísz: se
-// alakot, se határt nem mozdít.)
+// ── A LAP A KAMERÁVAL MEGY, ÉS EZ NEM DÍSZ (v0.16/2) ──────────────────────
+// A `kod_arnyalo.js` `LAP_SULLYEDES`-e már azt írta le, hogy a lap „a kamera
+// alatt lebeg, és VELE MOZOG" — a `kod3d.js` viszont a pálya KÖZEPÉRE, a terep
+// legaljára tette, egyszer, indításkor. A két fájl tehát két különböző dolgot
+// állított ugyanarról; a képernyőn a `kod3d.js` verziója futott.
+//
+// Ennek egy csendes hibája volt, és pont a pálya sarkánál sült el: ott a
+// generátor a tengert több száz egységgel lehúzza, a kamera pedig KÖVETI a
+// talajt. A fix magasságú lap így a kamera FÖLÉ került. A fragmens-árnyaló a
+// kamerából LEFELÉ tartó sugarakkal dolgozik (`if (d.y > -0.02) discard`) —
+// azok pedig egy fölöttük lévő lapot soha nem érnek el. Eredmény: NULLA
+// ködképpont, hibaüzenet nélkül, csak a sarokban.
+//
+// Most a lap a kamera alá, `LAP_SULLYEDES`-nyire ül, és vele mozog. A kamera
+// definíció szerint fölötte van, tehát a hiba fogalmilag szűnik meg, nem
+// hangolással. Amit ez NEM változtat meg: a köd HELYÉT. Azt a visszavetítés
+// adja a `cameraPosition`-ból és a magasság-textúrából, a lapnak egyetlen
+// dolga eldönteni, MELY KÉPPONTOKAT árnyaljuk (`kod_arnyalo.js` fejléce).
+//
+// ⚠️ A SIMET NEM ÍRJUK. A `Kod` rácsát csak olvassuk, és a lap mozgatása a
+// LÁTHATÓSÁGI ADATHOZ nem nyúl: a textúra tartalma, a három állapot és a
+// `kod.valtozat`-hoz kötött feltöltés változatlan. A ködnek nincs render-oldali
+// állapota — ha lenne, a v0.8 lockstepjében a két kliens képernyője eltérhetne
+// attól, amit a szimuláció mond. (A sodródó felhő az EGYETLEN idő-függő elem,
+// és az szándékosan csak fényerőt moduláló dísz: se alakot, se határt nem
+// mozdít.)
 //
 // ── MIÉRT NEM TÖLTJÜK FEL MINDEN KÉPKOCKÁN ────────────────────────────────
 // A `Kod` fél másodpercenként frissül (`KOD_KOZ = 10` tick), a render viszont
@@ -158,14 +179,36 @@ export class Kod3D {
   }
 
   /**
-   * A lap helye: a pálya KÖZEPE, a terep legalja ALATT (lásd `LAP_SULLYEDES`).
-   * A geometria középpontos, a világ viszont 0..n között van — innen a fél
-   * pálya eltolás.
+   * A lap KEZDŐ helye: a pálya közepe, a terep legalja alatt.
+   *
+   * ⚠️ Ez már csak TARTALÉK — az első képkockára, illetve arra az esetre, ha
+   * nincs bejegyzett kamera (`aktivKamera()` üres). Élesben a `_lapKamerara()`
+   * viszi a lapot a kamera alá minden képkockán; lásd a fejléc „a lap a
+   * kamerával megy" szakaszát.
    */
   _helyre(sim, minMagassag) {
     const meret = sim.n;
     this._lapY = minMagassag - LAP_SULLYEDES;
     this.halo.position.set(meret * 0.5, this._lapY, meret * 0.5);
+  }
+
+  /**
+   * A lap a kamera alá, `LAP_SULLYEDES`-nyire. NULLA allokáció: három szám
+   * összehasonlítása és legfeljebb egy `Vector3.set`.
+   *
+   * A `kam.position`-t olvassuk, nem a `matrixWorld`-öt: a `main.js`-ben a
+   * `kamera.frissit()` a rétegek ELŐTT fut, tehát a pozíció már erre a
+   * képkockára érvényes, a `matrixWorld` viszont még az előzőé lenne (a Three
+   * a `render()`-ben számolja újra). Ugyanezt a mezőt olvassa a `kamMag` ág is,
+   * két sorral feljebb — a kettőnek muszáj ugyanabból dolgoznia.
+   *
+   * @param {THREE.Camera} kam
+   */
+  _lapKamerara(kam) {
+    const p = kam.position;
+    const h = this.halo.position;
+    const y = p.y - LAP_SULLYEDES;
+    if (h.x !== p.x || h.y !== y || h.z !== p.z) h.set(p.x, y, p.z);
   }
 
   /**
@@ -193,12 +236,17 @@ export class Kod3D {
     // indul. A kamerát a `core3d` jegyzékéből vesszük — a `frissit` szerződése
     // nem ad kamerát, és nem is akarunk új paramétert bevezetni miatta.
     const kam = aktivKamera();
-    if (kam && this.racs) {
-      const n = this.racs.n;
-      let cx = kam.position.x, cz = kam.position.z;
-      cx = cx < 0 ? 0 : (cx > n - 1 ? n - 1 : cx);
-      cz = cz < 0 ? 0 : (cz > n - 1 ? n - 1 : cz);
-      this._uniformok.kamMag.value = this.racs.magassagPont(cx, cz);
+    if (kam) {
+      // A LAP A KAMERA ALÁ. Ez az egyetlen dolog, amitől a pálya sarkában is
+      // marad köd — lásd a fejléc „a lap a kamerával megy" szakaszát.
+      this._lapKamerara(kam);
+      if (this.racs) {
+        const n = this.racs.n;
+        let cx = kam.position.x, cz = kam.position.z;
+        cx = cx < 0 ? 0 : (cx > n - 1 ? n - 1 : cx);
+        cz = cz < 0 ? 0 : (cz > n - 1 ? n - 1 : cz);
+        this._uniformok.kamMag.value = this.racs.magassagPont(cx, cz);
+      }
     }
 
     const kod = sim.kod;

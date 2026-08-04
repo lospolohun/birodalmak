@@ -64,6 +64,9 @@ import { TIPUS } from '../sim/units.js';
 import { EPULET } from '../sim/epuletek.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
 import { MUNKA } from '../sim/munkas.js';
+// A VÉG OKÁNAK MONDATAI. A sim sosem formáz szöveget (lásd a `gyozelem.js`
+// fejlécét) — a kódot adja, a mondatot innen vesszük.
+import { VEG_OK_NEV } from '../sim/gyozelem.js';
 
 /** Két minta között ennyi tick telik el kezdetben. 100 tick = 5 másodperc. */
 export const MINTA_TICK = 100;
@@ -573,32 +576,69 @@ export function allas(sim, edeny) {
 }
 
 /**
- * DE FACTO VÉGÁLLAPOT — kizárólag UI-olvasat.
+ * VÉGÁLLAPOT — v0.17 óta HIVATALOS EREDMÉNY, ha a sim kimondta.
  *
- * Egy csapat akkor „esett ki", ha nincs élő egysége ÉS nincs egyetlen álló
- * vagy épülő épülete sem: onnan a mai sim szabályaival semmit nem tud
- * visszaépíteni. Ez a legszűkebb feltétel, amit hazugság nélkül ki lehet
- * mondani — minden ennél tágabb („nincs központja", „nincs munkása") már
- * BALANSZ-DÖNTÉS lenne, annak pedig a simben a helye.
+ * ── MIÉRT KÉT ÁG, ÉS MIÉRT MARAD MEG A RÉGI ───────────────────────────────
+ * A v0.16-ig a sim nem ismert győztest, ezért ez a függvény BECSÜLT: azt
+ * nézte, maradt-e egy csapatnak bármije. Az a becslés tájékoztató volt, és a
+ * `hivatalos: false` pont ezt vallotta be.
+ *
+ * A v0.17-ben a `gyozelem.js` megmondja a választ, és az a MÉRVADÓ — az van a
+ * hashben, azon áll a lockstep. Ezért ha a sim kimondta a véget, azt adjuk
+ * vissza, `hivatalos: true`-val.
+ *
+ * A de facto ág viszont NEM törlendő, és ez nem óvatoskodás: a két feltétel
+ * NEM ugyanaz. A sim a KÖZPONT elvesztésére és a feladásra köt véget; egy
+ * csapat viszont elveszítheti az összes egységét és épületét úgy is, hogy a
+ * központja épp az utolsó pillanatban dőlt le — illetve a de facto kiesés
+ * ELŐBB látszik, mint ahogy a szabály elsülne. Amíg a sim hallgat, a panelnek
+ * van mit mondania, csak nem eredményként. Egy hazug „még fut" rosszabb, mint
+ * egy bevallottan nem hivatalos állás-olvasat.
  *
  * @returns {{vege:boolean, gyoztes:number, ok:string, kiesett:boolean[],
- *            hivatalos:false}}
+ *            hivatalos:boolean, vegeTick:number}}
  */
 export function vegallapot(sim) {
   const ki = [_kiesett(sim, 0), _kiesett(sim, 1)];
+
+  // 1) A SIM SZAVA. Mezőket olvasunk, nem `osszesites()`-t hívunk: az objektumot
+  //    allokálna, ezt meg a panel minden frissítésen kérdezi.
+  const gy = sim.gyozelem;
+  if (gy && gy.vege) {
+    const okNev = VEG_OK_NEV[gy.ok] || '';
+    // A vesztes az, aki KIESETT — a győztes -1 is lehet (döntetlen: mindkét fél
+    // ugyanazon a ticken esett ki). A szöveg ezért a vesztesből épül, nem a
+    // győztesből: döntetlennél nincs kiről beszélni.
+    let ok = 'A meccs véget ért';
+    if (gy.gyoztes >= 0) {
+      const vesztes = 1 - gy.gyoztes;
+      ok = _nev(vesztes) + ' ' + (okNev || 'kiesett');
+    } else {
+      ok = 'Döntetlen — mindkét fél ' + (okNev || 'kiesett') + ' ugyanazon a ticken';
+    }
+    return {
+      vege: true, gyoztes: gy.gyoztes, ok, kiesett: ki,
+      hivatalos: true, vegeTick: gy.vegeTick,
+    };
+  }
+
+  // 2) DE FACTO OLVASAT, amíg a sim hallgat. Változatlanul `hivatalos: false`.
   if (ki[0] && ki[1]) {
-    return { vege: true, gyoztes: -1, ok: 'mindkét fél elveszett mindent', kiesett: ki, hivatalos: false };
+    return {
+      vege: true, gyoztes: -1, ok: 'mindkét fél elveszett mindent',
+      kiesett: ki, hivatalos: false, vegeTick: -1,
+    };
   }
   for (let cs = 0; cs < 2; cs++) {
     if (!ki[cs]) continue;
-    const gy = cs === 0 ? 1 : 0;
+    const g = cs === 0 ? 1 : 0;
     return {
-      vege: true, gyoztes: gy,
+      vege: true, gyoztes: g,
       ok: _nev(cs) + ' minden egységét és épületét elvesztette',
-      kiesett: ki, hivatalos: false,
+      kiesett: ki, hivatalos: false, vegeTick: -1,
     };
   }
-  return { vege: false, gyoztes: -1, ok: '', kiesett: ki, hivatalos: false };
+  return { vege: false, gyoztes: -1, ok: '', kiesett: ki, hivatalos: false, vegeTick: -1 };
 }
 
 function _kiesett(sim, csapat) {

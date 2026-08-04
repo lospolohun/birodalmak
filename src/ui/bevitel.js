@@ -47,10 +47,32 @@
 //   M                 piaci csere: 100 fa → 70 kő          (v0.5/3)
 //   C                 KÉPZÉS a kurzorhoz legközelebbi saját épületben (v0.5)
 //   R                 KUTATÁS ugyanott — a sorban első kutatható (v0.5/4)
+//   V                 a kurzorhoz legközelebbi saját ÉPÜLET kijelölése (v0.16/2)
 //   F5 / F9           mentés / betöltés (v0.7/2)
 //
 // A jobb gomb v0.3 óta KÉT dolgot jelent, a kattintott dologtól függően:
 // nyersanyagra kattintva gyűjtés, minden más esetben menet.
+//
+// ── ÉPÜLET-KIJELÖLÉS (v0.16/2) ────────────────────────────────────────────
+// A `kijeloles.js` CSAK egységeket jelöl — az épület más adat, más panel, más
+// parancsok. A kijelölés-panel épület-nézete viszont már kész: a
+// `panel_kijeloles.js` képkockánként megnézi a `bevitel.kijeloltEpulet` mezőt,
+// és ha az egy élő épület indexe, kirajzolja (életerő, készültség, képzési sor,
+// kutatás, őrség). Ez a mező tehát SZERZŐDÉS, nem belső állapot:
+//
+//   `kijeloltEpulet` : -1 = nincs · különben index a `sim.epuletek`-be
+//
+// Beállítani a `epuletKijelol(i)`-vel lehet, törölni az `epuletTorol()`-lel.
+// Halott vagy tartományon kívüli indexet a beállító visszautasít — a panel
+// ugyan kibírná, de egy elavult index csendben egy MÁSIK épületet mutatna a
+// betöltés utáni világban (ugyanaz a generációs csapda, mint a kijelölés-listánál).
+//
+// ⚠️ AMI MÉG HIÁNYZIK: A 3D-S ÉPÜLET-KATTINTÁS. Az a `src/render/` sávja (ott
+// van a sugárvetés az épület-példányokra), ezért itt csak a HELYE van kihagyva:
+// az `epuletKereso` horog. Ha a render-oldal beállítja, a bal kattintás — ha
+// egyetlen egységet sem talált — megkérdezi tőle, mi van a kurzor alatt.
+// Amíg nincs beállítva, a `V` billentyű választja ki a kurzorhoz legközelebbi
+// saját épületet, tehát az épület-nézet MOST is elérhető, nem csak papíron.
 
 import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
 import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
@@ -67,6 +89,14 @@ const MENTES_KULCS = 'aotc-mentes';
 
 /** Ezen belül két csoport-gombnyomás dupla kattintásnak számít (ms). */
 const DUPLA_MS = 350;
+
+/**
+ * Ilyen messziről keresünk épületet a kurzor alatt (világegység). A `C` és az
+ * `R` billentyű a v0.5 óta ezzel a sugárral dolgozik; az épület-kijelölés
+ * ugyanezt használja, hogy a három gomb UGYANAZT az épületet találja meg —
+ * különben a `V` mást jelölne ki, mint amiben a `C` képezni kezd.
+ */
+const EPULET_KOZEL = 40;
 
 export class Bevitel {
   /**
@@ -88,6 +118,24 @@ export class Bevitel {
     this.allas = ALLAS.AGRESSZIV;
     /** A `T` billentyű állította egyszeri támadó-menet mód. */
     this.tamadoMod = false;
+
+    /**
+     * A KIJELÖLT ÉPÜLET indexe a `sim.epuletek`-ben, vagy -1. A kijelölés-panel
+     * ezt a mezőt olvassa képkockánként (lásd a fejléc „ÉPÜLET-KIJELÖLÉS"
+     * szakaszát). Publikus, mert szerződés — ne írd közvetlenül, az
+     * `epuletKijelol()` / `epuletTorol()` ellenőriz is.
+     */
+    this.kijeloltEpulet = -1;
+
+    /**
+     * A HIÁNYZÓ RENDER-OLDALI DARAB HELYE: sugárvetés az épületekre.
+     * A render-sáv ezt állíthatja be (`bevitel.epuletKereso = fv`), és a bal
+     * kattintás — ha egyetlen egységet sem talált — megkérdezi.
+     *
+     * @type {?(kepX:number, kepY:number, szel:number, mag:number,
+     *          kamera:object) => number}  épület-index vagy -1
+     */
+    this.epuletKereso = null;
 
     // ── Húzás-állapot ────────────────────────────────────────────────
     this._huz = false;
@@ -193,13 +241,116 @@ export class Bevitel {
   _kattintasKijelol(x, y, hozzaadva) {
     const { szel, mag } = this._meret();
     this.kijeloles.kattintasbol(this.kamera.objektum, x, y, szel, mag, hozzaadva);
+    // EGYSÉG ÉS ÉPÜLET NEM ÁLL EGYSZERRE KIJELÖLVE. A panel az egységeket
+    // mutatja, ha van, tehát a bent maradt épület nem látszana — de a
+    // kijelölés elengedésekor VISSZAUGRANA egy rég elfelejtett épület
+    // nézete, ami a játékos szemében magától történik.
+    if (this.kijeloles.db) this.epuletTorol();
+    else this._epuletKattintas(x, y, szel, mag);
     this._szinkron();
   }
 
   _keretKijelol(x0, y0, x1, y1, hozzaadva) {
     const { szel, mag } = this._meret();
     this.kijeloles.keretbol(this.kamera.objektum, x0, y0, x1, y1, szel, mag, hozzaadva);
+    // A keret az EGYSÉGEK eszköze; húzása mindenképp lezárja az épület-nézetet.
+    this.epuletTorol();
     this._szinkron();
+  }
+
+  // ── ÉPÜLET-KIJELÖLÉS (v0.16/2) ─────────────────────────────────────────
+
+  /**
+   * Épület kijelölése. A panel szerződése szerint az index a `sim.epuletek`-be
+   * mutat; a halott vagy tartományon kívüli indexet ELUTASÍTJUK, mert az a
+   * betöltés utáni világban csendben egy másik épületet jelentene.
+   *
+   * @param {number} index épület-index
+   * @returns {boolean} sikerült-e
+   */
+  epuletKijelol(index) {
+    const i = index | 0;
+    const ep = this.sim.epuletek;
+    if (!ep || !ep.el(i)) return false;
+    this.kijeloltEpulet = i;
+    // A kettő kizárja egymást — lásd a `_kattintasKijelol()` indoklását.
+    this.kijeloles.urit();
+    this._uzenet = EPULET_NEV[ep.tipus[i]] + ' kijelölve';
+    return true;
+  }
+
+  /** Az épület-kijelölés elengedése. Olcsó és idempotens: hívható vakon is. */
+  epuletTorol() {
+    if (this.kijeloltEpulet < 0) return;
+    this.kijeloltEpulet = -1;
+  }
+
+  /**
+   * Bal kattintás, ami egyetlen egységet sem talált: van-e ott épület?
+   *
+   * A KÉRDÉST NEM MI VÁLASZOLJUK MEG. Az épület a 3D-ben példány-hálókban él, a
+   * találat-vizsgálat tehát a render sávja (`src/render/`), és ez a fájl nem
+   * ismeri a `three`-t. Ha az a sáv beállítja az `epuletKereso`-t, itt semmi
+   * más nem változik; amíg nem, a kattintás elengedi az épületet — ahogy az
+   * üres talajra kattintás az egységeket is elengedi.
+   */
+  _epuletKattintas(x, y, szel, mag) {
+    if (typeof this.epuletKereso !== 'function') { this.epuletTorol(); return; }
+    const i = this.epuletKereso(x, y, szel, mag, this.kamera.objektum) | 0;
+    if (i >= 0 && this.sim.epuletek && this.sim.epuletek.el(i)) this.kijeloltEpulet = i;
+    else this.epuletTorol();
+  }
+
+  /**
+   * A `V` billentyű: a kurzorhoz legközelebbi SAJÁT épület kijelölése.
+   *
+   * MIÉRT VAN EGYÁLTALÁN BILLENTYŰ, HA JÖN A 3D-S KATTINTÁS: mert enélkül a
+   * `kijeloltEpulet` mező FÉLKÉSZ és félrevezető volna — a kijelölés-panel
+   * kész épület-nézete addig SOSEM jelenne meg, és senki nem venné észre, ha
+   * elromlik. Ugyanaz a minta, mint a `C` képzésnél és az `R` kutatásnál: a
+   * gyorsbillentyű MOST teszi kipróbálhatóvá azt, aminek a rendes felülete
+   * később készül el.
+   */
+  _epuletKijelolParancs() {
+    const p = this.celPont(this._mostX, this._mostY);
+    if (!p) return;
+    const i = this._sajatEpuletKozel(p, false);
+    if (i < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
+    // Ugyanarra az épületre másodszor: elengedés. Enélkül a `V` egyirányú
+    // lenne, és az épület-nézetből csak egységet kijelölve lehetne kilépni.
+    if (this.kijeloltEpulet === i) {
+      this.epuletTorol();
+      this._uzenet = 'épület-kijelölés törölve';
+      return;
+    }
+    this.epuletKijelol(i);
+  }
+
+  /**
+   * A kurzor-ponthoz legközelebbi SAJÁT épület indexe, vagy -1.
+   *
+   * Egy helyen, mert három gomb kérdezi ugyanezt (`C` képzés, `R` kutatás, `V`
+   * kijelölés). Ha külön-külön keresnék, egy hangolt sugár csak az egyikben
+   * változna, és a `V` mást jelölne ki, mint amiben a `C` képezni kezd.
+   *
+   * @param {{x:number,y:number}} p világpont
+   * @param {boolean} csakKesz a félkész épületet átugorja-e (a képzés és a
+   *   kutatás csak KÉSZ épületben indulhat, a kijelölés viszont pont az épülőt
+   *   is meg akarja mutatni — a panel készültség-csíkja arra való)
+   * @returns {number}
+   */
+  _sajatEpuletKozel(p, csakKesz) {
+    const ep = this.sim.epuletek;
+    const cs = this.kijeloles.sajatCsapat;
+    let legjobb = -1, legjobbD2 = EPULET_KOZEL * EPULET_KOZEL;
+    for (let i = 0; i < ep.db; i++) {
+      if (ep.csapat[i] !== cs) continue;
+      if (csakKesz ? !ep.kesz(i) : !ep.el(i)) continue;
+      const dx = ep.x[i] - p.x, dy = ep.y[i] - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
+    }
+    return legjobb;
   }
 
   /**
@@ -217,14 +368,39 @@ export class Bevitel {
 
   // ── PARANCSOK ──────────────────────────────────────────────────────────
 
-  /** Világpont a kurzor alatt, vagy `null`, ha az égre mutat. */
-  _celPont(x, y) {
+  /**
+   * VILÁGPONT a vászon-képpont alatt, vagy `null`, ha az égre mutat.
+   *
+   * ⚠️ EZ PUBLIKUS FELÜLET, ÉS EZ NEM VÉLETLEN. Az építés-panel a kétlépéses
+   * lerakásnál pontosan ezt kérdezi (`panel_epites._vilagPont()`), és
+   * szándékosan nem írja meg még egyszer: két különböző vetítésből két
+   * különböző hely jönne ki, a játékos meg azt látná, hogy „nem oda épült".
+   * Amíg a panel egy ALÁHÚZOTT metódusra támaszkodott, egy átnevezés NÉMÁN
+   * ölte volna meg a lerakást — a panel nem dobna, csak sosem építene semmit.
+   *
+   * ⚠️ A VISSZAADOTT PONT ÚJRAHASZNÁLT (`this._pont`), hogy a kattintás se
+   * allokáljon. A hívó OLVASSA ki (`p.x`, `p.y`), és ne tegye el: a következő
+   * hívás felülírja.
+   *
+   * @param {number} x vászon-képpont
+   * @param {number} y vászon-képpont
+   * @returns {?{x:number, y:number}}
+   */
+  celPont(x, y) {
     const { szel, mag } = this._meret();
     const ndcX = (x / szel) * 2 - 1;
     const ndcY = -((y / mag) * 2 - 1);
     if (!talajPont(this.kamera.objektum, this.sim.racs, ndcX, ndcY, this._pont)) return null;
     return this._pont;
   }
+
+  /**
+   * A RÉGI, aláhúzott név — vékony átirányítás, hogy semmi ne törjön el.
+   * A v0.16-ig ez volt az egyetlen bejárat, és a panelen kívül más hívó is
+   * lehet még; törölni csak akkor szabad, ha az egész fa átállt a `celPont`-ra.
+   * @deprecated használd a `celPont()`-ot
+   */
+  _celPont(x, y) { return this.celPont(x, y); }
 
   /**
    * A jobb kattintás értelmezése. Egyetlen gomb, két jelentés — a KATTINTOTT
@@ -239,7 +415,7 @@ export class Bevitel {
    */
   _menetParancs(x, y, tamado) {
     if (!this.kijeloles.db) return;
-    const p = this._celPont(x, y);
+    const p = this.celPont(x, y);
     if (!p) return;
 
     if (!tamado) {
@@ -274,7 +450,7 @@ export class Bevitel {
 
   /** Épület lerakása a kurzor alá. Az árat és a helyet a sim ellenőrzi. */
   _epitParancs(tipus) {
-    const p = this._celPont(this._mostX, this._mostY);
+    const p = this.celPont(this._mostX, this._mostY);
     if (!p) return;
     this._ad({
       fajta: 'epit', csapat: this.kijeloles.sajatCsapat,
@@ -292,17 +468,11 @@ export class Bevitel {
    * kipróbálhatóvá a v0.5-öt — enélkül a képzés csak a szondából volna látható.
    */
   _kepzesParancs() {
-    const p = this._celPont(this._mostX, this._mostY);
+    const p = this.celPont(this._mostX, this._mostY);
     if (!p) return;
     const ep = this.sim.epuletek;
     const cs = this.kijeloles.sajatCsapat;
-    let legjobb = -1, legjobbD2 = 40 * 40;
-    for (let i = 0; i < ep.db; i++) {
-      if (ep.csapat[i] !== cs || !ep.kesz(i)) continue;
-      const dx = ep.x[i] - p.x, dy = ep.y[i] - p.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
-    }
+    const legjobb = this._sajatEpuletKozel(p, true);
     if (legjobb < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
     // Mit képez ez az épület? A `Kepzes` tudja — végigpróbáljuk a típusokat.
     //
@@ -352,6 +522,9 @@ export class Bevitel {
     // jelentenek. Eldobjuk — ez a v0.5/1 generációs tanulságának UI-oldali
     // párja: az elavult hivatkozást nem elrontani kell, hanem elengedni.
     this.kijeloles.urit();
+    // Ugyanez az ÉPÜLET-indexre: a betöltött világban a 7-es épület már egy
+    // másik épület (vagy nincs is), és a panel azt mutatná — némán.
+    this.epuletTorol();
     this._uzenet = 'betöltve (' + this.sim.tick + '. tick)';
   }
 
@@ -384,17 +557,11 @@ export class Bevitel {
    * ahhoz, hogy a technológiafa ne csak a szonda számára létezzen.
    */
   _kutatasParancs() {
-    const p = this._celPont(this._mostX, this._mostY);
+    const p = this.celPont(this._mostX, this._mostY);
     if (!p) return;
     const ep = this.sim.epuletek;
     const cs = this.kijeloles.sajatCsapat;
-    let legjobb = -1, legjobbD2 = 40 * 40;
-    for (let i = 0; i < ep.db; i++) {
-      if (ep.csapat[i] !== cs || !ep.kesz(i)) continue;
-      const dx = ep.x[i] - p.x, dy = ep.y[i] - p.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
-    }
+    const legjobb = this._sajatEpuletKozel(p, true);
     if (legjobb < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
     for (let t = 0; t < TECH_DB; t++) {
       if (techEpulete(t) !== ep.tipus[legjobb]) continue;
@@ -473,6 +640,7 @@ export class Bevitel {
       case 'KeyM': this._csereParancs(); break;
       case 'KeyC': this._kepzesParancs(); break;
       case 'KeyR': this._kutatasParancs(); break;
+      case 'KeyV': this._epuletKijelolParancs(); break;
       case 'F5': this._mentes(); break;
       case 'F9': this._betoltes(); break;
       case 'KeyK':
@@ -490,6 +658,8 @@ export class Bevitel {
 
   _csoportBetolt(n, hozzaadva) {
     this.kijeloles.csoportBetolt(n, hozzaadva);
+    // A csoport EGYSÉGEKET hív elő; ha talált, az épület-nézetnek vége.
+    if (this.kijeloles.db) this.epuletTorol();
     this._szinkron();
     // Dupla nyomás UGYANARRA a csoportra: a kamera odaugrik. Klasszikus RTS
     // kényelem, és a `performance.now()` itt szabad — ez nem a sim.
@@ -526,7 +696,18 @@ export class Bevitel {
   /** Egysoros állapot a HUD-nak. */
   hudSzoveg() {
     const db = this.kijeloles.db;
-    if (!db) return 'kijelölés: — · húzz keretet a bal gombbal';
+    if (!db) {
+      // Az épület-kijelölés is KIJELÖLÉS: ha a HUD ilyenkor is azt írná, hogy
+      // „kijelölés: —", a játékos azt hinné, semmi nincs kiválasztva, miközben
+      // a kijelölés-panel épp egy épületet mutat neki.
+      const i = this.kijeloltEpulet;
+      const ep = this.sim.epuletek;
+      if (i >= 0 && ep && ep.el(i)) {
+        return 'kijelölés: ' + EPULET_NEV[ep.tipus[i]]
+          + (ep.kesz(i) ? '' : ' (épül)');
+      }
+      return 'kijelölés: — · húzz keretet a bal gombbal';
+    }
     return 'kijelölés: ' + db
       + ' · alakzat: ' + ALAKZAT_NEV[this.alakzat]
       + ' · állás: ' + ALLAS_NEV[this.allas]
@@ -559,6 +740,8 @@ export class Bevitel {
   /** Újrafelállás után a kijelölés és a csoportok takarítása. */
   ujraKot() {
     this.kijeloles.frissitCsoportok();
+    // Új felállás = új épület-tömb. A megtartott index másra mutatna.
+    this.epuletTorol();
   }
 
   bont() {

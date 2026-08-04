@@ -33,27 +33,67 @@
 // a `window.__aoc.jatek.sim`-ből oldjuk fel — az a szonda dokumentált
 // felülete. Sim nélkül sem áll meg semmi: olyankor a 0. tick fénye van.
 //
-// ── SZÍNKEZELÉS: MIÉRT NINCS TONE MAPPING ────────────────────────────────
-// Mert a jelenet anyagainak JÓ RÉSZE `toneMapped: false` (épületek, figurák,
-// ostromgép, lövedék), a többi meg nem az (terep, díszlet) — vagyis BÁRMILYEN
-// tone mapping KÉT KÜLÖNBÖZŐ görbére szedi szét a képet. Ez nem elmélet,
-// kiszámoltam ugyanarra a megvilágításra:
+// ── SZÍNKEZELÉS: EGY CSŐVEZETÉK, ÉS MIÉRT AZ A GÖRBÉTLEN ─────────────────
+// A v0.16 látvány-sávjai két anyagcsaláddal hagyták itt a jelenetet:
 //
-//   éjjel, ACES-szel   fű (terep, tone mapped)   →  sRGB (5, 19, 11)
-//                      kék tunika (NEM tone m.)  →  sRGB (21, 30, 83)
+//   `toneMapped: false`  épületek, ostromgép, lövedék, jelölés-gyűrűk, effektek
+//   `toneMapped: true`   terep, víz, díszlet, ÉS A FIGURÁK
 //
-// Vagyis ACES mellett éjjel a TALAJ feketébe fullad, miközben a rajta álló
-// figura világít — nem azért, mert így akartuk, hanem mert a két anyagcsalád
-// más görbén megy. A `NeutralToneMapping` (Khronos PBR Neutral) nem
-// megoldás rá: az egy 0,04-ig terjedő fekete-eltolást VON KI, ami pont a
-// sötét tónusokat roppantja össze — éjjel ugyanezt a hibát nagyítja.
+// (A figurák a v0.16-os átadóban tévesen a görbétlen oldalon szerepeltek. A
+// `units3d.js` anyagai sima `MeshLambertMaterial`-ok, tehát a MÁSIK családban
+// vannak. A hibajelentés tünete ettől igaz maradt, csak a magyarázata volt
+// fordítva — ezért van itt kiírva, melyik fájl melyik oldalon áll.)
 //
-// Tone mapping NÉLKÜL a két család PONTOSAN ugyanazt adja, és amit a
-// `fenyek_ciklus.js` kiszámol, az kerül a képernyőre. A kiégés elleni
-// védelmet nem a görbe adja, hanem a MÉRÉS: a ciklus szondája ellenőrzi, hogy
-// a legfényesebb pillanatban egy teljesen fehér, napnak fordított lap is
-// 0,86 lineáris alatt marad — vagyis nincs mit levágni. Ha valaki később
-// megemeli a fényerőt, ez a vizsgálat bukik el először.
+// Két család + bármilyen tónus-görbe = KÉT KÜLÖNBÖZŐ FÉNYERŐ-GÖRBE ugyanarra
+// a megvilágításra. A `fenyek_ciklus.js` `lambertKimenet()`-jével kiszámolva,
+// ugyanaz az éjszakai fény, a `terep_paletta.js` fűszíne (`0x4a7a34`) és egy
+// kék tunika:
+//
+//                        ACES-szel        görbe nélkül
+//   fű   (tone mapped)   sRGB (1,12,3)    sRGB (16,37,18)
+//   tunika               sRGB (0,4,51)    sRGB (7,23,80)
+//
+// ACES mellett a TALAJ gyakorlatilag fekete lesz, miközben a görbétlen családba
+// tartozó tárgyak (épület, effekt) a nyers értéküket viszik a képre: ez az a
+// szétválás, amit a hibajelentés „a terep feketébe fordul, a figurák nem"-ként
+// írt le. A `NeutralToneMapping` nem megoldás rá: az egy 0,04-ig terjedő
+// fekete-eltolást VON KI, vagyis pont a sötét tónusokat roppantja össze.
+//
+// ── MELYIK OLDALT VISSZÜK A MÁSIKHOZ, ÉS MIÉRT ────────────────────────────
+// A görbétlen oldalt választjuk, két okból:
+//
+//   1. Ez az EGYETLEN irány, amit a mag EGYEDÜL végre tud hajtani. A
+//      `toneMapped: false` nyolc másik fájlban van szétszórva, azokat más
+//      sávok birtokolják; a renderer görbéje viszont itt egy sor. A `three`
+//      r170 `WebGLPrograms`-a ezt írja:
+//        `if ( material.toneMapped ) toneMapping = renderer.toneMapping;`
+//      — a zászló CSAK LEFELÉ tud rontani. Ha a renderer görbéje
+//      `NoToneMapping`, akkor MINDKÉT ág `NoToneMapping`-ot ad, tehát a két
+//      család BIZONYÍTHATÓAN ugyanazt a shader-programot fordítja. Nem
+//      „nagyjából ugyanaz": azonos `parameters.toneMapping`, azonos program.
+//   2. A görbe hasznát (csúcs-lekerekítés) itt nincs mire fordítani — lásd a
+//      kiégés-számot lent.
+//
+// ── ÉS AMIKOR VALAKI MÉGIS GÖRBÉT AKAR ────────────────────────────────────
+// Akkor a szétválás VISSZATÉRNE, mert a nyolc fájl zászlói ott maradtak. Ezért
+// a görbe nem szabadon írható mező, hanem a `tonemap` szetteren megy be, és a
+// szetter ELŐBB egységesíti a jelenet minden anyagát (`egysegesitAnyagok()`),
+// csak utána kapcsol. Egy csővezeték marad akkor is, ha a döntés megfordul.
+// A `csovezetekAllapot()` bármikor megmondja, hány anyag melyik oldalon áll —
+// ez az a szám, amivel a valódi gépen ellenőrizhető, hogy nem csúszott szét.
+//
+// ── A KIÉGÉS: MOST MÁR SZÁM IS VAN RÁ ─────────────────────────────────────
+// Görbe nélkül nincs csúcs-lekerekítés, tehát 1,0 fölött kőkeményen levág. Az
+// előző fejléc hivatkozott egy vizsgálatra, ami SEHOL NEM LÉTEZETT; most a
+// `fenyek_ciklus.js` `napiMerleg()`-je számolja, node-ban:
+//
+//   teljesen fehér lap, felfelé   csúcs 0,852 lineáris  (tartalék 0,148)
+//   teljesen fehér lap, a napnak  csúcs 0,950 lineáris  (tartalék 0,050)
+//   fű, éjfélkor                  sRGB (16, 37, 18)     — sötét, de nem fekete
+//
+// Vagyis a legrosszabb eset is 1,0 ALATT marad: nincs mit lekerekíteni. A
+// tartalék viszont már csak 5 % — aki a `MENETREND` `napEro`-ját megemeli,
+// annak ELŐBB ezt a számot kell megnéznie.
 //
 // A színTÉR viszont marad sRGB kimenet: az a gamma-helyes megjelenítés, nem
 // tone mapping.
@@ -167,10 +207,18 @@ export class Mag3D {
     this._maxArany = opciok.kepPontArany ?? 1.25;
     this.renderer.setPixelRatio(this._effektivArany());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // Lásd a fejléc „miért nincs tone mapping" szakaszát. Nem felejtés:
-    // MÉRT döntés, és a `fenyek_ciklus.js` kiégés-vizsgálata őrzi.
-    this.renderer.toneMapping = THREE.NoToneMapping;
+    // Lásd a fejléc „egy csővezeték" szakaszát. Nem felejtés: MÉRT döntés, és
+    // a `fenyek_ciklus.js` `napiMerleg()`-je számolja hozzá a kiégés-tartalékot.
+    /** A tónus-görbe. CSAK a `tonemap` szetteren át változhat — az egységesít is. */
+    this._gorbe = opciok.tonemap ?? THREE.NoToneMapping;
+    this.renderer.toneMapping = this._gorbe;
+    // ⚠️ Az expozíció `NoToneMapping` mellett a `three`-ben NEM HAT (a
+    // `tonemapping_fragment` chunk üres). Beállítjuk, hogy görbe-váltáskor
+    // már a helyes érték legyen bent, de aki fényerőt akar hangolni, az a
+    // `fenyek_ciklus.js` `MENETREND`-jét keresse, ne ezt.
     this.renderer.toneMappingExposure = opciok.expozicio ?? 1.0;
+    /** Az utolsó egységesítéskor látott gyerek-szám — ebből tudjuk, nőtt-e a jelenet. */
+    this._gyerekSzam = -1;
     this.renderer.info.autoReset = false;   // lásd a fejléc `renderer.info` blokkját
 
     this.jelenet = new THREE.Scene();
@@ -228,6 +276,20 @@ export class Mag3D {
     this._kamera = feloldKamera(opciok.kamera);
     this._enabled = true;
     this._kontextusElveszett = false;
+
+    // ── A CSŐVEZETÉK-EGYSÉGESÍTŐ LÁTOGATÓJA ───────────────────────────────
+    // EGYSZER jön létre. A `traverse()` függvényt vár; ha képkockánként adnánk
+    // neki friss nyílfüggvényt, az képkockánkénti lezárás-allokáció lenne —
+    // pont az, amit a réteg-szerződés tilt.
+    /** [0] = már egységes, [1] = átállítva ebben a menetben. */
+    this._csoSzam = new Int32Array(2);
+    this._csoLatogato = (o) => {
+      const a = o.material;
+      if (!a) return;
+      if (Array.isArray(a)) { for (let i = 0; i < a.length; i++) this._csoAnyag(a[i]); }
+      else this._csoAnyag(a);
+    };
+    if (this._gorbe !== THREE.NoToneMapping) this.egysegesitAnyagok();
 
     this._figyeloket();
     this.atmeretez();
@@ -337,12 +399,85 @@ export class Mag3D {
     // `frissit()`-ben — lásd a fejléc ⚠️ megjegyzését arról, hogy a magot a
     // `main.js` nem tartja réteg-nyilván.
     this._fenyFrissit(k);
+    // A jelenet MENET KÖZBEN nő (a rétegek a mag után épülnek fel, a
+    // `gazdasag3d` új épület-hálót akaszt be). Görbe mellett egy frissen
+    // érkezett `toneMapped: false` anyag azonnal visszahozná a szétválást,
+    // ezért figyeljük a gyerek-számot. Görbe NÉLKÜL a zászló bizonyítottan
+    // hatástalan (lásd a fejlécet), tehát ilyenkor ez egy egész-összehasonlítás
+    // és semmi több — nem sepregetünk feleslegesen.
+    if (this._gorbe !== THREE.NoToneMapping
+        && this.jelenet.children.length !== this._gyerekSzam) this.egysegesitAnyagok();
     const info = this.renderer.info;
     info.reset();
     this.renderer.render(this.jelenet, k);
     this.statisztika.rajzhivas = info.render.calls;
     this.statisztika.haromszog = info.render.triangles;
   }
+
+  // ── EGY CSŐVEZETÉK ───────────────────────────────────────────────────────
+
+  /** @param {THREE.Material} a */
+  _csoAnyag(a) {
+    if (a.toneMapped === true) { this._csoSzam[0]++; return; }
+    a.toneMapped = true;
+    // A zászló a program-kulcs része; enélkül a Three a RÉGI, görbétlen
+    // programot használná tovább — „beállítottam, de nem hatott".
+    a.needsUpdate = true;
+    this._csoSzam[1]++;
+  }
+
+  /**
+   * Minden anyag ugyanarra a csővezetékre. A `toneMapped: false` zászlók nyolc
+   * másik fájlban ülnek, és mind egy RÉGI feltevést kódolnak (hogy fut ACES,
+   * amit ki kell kerülni). Innentől nem ők döntenek: a görbe a rendereré, és
+   * a jelenet EGYBEN követi.
+   *
+   * Nem képkocka-útvonal — a `rajzol()` csak akkor hívja, ha görbe van BE, ÉS
+   * a jelenet gyerek-száma változott.
+   *
+   * @returns {number} hány anyagot kellett átállítani
+   */
+  egysegesitAnyagok() {
+    this._csoSzam[0] = 0; this._csoSzam[1] = 0;
+    this.jelenet.traverse(this._csoLatogato);
+    this._gyerekSzam = this.jelenet.children.length;
+    return this._csoSzam[1];
+  }
+
+  /**
+   * Diagnosztika: hány anyag áll melyik oldalon. Ez az a SZÁM, amivel valódi
+   * gépen ellenőrizhető, hogy a jelenet nem szakadt két családra — a
+   * `kulon > 0` görbe mellett azonnali látvány-hiba.
+   * @param {{egyseges:number, kulon:number, gorbe:number}} [ki]
+   */
+  csovezetekAllapot(ki) {
+    const o = ki || { egyseges: 0, kulon: 0, gorbe: 0 };
+    o.egyseges = 0; o.kulon = 0;
+    this.jelenet.traverse((n) => {
+      const a = n.material;
+      if (!a) return;
+      const t = Array.isArray(a) ? a : [a];
+      for (let i = 0; i < t.length; i++) {
+        if (t[i].toneMapped === true) o.egyseges++; else o.kulon++;
+      }
+    });
+    o.gorbe = this._gorbe;
+    return o;
+  }
+
+  /**
+   * A tónus-görbe. Az EGYETLEN út, amin változhat — mert előbb egységesíti a
+   * jelenetet, és csak utána kapcsol. Aki a `renderer.toneMapping`-ot közvetlenül
+   * írja, az visszahozza a két családot, és vele az éjszakai fekete terepet.
+   */
+  set tonemap(g) {
+    const uj = (g === undefined || g === null) ? THREE.NoToneMapping : g;
+    if (uj === this._gorbe) return;
+    this._gorbe = uj;
+    if (uj !== THREE.NoToneMapping) this.egysegesitAnyagok();
+    this.renderer.toneMapping = uj;
+  }
+  get tonemap() { return this._gorbe; }
 
   // ── NAPSZAK ──────────────────────────────────────────────────────────────
 

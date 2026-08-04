@@ -28,6 +28,29 @@
 // körül zsugorítani, illetve forgatni. A zászló ezzel szemben a helyén épül, és
 // az `eletKozep` csak a rúd tövét jelöli, amitől távolodva nő a lengés.
 //
+// ── AZ ÁLLAPOT: EGY GEOMETRIA, TÖBB ARC (v0.16/2) ─────────────────────────
+// Két dolog volt eddig láthatatlan az épületeken: hogy a kapu NYITVA van-e, és
+// hogy az épület SÉRÜLT-e. Mindkettő ugyanaz a feladat — EGY példány-geometrián
+// belül kell két-három változatot tartani —, ezért egy közös csatorna van rá:
+//
+//   allapotAdat (vec2)  x = sérülés-ablak (`SERULES.*`)
+//                       y = kapu-ablak    (`KAPUALL.*`)
+//
+// A darab akkor rajzolódik ki, ha a PÉLDÁNY állapota beleesik az ablakába; ha
+// nem, a vertex shader a darab MINDEN csúcsát egyetlen pontba húzza, tehát a
+// háromszögei elfajulnak és nem raszterizálódnak.
+//
+// Miért ez, és nem külön geometria fokozatonként: fokozatonként külön háló
+// típusonként külön `InstancedMesh`-t, külön példány-puffert és külön
+// rajzhívást jelentene (11 típus × 3 fokozat), a fokozat-váltás pedig példány-
+// átpakolást — vagyis pont azt a képkockánkénti munkát, amit ez a réteg a v0.3
+// óta kerül. Így viszont a fokozat EGY float a példány-pufferben: a váltás
+// egyetlen szám átírása, geometria-építés nélkül.
+//
+// ⚠️ A rejtés darab-szemcsés, nem háromszög-szemcsés: egy `elem()`-mel bevitt
+// geometria MINDEN csúcsa ugyanazt az ablakot kapja, tehát háromszög sosem
+// „lóg át" két darab közt, és az elfajulás mindig teljes.
+//
 // Egy típus MINDEN példánya ugyanazt a geometriát kapja, tehát önmagában mind
 // egyszerre lengene. A shader ezért a PÉLDÁNY-MÁTRIX eltolás-oszlopából is
 // hasheli a fázist (ugyanaz a fogás, mint a `props3d.js` fáin) — így nyolc ház
@@ -80,6 +103,12 @@ export const SZIN = {
   FUST: 0xe6e2da,
   /** Csapat-elem: az `alapSzin` ilyenkor közömbös, a `csapatArany` 1. */
   CSAPAT: 0xffffff,
+  /**
+   * KOROM. Sötét, de NEM fekete és nem is a `NYILAS` tónusa: a korom nem lyuk,
+   * hanem bevont felület, tehát a féggömb-fény megcsillan rajta. Hidegebb is a
+   * `FA_SOTET`-nél, különben égett gerendának látszana, nem szennyeződésnek.
+   */
+  KOROM: 0x37322c,
 };
 
 /** Tető-keverés: ennyire hajlik egy TOMPA tető a csapatszínbe. */
@@ -87,6 +116,31 @@ export const TETO_CS = 0.3;
 
 /** Mozgásfajták — ugyanez a négy szám él a vertex shaderben. */
 export const ELET = { ALL: 0, ZASZLO: 1, FUST: 2, FORGAS: 3 };
+
+/**
+ * SÉRÜLÉS-ABLAK (`allapotAdat.x`) — melyik fokozatoknál látszik a darab.
+ * A példány fokozata: 0 = ép, 1 = sérült, 2 = súlyosan sérült.
+ *
+ * A három ablak SZÁNDÉKOSAN nem „pontosan ezen a fokozaton" jelentésű, hanem
+ * küszöb: a repedés, ami a sérült házon megjelent, a súlyoson is ott van. Ha
+ * fokozatonként cserélődne a jelkészlet, a romlás VILLANÁSNAK látszana, nem
+ * halmozódásnak — és pont a halmozódás az, ami elárulja, merre tart az épület.
+ */
+export const SERULES = {
+  /** Mindhárom fokozaton. Ez az alapértelmezés, tehát a v0.16-os darabok ide esnek. */
+  MINDIG: 0,
+  /** Csak sértetlenül (fok = 0). */
+  EP: 1,
+  /** Amíg nem súlyos (fok < 2) — ami a súlyos fokozaton LEOMLIK vagy leszakad. */
+  NEM_SULYOS: 2,
+  /** Sérülttől fölfelé (fok ≥ 1) — repedés, korom, omladék. */
+  SERULT: 3,
+  /** Csak súlyosan (fok = 2) — beszakadt tető, nagy omladék. */
+  SULYOS: 4,
+};
+
+/** KAPU-ABLAK (`allapotAdat.y`) — a példány `nyitva` állapotához kötve. */
+export const KAPUALL = { MINDIG: 0, CSUKVA: 1, NYITVA: 2 };
 
 // ── PROFIL-KIHÚZÁS ─────────────────────────────────────────────────────────
 
@@ -168,13 +222,33 @@ export class Forma {
     /** Az eresz eddig érhet — a cellahatár. Ezen túl a sim járhatósága hazudna. */
     this.eresz = m * 0.5;
     this.reszek = [];
+    /** Az ÉPPEN ÉRVÉNYES állapot-ablak — lásd `allapot()`. */
+    this._sk = SERULES.MINDIG;
+    this._kk = KAPUALL.MINDIG;
+  }
+
+  /**
+   * ÁLLAPOT-KURZOR: innentől minden hozzáadott darab ebbe az ablakba kerül,
+   * amíg vissza nem állítjuk. Paraméter nélkül hívva reset (`MINDIG`).
+   *
+   * Miért kurzor, és nem paraméter minden elemen: az elemek fele már létező,
+   * bevált hívás (`kofal`, `nyeregteto`, `oromzat`), és mindegyikre ráfűzni egy
+   * tizenkettedik argumentumot a hívásokat olvashatatlanná tenné. Így viszont a
+   * változat egyetlen blokként, láthatóan elkülönül a formaleírásban — és a
+   * kurzor alapértéke pontosan a v0.16-os viselkedés, tehát a MEGLÉVŐ darabok
+   * egyetlen csúcsa sem mozdul.
+   */
+  allapot(serules = SERULES.MINDIG, kapu = KAPUALL.MINDIG) {
+    this._sk = serules;
+    this._kk = kapu;
+    return this;
   }
 
   // ── PRIMITÍVEK ───────────────────────────────────────────────────────────
 
   /** Kész, már elhelyezett geometria hozzáadása. */
   elem(geo, szin, cs = 0, elet = null) {
-    this.reszek.push({ geo, szin, cs, elet });
+    this.reszek.push({ geo, szin, cs, elet, sk: this._sk, kk: this._kk });
     return this;
   }
 
@@ -321,6 +395,36 @@ export class Forma {
   }
 
   /**
+   * KAPUSZÁRNY EGY PÁNTON — vasalt tábla, ami a pántja körül kifordul.
+   *
+   * A paraméter a PÁNT x-e, nem a szárny közepe, és ez a lényeg: a nyitott és a
+   * csukott változat ugyanabból a pontból indul, tehát a kettő között a szárny
+   * FORDUL, nem ugrik. Ha a középpontot adnánk meg, a két állás észrevehetően
+   * elcsúszna egymáshoz képest, és a kapu inkább hibásnak látszana, mint
+   * nyitottnak.
+   *
+   * A vasalás nem cifraság: egy sima, egyszínű tábla a nyílásban kitöltésnek
+   * látszik. A két keresztpánt teszi SZÁRNNYÁ — és a nyitott állásban ez az,
+   * ami elárulja, hogy az a ferde lap ott az ajtó, nem egy fal-darab.
+   *
+   * @param {number} panx a pánt x-e (a pillér felőli él); a szárny innen −`ux`
+   *   irányba nyúlik
+   * @param {number} y a szárny TALPA
+   * @param {number} ux +1 = jobb szárny, −1 = bal
+   * @param {number} szog 0 = csukva (a nyílás síkjában); előjelesen `ux`-szel
+   *   szorozva fordul kifelé
+   */
+  kapuszarny(panx, y, z, sz, ma, vastag, ux, szog, szin = SZIN.CSAPAT, cs = 1) {
+    const cx = panx - ux * sz * 0.5 * Math.cos(szog);
+    const cz = z + ux * sz * 0.5 * Math.sin(szog);
+    this.dontDoboz(sz, ma, vastag, cx, y + ma * 0.5, cz, szog, 'y', szin, cs);
+    for (const h of [0.24, 0.76]) {
+      this.dontDoboz(sz * 0.94, 0.05, vastag + 0.025, cx, y + ma * h, cz, szog, 'y', SZIN.VAS);
+    }
+    return this;
+  }
+
+  /**
    * SÁTORTETŐ ereszdeszkával és gerincgerendával. `y` az eresz síkja.
    * A `flare` egy alacsony, szélesebb alsó tetőszakasz: ettől kap a tető
    * TÖRÉSVONALAT, ami messziről is elárulja, hogy cserép van rajta, nem papír.
@@ -455,6 +559,118 @@ export class Forma {
     return this;
   }
 
+  // ── SÉRÜLÉS-JELEK ────────────────────────────────────────────────────────
+  //
+  // Ugyanaz az elv, mint a kőfal lábazatánál: nem a részletért vannak, hanem
+  // hogy az árnyék nélküli, lapos fényben LEGYEN mihez képest sötétebb. Egy
+  // sérülés-jel ezért mindig két tónussal dolgozik (nyílás + korom, kavics +
+  // kő), és mindig a felület elé ugrik pár centit — egy pontosan a falsíkba
+  // rakott sötét folt z-küzdelembe kerülne a fallal, és villódzna.
+
+  /**
+   * REPEDÉS a homlokzaton. Két, ellentétesen döntött keskeny sáv, közte egy
+   * rövid vízszintes ág.
+   *
+   * Miért nem egyetlen egyenes: az egyenes csík FESTETTNEK látszik. A törés
+   * viszont anyagi hiba — és mivel a szem az egyenestől való eltérésre ugrik,
+   * ez a néhány fok döntés többet ér, mint a repedés hossza.
+   */
+  repedes(x, y, z, ma, uz = 1) {
+    const f = ma * 0.52;
+    const pz = z + uz * 0.025;
+    this.dontDoboz(0.045, f, 0.05, x - ma * 0.05, y + f * 0.5, pz, 0.17, 'z', SZIN.NYILAS);
+    this.dontDoboz(0.04, f * 0.92, 0.05, x + ma * 0.07, y + f * 1.34, pz, -0.24, 'z', SZIN.NYILAS);
+    this.dontDoboz(0.033, ma * 0.24, 0.05, x + ma * 0.12, y + f * 0.72, pz, 1.15, 'z', SZIN.NYILAS);
+    return this;
+  }
+
+  /**
+   * KOROM-FOLT: széles, halvány bevonat és benne egy sötétebb mag. A mag nélkül
+   * a folt egyenletes szürke tábla lenne — a korom viszont a becsapódás körül a
+   * legsűrűbb, és ez a sűrűsödés az, ami elárulja, hogy ide ÜTÖTTEK.
+   */
+  korom(x, y, z, sz, ma, uz = 1) {
+    this.doboz(sz, ma, 0.04, x, y, z + uz * 0.018, SZIN.KOROM);
+    this.doboz(sz * 0.5, ma * 0.46, 0.05, x + sz * 0.12, y + ma * 0.2, z + uz * 0.024, SZIN.NYILAS);
+    return this;
+  }
+
+  /**
+   * OMLADÉK az épület tövében: kihullott kövek és egy letört gerenda.
+   *
+   * A talpon HEVER, tehát a többi jellel ellentétben felülnézetből is látszik —
+   * és az RTS-kamera (34–58°) pont felülnézet. Ez a legfontosabb sérülés-jel:
+   * a homlokzati repedést kizoomolva már nem, ezt viszont még igen.
+   */
+  omladek(x, y, z, r) {
+    this.doboz(r * 1.55, r * 0.46, r * 1.2, x, y, z, SZIN.KAVICS);
+    this.doboz(r * 0.78, r * 0.6, r * 0.68, x - r * 0.32, y + r * 0.38, z + r * 0.22, SZIN.KO_SOTET);
+    this.doboz(r * 0.6, r * 0.48, r * 0.58, x + r * 0.44, y + r * 0.3, z - r * 0.26, SZIN.KO);
+    this.dontDoboz(r * 1.7, 0.06, 0.09, x + r * 0.2, y + r * 0.34, z + r * 0.5, 0.22, 'z', SZIN.FA_SOTET);
+    return this;
+  }
+
+  /**
+   * BESZAKADT TETŐ: sötét nyílás a tetősíkban, fölötte a kilátszó szarufák és
+   * a peremről lecsúszott cserép.
+   *
+   * ⚠️ A nyílás lapja SZÁNDÉKOSAN a tetősík alá kerül, a szarufák pedig fölé:
+   * a tetőt nem tudjuk kilyukasztani (egyetlen összefűzött geometria, nincs
+   * kivonás), tehát a lyukat a fölé nyúló TÖRMELÉK jelzi. Ha csak a sötét lap
+   * volna, az árnyékos foltnak látszana; a szarufáktól lesz belőle szakadás.
+   */
+  tetoseb(x, y, z, fel, mely) {
+    this.doboz(fel * 2, 0.06, mely * 2, x, y, z, SZIN.NYILAS);
+    for (const ux of [-1, 1]) {
+      this.dontDoboz(0.07, fel * 1.6, 0.07, x + ux * fel * 0.52, y + fel * 0.4, z,
+        ux * 0.5, 'z', SZIN.FA_SOTET);
+    }
+    this.doboz(fel * 1.8, 0.06, 0.08, x, y + fel * 0.62, z, SZIN.FA_SOTET);
+    this.dontDoboz(fel * 0.8, 0.05, mely * 0.9, x - fel * 0.8, y + 0.07, z + mely * 0.35,
+      0.42, 'z', SZIN.CSEREP_SOTET);
+    return this;
+  }
+
+  /**
+   * A HÁROM FOKOZAT KÖZÖS JELKÉSZLETE — ez teszi egységessé a tizenegy típust.
+   *
+   * A hívó a saját homlokzatának és tetejének néhány számát adja meg; a jelek
+   * helye ebből SZÁRMAZIK, nem kézzel van kirakva. Ugyanaz a döntés, mint a
+   * `Forma` méreteinél: egy `EP_MERET`-változás így magától átrendezi a
+   * sérülést is, és nem marad hátra egy repedés a levegőben.
+   *
+   * A SÚLYOS fokozat nem cseréli le a sérült jeleit, hanem RÁRAK — lásd a
+   * `SERULES` küszöb-magyarázatát.
+   *
+   * @param {{homlok:number, falFel?:number, falY?:number, falMag?:number,
+   *          talpY?:number, omladekZ?:number, tetoY?:number, tetoX?:number,
+   *          tetoZ?:number, tetoFel?:number, tetoMely?:number}} o
+   */
+  serulesJelek(o) {
+    const hz = o.homlok;
+    const fel = o.falFel ?? this.f;
+    const y0 = o.falY ?? 0.12;
+    const mag = o.falMag ?? this.H * 0.4;
+    const talp = o.talpY ?? y0;
+    const oz = o.omladekZ ?? hz - Math.min(0.3, fel * 0.24);
+
+    this.allapot(SERULES.SERULT);
+    this.repedes(-fel * 0.5, y0 + mag * 0.1, hz, mag * 0.7);
+    this.repedes(fel * 0.66, y0 + mag * 0.3, hz, mag * 0.48);
+    this.korom(fel * 0.17, y0 + mag * 0.5, hz, fel * 0.42, mag * 0.42);
+    this.omladek(-fel * 0.76, talp, oz, Math.min(0.16, fel * 0.2));
+
+    this.allapot(SERULES.SULYOS);
+    this.repedes(-fel * 0.05, y0, hz, mag * 0.92);
+    this.korom(-fel * 0.58, y0 + mag * 0.42, hz, fel * 0.46, mag * 0.54);
+    this.omladek(fel * 0.7, talp, oz - fel * 0.12, Math.min(0.22, fel * 0.26));
+    if (o.tetoY !== undefined) {
+      this.tetoseb(o.tetoX ?? 0, o.tetoY, o.tetoZ ?? 0,
+        o.tetoFel ?? fel * 0.34, o.tetoMely ?? fel * 0.28);
+    }
+    return this.allapot();
+  }
+
   // ── ÉLŐ ELEMEK ───────────────────────────────────────────────────────────
 
   /**
@@ -550,6 +766,7 @@ export function osszefuz(reszek) {
   const arany = new Float32Array(n);
   const eletAdat = new Float32Array(n * 2);
   const eletKozep = new Float32Array(n * 3);
+  const allapotAdat = new Float32Array(n * 2);
   let v = 0;
   for (const r of reszek) {
     const p = r.geo.attributes.position.array;
@@ -561,6 +778,10 @@ export function osszefuz(reszek) {
       alap[(v + i) * 3 + 1] = _szinSegito.g;
       alap[(v + i) * 3 + 2] = _szinSegito.b;
       arany[v + i] = r.cs;
+      // Az állapot-ablak DARABONKÉNT azonos — ezért fajul el hézagtalanul a
+      // rejtett darab minden háromszöge (lásd a fejléc ⚠️ megjegyzését).
+      allapotAdat[(v + i) * 2] = r.sk || 0;
+      allapotAdat[(v + i) * 2 + 1] = r.kk || 0;
       if (r.elet) {
         eletAdat[(v + i) * 2] = r.elet.fajta;
         eletAdat[(v + i) * 2 + 1] = r.elet.fazis;
@@ -578,6 +799,7 @@ export function osszefuz(reszek) {
   geo.setAttribute('csapatArany', new THREE.BufferAttribute(arany, 1));
   geo.setAttribute('eletAdat', new THREE.BufferAttribute(eletAdat, 2));
   geo.setAttribute('eletKozep', new THREE.BufferAttribute(eletKozep, 3));
+  geo.setAttribute('allapotAdat', new THREE.BufferAttribute(allapotAdat, 2));
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   return geo;
