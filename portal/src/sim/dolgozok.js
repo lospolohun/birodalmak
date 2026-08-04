@@ -82,6 +82,8 @@ export function ujDolgozo(azon, kod, x, y) {
     epuletAzon: -1,
     /** 1..3 — a fejlesztés a hatását és a bérét is emeli. */
     szint: 1,
+    /** Takarítónál: melyik épületet takarítja épp (-1 = nincs cél). */
+    celEpulet: -1,
     /** Kóborláshoz: hány tick múlva választ új céllal. */
     ora: 0,
   };

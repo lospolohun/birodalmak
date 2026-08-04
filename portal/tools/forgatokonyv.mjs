@@ -492,6 +492,43 @@ const V05_KUTATAS = [
 ];
 
 /**
+ * Az első szabad hely megkeresése a rácson egy sz×m épületnek.
+ *
+ * MIÉRT KELL: az előre megírt építési terv egyszer elfogy, és a bot onnantól
+ * megáll a fejlődésben. Mérve: a hírneve 41-re csúszott vissza, mert a
+ * forgalom tovább nőtt, a kapacitás nem — és a végtelen mód első korszakcélja
+ * (65 hírnév) örökre elérhetetlen maradt. Egy valódi játékos ilyenkor nem a
+ * listáját nézi, hanem az üres helyet.
+ *
+ * A bejárás determinisztikus (fentről lefelé, balról jobbra), tehát a bot
+ * választása is az.
+ */
+function szabadHely(sim, sz, m, z) {
+  const racs = sim.racs;
+  for (let y = 0; y + m <= racs.m; y++) {
+    for (let x = 0; x + sz <= racs.sz; x++) {
+      if (!racs.szabadTerulet(x, y, sz, m, z)) continue;
+      // Hagyjunk egy cella folyosót körben, különben befalazzuk a saját
+      // épületeinket, és az útkeresés elzárt szolgáltatásokat talál.
+      let jo = true;
+      for (let i = -1; i <= sz && jo; i++) {
+        if (!racs.jarhato(x + i, y - 1, z) && !racs.jarhato(x + i, y + m, z)) jo = false;
+      }
+      if (jo) return { x, y };
+    }
+  }
+  return null;
+}
+
+/** Amit a bot pótolni szokott, ha romlik a hírnév. Sorrend = prioritás. */
+// ⚠️ A VÁM ELÖL VAN, ÉS EZ MÉRÉS EREDMÉNYE. A bot 115 épülettel is 25-ös
+// hírnéven állt, és a diagnózis egyetlen számra mutatott: 126 fős sor a
+// vámnál. Négy vámköteles világ (Kőhegység, Parázsmély, Sárkánytrónus,
+// Űrkapu) forgalmát egyetlen pult nem viszi el — a többi épületből viszont
+// hiába van harminc. Ez a JÁTÉK egyik rejtett szűk keresztmetszete is.
+const V05_POTLAS = ['vam', 'biztonsag', 'etterem', 'vip', 'bolt', 'konyvesbolt', 'wc', 'varo', 'poggyasz', 'info'];
+
+/**
  * v0.5 — teljes végigjátszás. Gyárfüggvény, saját állapottal.
  * @returns {(sim: object, t: number) => void}
  */
@@ -500,6 +537,7 @@ export function v05Uj() {
   let kapuIdx = 0;
   let utolsoFelvetel = -999;
   let utolsoEpites = -999;
+  let potlasIdx = 0;
   const megtett = new Set();
   return function v05(sim, t) {
     const kx = sim.kezdoX, ky = sim.kezdoY;
@@ -539,7 +577,9 @@ export function v05Uj() {
     }
     // Karbantartó mérnök akkor is kell, ha az épület még nem áll — a
     // felvétel a szabad munkahelyre magától beoszt.
-    if (t > 600 && t % 400 === 0 && sim.penz > 12000 && sim.dolgozoSzamTipus('kobold') < 3) {
+    // Takarítóból mindig többre van szükség, mint amennyit az ember gondol:
+    // a kosz ÉPÜLETENKÉNT gyűlik, és egy kobold egyszerre egy épületet takarít.
+    if (t > 600 && t % 300 === 0 && sim.penz > 12000 && sim.dolgozoSzamTipus('kobold') < 8) {
       sim.parancs({ fajta: 'felvesz', tipus: 'kobold' });
     }
 
@@ -565,6 +605,18 @@ export function v05Uj() {
     if (!sim.aktivKutatas && sim.penz > 20000 && !hiany) {
       for (const kod of V05_KUTATAS) {
         if (sim.kutathato(kod)) { sim.parancs({ fajta: 'kutat', kod }); break; }
+      }
+    }
+
+    // ── PÓTLÁS: ha romlik a hírnév, kapacitást építünk ───────────────────
+    // Nem a tervből, hanem szabad helyre. Ez az, ami a botot a történet
+    // végigviteléig viszi: a hírnév a KAPACITÁSON múlik, nem a pénzen.
+    if (t > 8000 && t % 260 === 0 && !hiany && sim.hirnev < 82 && sim.penz > 60000) {
+      const kod = V05_POTLAS[(potlasIdx++) % V05_POTLAS.length];
+      const t2 = sim.epuletMerete ? sim.epuletMerete(kod) : null;
+      if (t2) {
+        const h = szabadHely(sim, t2.sz, t2.m, 0);
+        if (h) sim.parancs({ fajta: 'epit', tipus: kod, x: h.x, y: h.y, z: 0 });
       }
     }
 

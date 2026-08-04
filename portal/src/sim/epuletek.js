@@ -279,6 +279,8 @@ export function ujEpulet(azon, kod, x, y, z = 0) {
     visszaszamlalo: 0,
     /** 0..1000 — állagromlás; a szerelő javítja. */
     kopas: 0,
+    /** 0..1000 — kosz. A takarító koboldok ezt viszik le, helyben. */
+    szemet: 0,
     /** Ki van-e kapcsolva a játékos által. */
     kikapcsolva: false,
     /**

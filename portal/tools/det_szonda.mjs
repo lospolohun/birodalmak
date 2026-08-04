@@ -356,9 +356,9 @@ cim('9. CSATORNÁK — vasút, léghajó-kikötő, űrkapu');
 
 cim('10. VÉGIGJÁTSZÁS — a hét fejezet és a végtelen korszakok');
 {
-  const L = futas(90210, 70000, false, v05Uj);
-  const M = futas(90210, 70000, false, v05Uj);
-  if (L.zaro === M.zaro) ok('70 000 tick teljes végigjátszással — két futás azonos');
+  const L = futas(90210, 95000, false, v05Uj);
+  const M = futas(90210, 95000, false, v05Uj);
+  if (L.zaro === M.zaro) ok('95 000 tick teljes végigjátszással — két futás azonos');
   else rossz(`a végigjátszás szétcsúszott: ${L.zaro} ≠ ${M.zaro}`);
 
   const s = L.sim;

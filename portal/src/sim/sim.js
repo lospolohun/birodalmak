@@ -287,6 +287,7 @@ export class Sim {
       dimIdx = typeof p.dim === 'string' ? DIMENZIO_INDEX.get(p.dim) : p.dim;
       if (dimIdx === undefined) return this._elutasit('ismeretlen dimenzió');
       const d = this.dimenziok[dimIdx];
+      if (DIMENZIOK[dimIdx].csatorna) return this._elutasit('ez nem kapu — a saját épületével kell megépíteni');
       if (!d.felfedezve) return this._elutasit('ez a dimenzió még ismeretlen');
       if (d.lezarva) return this._elutasit('ez a világ VÉGLEG lezárult');
       if (d.nyitva) return this._elutasit('erre a világra már áll kapu');
@@ -948,7 +949,10 @@ export class Sim {
       }
     }
     ep.kiszolgalt++;
-    this.kosz = Math.min(1000, this.kosz + KOSZ_KISZOLGALASONKENT * 0.25);
+    // A kosz ÉPÜLETENKÉNT gyűlik. A globális szám (a HUD „tisztaság"-a) ennek
+    // az átlaga — de a hangulatot az az épület rontja, ahol a vendég ÁLL.
+    // Enélkül a takarítás elvont karbantartás volt; így van HELYE is.
+    ep.szemet = Math.min(1000, ep.szemet + KOSZ_KISZOLGALASONKENT * 0.75);
 
     // ── HATÁSOK ─────────────────────────────────────────────────────────
     u.hangulat = Math.min(1000, u.hangulat + 130);
@@ -996,22 +1000,80 @@ export class Sim {
         d.instabilitas = Math.max(0, d.instabilitas - csokk);
       }
     }
+    // ── A TAKARÍTÓK JÁRKÁLNAK ─────────────────────────────────────────────
+    // A takarító kobold nem szorzó többé, hanem dolgozó: kiválasztja a
+    // LEGKOSZOSABB elérhető épületet, odamegy, és ott takarít. Ettől lesz a
+    // takarítókamra HELYE is fontos, nem csak a léte — és ettől látszik a
+    // képernyőn, hogy tényleg csinálnak valamit.
     const takaritoSzorzo = this.kesz('takaritorobot') ? 1.9 : 1;
-    this.kosz = Math.max(0, this.kosz - takaritoEro * KOSZ_TAKARITAS * 0.01 * takaritoSzorzo);
-    // A kosz magától nő a forgalommal — a kiszolgálás mellett a puszta
-    // jelenlét is piszkít, különben egy takarító örökre elég lenne.
-    this.kosz = Math.min(1000, this.kosz + this.utasSzam * 0.0016);
+    this._takaritokLep(takaritoSzorzo);
 
-    // Mozgás: a beosztott dolgozó a munkahelye peronjára áll be. Nincs
-    // útkeresésük — a dolgozó nem játékelem, hanem díszlet és szorzó.
+    // A kosz magától is nő a forgalommal, épületenként elosztva: a puszta
+    // jelenlét is piszkít, különben egy takarító örökre elég lenne.
+    // A jelenlét ott piszkít, AHOL a tömeg van: a sorban állók és a bent
+    // lévők száma szerint. Az első változat minden épületre ugyanannyit írt,
+    // és ezzel az üres emeleti bolt is ugyanúgy koszolódott, mint a zsúfolt
+    // étterem — a takarítás pedig reménytelenné vált (a v05 gépi játékos
+    // csődbe is ment tőle).
+    let koszOssz = 0, koszDb = 0;
+    for (let a = 0; a < this.epuletek.length; a++) {
+      const ep = this.epuletek[a];
+      if (!ep) continue;
+      if (!EPULETEK[ep.tipusIdx].igeny) continue;
+      ep.szemet = Math.min(1000, ep.szemet + (ep.sor.length + ep.bent.length) * 0.012);
+      koszOssz += ep.szemet; koszDb++;
+    }
+    this.kosz = koszDb > 0 ? koszOssz / koszDb : 0;
+
+    // Mozgás: a beosztott dolgozó a munkahelye felé megy. Nincs útkeresésük —
+    // a dolgozó díszlet és szorzó, nem játékelem; a takarító a kivétel, mert
+    // neki a CÉLJA is változik (lásd `_takaritokLep`).
     for (let i = 0; i < this.dolgozok.length; i++) {
       const d = this.dolgozok[i];
-      const ep = d.epuletAzon >= 0 ? this.epuletek[d.epuletAzon] : null;
-      if (!ep) continue;
-      const cx = ep.x + ep.sz * 0.5, cy = ep.y + ep.m * 0.5;
+      const cel = d.celEpulet >= 0 ? this.epuletek[d.celEpulet]
+        : (d.epuletAzon >= 0 ? this.epuletek[d.epuletAzon] : null);
+      if (!cel) continue;
+      const cx = cel.x + cel.sz * 0.5, cy = cel.y + cel.m * 0.5;
       const dx = cx - d.x, dy = cy - d.y;
       const t = Math.sqrt(dx * dx + dy * dy);
-      if (t > 0.9) { d.x += (dx / t) * 0.06; d.y += (dy / t) * 0.06; }
+      if (t > 0.9) { d.x += (dx / t) * 0.075; d.y += (dy / t) * 0.075; }
+    }
+  }
+
+  /**
+   * A takarító koboldok köre. Mindegyik a legkoszosabb épületet célozza meg,
+   * és ott takarít, ha odaért.
+   *
+   * ⚠️ SORRENDFÜGGETLEN VÁLASZTÁS. A „legkoszosabb" holtversenyét az épület
+   * AZONOSÍTÓJA dönti el, nem a bejárás sorrendje — különben két azonos
+   * koszú épületnél a választás a tömb pillanatnyi állapotától függne.
+   */
+  _takaritokLep(szorzo) {
+    for (let i = 0; i < this.dolgozok.length; i++) {
+      const d = this.dolgozok[i];
+      if (d.kod !== 'kobold') continue;
+      const otthon = d.epuletAzon >= 0 ? this.epuletek[d.epuletAzon] : null;
+      if (!otthon || otthon.kikapcsolva) { d.celEpulet = -1; continue; }
+
+      let cel = d.celEpulet >= 0 ? this.epuletek[d.celEpulet] : null;
+      // Új célt keresünk, ha nincs, ha eltűnt, vagy ha a mostani már tiszta.
+      if (!cel || cel.szemet < 60) {
+        let legjobb = null;
+        for (let a = 0; a < this.epuletek.length; a++) {
+          const ep = this.epuletek[a];
+          if (!ep || !EPULETEK[ep.tipusIdx].igeny) continue;
+          if (ep.z !== otthon.z) continue;   // szintet a takarító nem vált
+          if (!legjobb || ep.szemet > legjobb.szemet) legjobb = ep;
+        }
+        cel = legjobb && legjobb.szemet > 60 ? legjobb : null;
+        d.celEpulet = cel ? cel.azon : -1;
+      }
+      if (!cel) continue;
+
+      const cx = cel.x + cel.sz * 0.5, cy = cel.y + cel.m * 0.5;
+      const dx = cx - d.x, dy = cy - d.y;
+      if (dx * dx + dy * dy > 4) continue;   // még úton van
+      cel.szemet = Math.max(0, cel.szemet - KOSZ_TAKARITAS * 0.3 * dolgozoEro(d) * szorzo);
     }
   }
 
@@ -1033,6 +1095,11 @@ export class Sim {
     const jeloltek = [];
     for (let i = 0; i < this.dimenziok.length; i++) {
       const d = this.dimenziok[i];
+      // A csatorna (vasút, léghajó, űrkapu) nem világ, hanem ÉPÜLET: azt
+      // megépíteni kell, nem felfedezni. Az első változat ezt nem szűrte, és
+      // a szkenner „talált" egy vasúthálózatot — amire aztán PORTÁLT lehetett
+      // építeni. A csatorna így instabillá vált, és a kapu-fülre is felkerült.
+      if (DIMENZIOK[i].csatorna) continue;
       if (!d.felfedezve && !d.lezarva && DIMENZIOK[i].kod !== 'sarkanytronus') jeloltek.push(i);
     }
     if (jeloltek.length === 0) return;
@@ -1341,6 +1408,9 @@ export class Sim {
   /** Melyik technológia oldja fel az épületet (vagy null). */
   epuletKutatasa(kod) { const t = epuletTipus(kod); return t ? (t.kutatas || null) : null; }
 
+  /** Egy épülettípus alapterülete — a felület és a forgatókönyvek terveznek vele. */
+  epuletMerete(kod) { const t = epuletTipus(kod); return t ? { sz: t.sz, m: t.m } : null; }
+
   /** Kikutatható-e most: nincs kész, és minden előfeltétele megvan. */
   kutathato(kod) {
     if (this.keszTechek.has(kod)) return false;
@@ -1361,7 +1431,7 @@ export class Sim {
 
   dimenziotFelfed(kod) {
     const i = DIMENZIO_INDEX.get(kod);
-    if (i === undefined) return;
+    if (i === undefined || DIMENZIOK[i].csatorna) return;
     if (this.dimenziok[i].lezarva) return;
     this.dimenziok[i].felfedezve = true;
   }
