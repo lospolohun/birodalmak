@@ -180,6 +180,7 @@ function bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo, hang }) {
     if (e.fajta === 'kez') {
       const azon = sim.racs.epuletAzon(cella.x, cella.y, z);
       if (azon >= 0) panelek.epuletet(azon);
+      else if (sim.racs.jarhato(cella.x, cella.y, z)) panelek.cellat(cella.x, cella.y, z);
       else panelek.nyit(null);
       return;
     }

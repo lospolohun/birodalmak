@@ -18,12 +18,16 @@ import { NEHEZSEGEK } from '../mag/config.js';
 import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
 import { bestiariumot } from './bestiarium.js';
 import * as tarolo from './tarolo.js';
+import { tanacsok } from './tanacsado.js';
+import { vonal } from './grafikon.js';
+import { ALLAPOT_NEV } from '../sim/utas.js';
 
 const LAPOK = [
   { kod: 'dimenzio', ikon: '🌀', cim: 'Dimenziók' },
   { kod: 'kutatas', ikon: '🔬', cim: 'Kutatás' },
   { kod: 'dolgozo', ikon: '👷', cim: 'Dolgozók' },
   { kod: 'bestiarium', ikon: '🐾', cim: 'Bestiárium' },
+  { kod: 'tanacs', ikon: '💡', cim: 'Tanácsadó' },
   { kod: 'statisztika', ikon: '📊', cim: 'Statisztika' },
   { kod: 'naplo', ikon: '📜', cim: 'Napló' },
   { kod: 'mentes', ikon: '💾', cim: 'Mentés' },
@@ -64,6 +68,15 @@ export class Panelek {
     this._epit();
   }
 
+  /** A `fo.js` hívja, ha a kéz eszközzel üres, járható cellára kattintottak. */
+  cellat(x, y, z) {
+    this.cella = { x, y, z };
+    this.lap = 'cella';
+    this.panel.classList.add('nyitva');
+    for (const { g } of this.gombok) g.classList.remove('aktiv');
+    this._epit();
+  }
+
   epuletet(azon) {
     this.kivalasztott = azon;
     this.lap = 'epulet';
@@ -88,6 +101,8 @@ export class Panelek {
       case 'dolgozo': return this._dolgozok(p);
       case 'bestiarium': return bestiariumot(p, this.sim);
       case 'mentes': return this._mentes(p);
+      case 'tanacs': return this._tanacs(p);
+      case 'cella': return this._cella(p);
       case 'statisztika': return this._statisztika(p);
       case 'naplo': return this._naplo(p);
       case 'sugo': return this._sugo(p);
@@ -271,9 +286,85 @@ export class Panelek {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  _tanacs(p) {
+    be(p, el('h2', null, '💡 Tanácsadó'));
+    const bev = el('p', null, 'Csak olyat mond, ami mérhető, és amire van válaszlépés.');
+    bev.style.cssText = 'font-size:11.5px;color:#93a0c8;margin:0 0 8px';
+    be(p, bev);
+    for (const t of tanacsok(this.sim)) {
+      const d = el('div', 'tetel');
+      d.style.borderLeft = `3px solid ${t.sulyossag === 'baj' ? '#ff5d73' : t.sulyossag === 'gond' ? '#ffc247' : '#63d68a'}`;
+      d.innerHTML = `<div class="fej"><span>${t.ikon}</span><b>${t.cim}</b></div><p>${t.szoveg}</p>`;
+      p.appendChild(d);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  /**
+   * „Ki áll itt?" — a kéz eszközzel egy üres cellára kattintva.
+   *
+   * MIÉRT KELL: az utas-AI a játék szíve, de eddig CSAK a tömeg mozgása
+   * látszott belőle. Ha valaki dühösen távozik, a játékos nem tudta meg,
+   * MIT nem kapott meg. Ez a panel megnyitja a fekete dobozt: mi a terve,
+   * hol tart benne, mennyi a türelme, mit költött.
+   */
+  _cella(p) {
+    const sim = this.sim;
+    const c = this.cella;
+    be(p, el('h2', null, `👀 Ki áll itt? (${c.x}, ${c.y}${c.z ? ' · ' + c.z + '. emelet' : ''})`));
+    const lista = sim.utasokACellan(c.x, c.y, c.z, 1.6);
+    if (lista.length === 0) {
+      be(p, el('p', null, 'Ezen a cellán most nincs senki. Kattints oda, ahol tömeg van — vagy egy épületre a részleteiért.'));
+      return;
+    }
+    for (const u of lista) {
+      const faj = FAJOK[u.fajIdx];
+      const d = el('div', 'tetel');
+      const h = Math.round(u.hangulat / 10);
+      const hSzin = h < 30 ? '#ff5d73' : h < 60 ? '#ffc247' : '#63d68a';
+      const terv = u.terv.map((k, i) => {
+        const nev = (IGENYEK.find((x) => x.kod === k) || {}).nev || k;
+        if (i < u.tervIdx) return `<s style="opacity:.5">${nev}</s>`;
+        if (i === u.tervIdx) return `<b style="color:#6fd8ff">${nev}</b>`;
+        return nev;
+      }).join(' → ') || '—';
+      d.innerHTML =
+        `<div class="fej"><span>${faj.ikon}</span><b>${faj.nev}</b>` +
+        `<span style="color:${hSzin}">${h} %</span></div>` +
+        `<div class="sorok" style="flex-direction:column;gap:3px">` +
+        `<div>érkezett: <b>${DIMENZIOK[u.dimIdx].nev}</b> · tovább: <b>${DIMENZIOK[u.celDimIdx].nev}</b></div>` +
+        `<div>épp: <b>${ALLAPOT_NEV[u.allapot]}</b>${u.valtasHatra > 0 ? ' (szintet vált)' : ''} · türelem <b>${Math.max(0, Math.round(u.turelem / 20))} mp</b></div>` +
+        `<div>terve: ${terv}</div>` +
+        `<div>nála van <b>${szam(u.penz)}</b> · elköltött <b>${szam(u.koltott)}</b>` +
+        (u.csalodas > 0 ? ` · <b style="color:#ff5d73">${u.csalodas} csalódás</b>` : '') + '</div>' +
+        '</div>';
+      p.appendChild(d);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   _statisztika(p) {
     const sim = this.sim;
     be(p, el('h2', null, '📊 Statisztika'));
+
+    // ── GRAFIKONOK ────────────────────────────────────────────────────
+    // A HUD pillanatnyi állapotot mutat; a döntések viszont trendekről
+    // szólnak. A „hírnév 62" egészen mást jelent 40-ről jövet, mint 85-ről.
+    be(p, el('h4', null, 'Az elmúlt napok'));
+    const g1 = el('canvas'); g1.width = 344; g1.height = 116;
+    g1.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22)';
+    const g2 = el('canvas'); g2.width = 344; g2.height = 116;
+    g2.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22);margin-top:6px';
+    be(p, g1, g2);
+    vonal(g1, sim.napiTortenet, [
+      { mezo: 'hirnev', szin: '#63d68a', nev: 'hírnév' },
+      { mezo: 'utas', szin: '#6fd8ff', nev: 'utas' },
+    ]);
+    vonal(g2, sim.napiTortenet, [
+      { mezo: 'bevetel', szin: '#ffd257', nev: 'bevétel' },
+      { mezo: 'koltseg', szin: '#ff5d73', nev: 'költség' },
+      { mezo: 'penz', szin: '#9b6bff', nev: 'pénz' },
+    ], { nulla: true });
 
     be(p, el('h4', null, 'Tegnapi mérleg'));
     const m = el('div', 'tetel');
