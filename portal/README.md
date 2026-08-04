@@ -40,6 +40,7 @@ győzelem után korszakok jönnek, mindegyik nehezebb az előzőnél.
 | **Az áramszünet néma** | Nem hibaüzenettel jelentkezik, csak azzal, hogy minden lassabb. Ha a felső sávban a villám piros, energiamagot építs. |
 | **A vám a rejtett szűk keresztmetszet** | Négy vámköteles világ forgalmát egyetlen pult nem viszi el. |
 | **A kapu összeomlik** | 100 % instabilitásnál. A portálkarbantartó + mérnök MINDEN kaput karbantart, tehát egy központi műhely az egész hálózatot tartja. |
+| **A gödörből nehéz kijönni** | Ha a hírnév 20 alá esik, az építkezés MÉLYÍTI a gödröt: több vendéget hív ugyanabba a sorba. Ilyenkor emelj díjat vagy zárj be egy kaput, amíg a kapacitás utoléri magát. |
 
 Ha elakadsz: **💡 Tanácsadó** panel. Csak olyat mond, ami mérhető, és amire
 van válaszlépés.

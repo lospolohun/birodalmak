@@ -153,13 +153,16 @@ következménye van, és mindhármat használjuk:
 
 | mérés | érték |
 |---|---|
-| determinizmus-szonda | mind a **9** vizsgálat zöld |
+| determinizmus-szonda | mind a **11** vizsgálat zöld |
 | mértan-szonda | 23 épülettípus, 23 különböző sziluett, keret alatt |
 | hang-szonda | üres állomás 0,028 → nyüzsgő+instabil 0,427 jelszint |
-| böngésző-szonda | 8 vizsgálat zöld, a betöltés bitre azonos |
+| böngésző-szonda | 9 vizsgálat zöld, a betöltés bitre azonos |
+| látvány-szonda | napszak, áttetsző szintek, zárt részecskekeret |
+| kiadás-ellenőrző | 7 vizsgálat zöld |
+| egyensúly (80 végigjátszás) | **6 stratégia nyer 8/8-at**, 4 egyszer sem, 0 csőd |
 | ms/tick 1200 utasnál | **0,137 ms** (node, felhő) |
-| rajzolási hívás | 14 |
-| build | 844 kB / 231 kB gzip (ebből a three.js a nagyobb rész) |
+| rajzolási hívás | 22 — 1000+ lénnyel ÉS teli részecskekerettel |
+| build | 878 kB / 243 kB gzip (ebből a three.js a nagyobb rész) |
 
 A részletes egyensúly-mérés (6 stratégia × több seed × 50 játéknap) a
 [`qa/EGYENSULY.md`](qa/EGYENSULY.md)-ben van.
@@ -173,24 +176,33 @@ nem. Az FPS-mérés az iMac dolga.
 
 ---
 
-## 5. Ami NINCS kész (v0.5+ ötlettár)
+## 5. Ami NINCS kész (v1.0 után)
 
-Sorrend nagyjából fontosság szerint.
+Sorrend nagyjából fontosság szerint. Az első kettő NEM ötlet, hanem
+**adósság**: olyan állítás, amit ma nem tudunk méréssel alátámasztani.
 
-1. **Végtelen mód a VII. fejezet után.** Ma a győzelem után a történet elfogy,
-   a játék viszont megy tovább cél nélkül.
-2. **A gépi stratégiák újrahangolása.** A `tools/jatekosok.mjs` botjai a v0.1
-   gazdaságához vannak igazítva; a v0.4 hangolása után az eredményeik részben
-   mérési műtermékek. Amíg ez nincs meg, az egyensúly-számokat óvatosan kell
-   olvasni.
-3. **A könnyű/kemény fokozat és a bérbeadás egyensúlya méretlen.** Kell hozzá
-   egy-egy külön stratégia a mérőeszközbe.
+1. **FPS-mérés valódi GPU-n.** A render a v0.1 óta gyökeresen megváltozott
+   (típusonkénti és fajonkénti mértan, három szint, portálfények, napszak,
+   részecskék), és azóta EGYSZER SEM futott rá `npm run fps` GPU-s gépen.
+   A felhőben nem is lehet. Ez az egyetlen olyan tétel, ami a v1.0-t
+   „mért" helyett „részben mért" állapotban tartja.
+2. **Emberi végigjátszás.** A gépi játékos négyszer vitte végig a történetet,
+   de EMBER még nem. A tempó, a szövegek érthetősége és a bevezető haszna
+   csak így ítélhető meg — botot nem lehet megkérdezni, hogy unatkozott-e.
+3. **Hosszú távú stabilitás.** A leghosszabb mért futás 80 játéknap. Hogy egy
+   200 napos parti mit csinál a memóriával és a mentés méretével, nem tudjuk.
 4. **Negyedik-ötödik szint**, és emeletenként eltérő bérleti díj.
 5. **Utas-részletek**: poggyász mint látható tárgy, csoportok (család,
    küldöttség), VIP-kíséret.
-6. **Az emeleti látvány**: ma a fölső szintek egyszerűen eltűnnek. Egy
-   áttetsző „szellemszint" olvashatóbb lenne.
+6. **Mobil / érintőképernyő.** A vezérlés egérre készült.
 7. **Több nyelv.** Ma minden magyar, a kód is.
+
+### Amit ez az ív LEZÁRT a korábbi listából
+
+- Végtelen mód a VII. fejezet után → **kész** (korszakok, rangok, növekvő cél).
+- A gépi stratégiák újrahangolása → **kész** (`qa/EGYENSULY.md`).
+- A könnyű/kemény fokozat és a bérbeadás egyensúlya → **mérve**.
+- Az emeleti látvány áttetsző „szellemszintje" → **kész**.
 
 ---
 
