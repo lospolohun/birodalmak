@@ -5,13 +5,16 @@
 //   • CSÚCS-magasság  (N+1)×(N+1) — ebből épül a 3D terep-háló
 //   • CELLA-járhatóság N×N        — ezen fut az útkeresés és az ütközés
 //
+// ── MIÉRT KÉT KÜLÖN RÉTEG, ÉS NEM EGY ────────────────────────────────────
 // A kettő szándékosan külön van: a látvány finomabb felbontást akar, a
 // szimuláció pedig a lehető legkisebb, cache-barát tömböt. A `sim/` réteg a
 // csúcs-magasságot CSAK a cella-középpont magasságának kiszámolásához nézi.
 //
+// ── MIÉRT A SEEDBŐL, ÉS NEM ADATFÁJLBÓL ──────────────────────────────────
 // A terep teljesen a seedből származik (lásd [rng.js] `Zaj`), tehát két gép
 // ugyanabból a seedből bitre ugyanazt a pályát kapja — ez a lockstep első
-// feltétele, még a parancsok előtt.
+// feltétele, még a parancsok előtt. Egy betöltött pálya-fájl ehhez képest
+// átvihető, elromolhat és verziózni kell; egyetlen 32 bites szám nem.
 
 import { Zaj, mulberry32 } from './rng.js';
 import { TERKEP, terkepBeallitas } from './terkep.js';

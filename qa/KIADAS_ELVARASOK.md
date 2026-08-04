@@ -222,8 +222,17 @@ Ugyanaz a hibafajta az épület-oldalon: egy rövid ár- vagy életerő-tábla a
 
 **39. ⚠ A tudatosan rövid `EPULET`-táblák védettek maradnak.**
 Csak FIGYELMEZTETÉS: a `KEPEZ` szándékosan rövidebb (a torony és a piac nem
-képez), és mindkét olvasója `!lista`-val védi magát — de ha egyszer egy KÉPZŐ
-épület kerül a lista végére, itt esne ki csendben.
+képez) — de ha egyszer egy KÉPZŐ épület kerül a lista végére, itt esne ki
+csendben.
+
+⚠️ **A v0.18-ig ez CÍMKE volt, nem gát.** Csak visszamondta a `KEPEZ` hosszát, az
+INDOKLÁSÁT („az olvasói `!lista`-val védettek") viszont SEMMI nem ellenőrizte: a
+védelmet kivéve a figyelmeztetés szövege bitre ugyanaz maradt. Egy elvárás, ami a
+szabotázsra nem reagál, nem elvárás — a saját negatív kontrolljának a hiánya.
+Ma a kivétel hosszát is rögzíti (`hossz: 9`), és VÉGIGNÉZI mind a három olvasót
+(`kepzes.js` ×2, `panel_kijeloles_adat.js`) — mindnek `!lista`-védettnek kell
+lennie. Négy szabotázs-ága van: bármelyik olvasó védelmét kivéve, a táblát 10-re
+növelve vagy 11-re kiegészítve pirosnak kell lennie.
 
 **40. Az `EPULET` enum hézagmentes.**
 Lásd a 37. pontot; az épület-index tizenegy táblát címez, és egy lyuk mindegyikben
@@ -303,9 +312,21 @@ egyértelmű, de egy `new Map()` egy ritkán futó ágban lehet ártalmatlan —
 heurisztika jelez, az ítéletet a mérés hozza.
 
 **56. ⚠ Nincs halott fájl a `src/` alatt (a `main.js`-ből vagy egy szondából elérhető).**
-Csak FIGYELMEZTETÉS, mert a `PLAN.md` maga jelöl be még be nem kötött fájlokat
-(a civ-választót a v0.11 köti be) — a lista mégis kell, mert egy „kész"
-alrendszer, amit senki nem importál, a legdrágább fajta önámítás.
+Csak FIGYELMEZTETÉS, mert a `PLAN.md` maga jelöl be még be nem kötött fájlokat —
+a lista mégis kell, mert egy „kész" alrendszer, amit senki nem importál, a
+legdrágább fajta önámítás.
+
+⚠️ **Ez a vizsgálat a v0.18-ig HAMISAN VÁDOLT, és ez a tanulságosabb fele.** Az
+import-séta csak a `from '…'` alakot követte, ezért a `panel_technologia.js`-t és
+a `panel_uzenetek.js`-t halottnak jelentette — holott a `main.js` `import.meta
+.glob`-bal húzza be őket, és a `PANEL_TERV` MODUL-ÚT-SZTRINGGEL szereli fel.
+A többi négy panel csak VÉLETLENÜL menekült meg: a szondájuk szövegében szerepel
+a fájlnevük. Aki a lista alapján „takarít", két működő panelt töröl.
+
+A séta azóta követi az `import('…')`-ot és a relatív `.js` sztring-literálokat is.
+⚠️ A globot **szándékosan NEM bontja ki**: bekötve lenni és FELSZERELVE lenni nem
+ugyanaz. Az NK-56b negatív kontroll pont ezt őrzi — a `PANEL_TERV` sorát törölve,
+a globot meghagyva a fájlnak továbbra is halottnak kell látszania.
 
 ## J) Build és kirakás
 
@@ -313,6 +334,20 @@ alrendszer, amit senki nem importál, a legdrágább fajta önámítás.
 Csak FIGYELMEZTETÉS, mert két jó megoldás van (relatív `'./'` vagy abszolút
 `'/aotc/'`) — de a kettő nem lehet EGYSZERRE a terv, és ez az a fajta eltérés,
 ami helyi `vite preview`-val SOSEM jön elő, csak élesben.
+
+**DÖNTÉS (v0.18): relatív `base: './'`.** Ugyanaz az érv, ami a faviconból
+adat-URI-t csinált és a betűtípusból beágyazott SVG-t: a `dist/` maradjon
+bárhová másolható. Az abszolút `/aotc/` egyetlen URL-hez kötné vissza.
+⚠️ Ezt majd felül fogja írni egy v1.0-s PWA: a service-worker hatóköre nem lehet
+relatív.
+
+⚠️ **Maga az elvárás is hibás volt a v0.18-ig:** az `else if`-lánca akkor is
+elsütötte a „csak az egyik lehet a terv" figyelmeztetést, ha a két oldal MÁR
+EGYETÉRTETT — tehát a tételt nem lehetett kijavítani, csak elviselni. Ma a terv
+`DÖNTÉS:` jelölőjét olvassa (a trade-offot elmagyarázó terv szükségképpen idézi
+az elvetett `'/aotc/'`-t is, ezért a „`PLAN.md` első `base:`-e" aktívan
+félrevezetett), és a config kommentjének útját a terv KIRAKÁSI URL-jéhez méri,
+nem a `base`-hez — a kettő a relatív döntés óta nem ugyanaz.
 
 **58. A `.gitignore` kizárja a `node_modules`-t és a `dist`-et.**
 Egy verziókövetésbe kerülő build-kimenet minden ágon ütközik, és a `dist/`
@@ -409,15 +444,38 @@ csendben.
 
 ## Amit a kapu MA mond
 
-**0 BUKOTT, 5 figyelmeztetés.**
+**0 BUKOTT, 0 figyelmeztetés — mind a 61 elvárás áll.** (A v0.18 körben: 5 bukás
+→ 0, 4 figyelmeztetés → 0. A kapu ELŐSZÖR teljesen zöld.)
 
-| # | mit mond |
-|---|---|
-| 16. | a `grid.js` és az `rng.js` fejléce indokol, de nem a `── CÍM ──` idióma szerint |
-| 24. | az `INTERFACES.md` `verzio: '0.3.0'`-t mutat, a `config.js` viszont `0.10.1`-et |
-| 39. | a `KEPEZ` 9 hosszú 11 helyett — tudatos, mert az olvasói `!lista`-val védettek |
-| 56. | `src/ui/civ_valaszto.js` és `src/ui/menu.js` — se a `main.js`, se szonda nem importálja |
-| 57. | `vite.config.js` `base: './'` vs. `PLAN.md` `'/aotc/'`, és a fájl kommentje `/aoc/`-t ír |
+⚠️ **A zöld kapu nem kiadhatóságot jelent, csak azt, hogy a STATIKUS elvárások
+állnak.** Amit ez a kapu szerkezetileg nem lát: az `npm run fps` (GPU kell hozzá,
+felhőben nem futtatható), a UX-végigjátszás, és a balansz. Ezek a v0.19-es
+QA-kör tételei, és a `TODO.md` tartja számon őket.
+
+Amit a v0.18-as kör lezárt, és MIÉRT nem takarítás volt:
+
+| # | volt | lett |
+|---|---|---|
+| 16. | a `grid.js` és az `rng.js` fejléce nem a `── CÍM ──` idióma szerint indokolt | szakaszcímek, a szöveg érintése nélkül |
+| 20./25./26. | a `VERZIO`, a `PLAN.md` és a valóság háromfelé állt | a terv átszámozva, `kimaradt` sorokkal |
+| 24. | az `INTERFACES.md` `verzio`-példája elavult | `0.18.0` |
+| 29. | a `qa/V0.17_EREDMENY.md`-re nem hivatkozott a terv | hivatkozik |
+| 39./56./57. | lásd fent — mindhárom MAGA volt hibás | javítva, negatív kontrollal |
+
+⚠️ **A 21. elvárásnak új kivétele van: a `kimaradt` sor.** Erre azért volt
+szükség, mert a 21. és a 25. elvárás EGYMÁSNAK FESZÜLT. A fejlesztés a v0.12-ről
+egyenesen a v0.16-ra ugrott — a v0.13–v0.15 szám elégett, a panel-kör már a v0.16
+nevén született, és a kód fejlécei is így hivatkoznak rá. Amíg a három szám
+egyszerűen HIÁNYZOTT a táblázatból, a 25. (hézagmentesség) bukott; amint
+függőben lévő sorként bekerült, a 21. (összefüggő „kész" előtag) bukott.
+Egy nyugdíjazott szám viszont nem függő munka. A `kimaradt` az egyetlen
+becsületes kiút: a szám LÁTSZIK, de nem számít adósságnak.
+
+⚠️ **A kivétel ára, és ezt emberi szem őrzi:** `kimaradt` csak akkor írható egy
+sorba, ha a TARTALMA máshol MEGJELENIK. A v0.13 QA-köre, a v0.14 nyelvei és a
+v0.15 kirakása ezért ott van a v0.19–v0.21 sorokban, változatlanul. Ha valaha
+azért kerül `kimaradt` egy sorba, hogy valódi elmaradást tüntessen el, az nem
+egy elvárást ver ki, hanem az egész verzió-táblázat értelmét.
 
 ---
 

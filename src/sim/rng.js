@@ -1,10 +1,14 @@
 // AGE OF THE CRYSTALS — SEEDELT VÉLETLEN.
 //
+// ── MIÉRT NEM `Math.random()` ────────────────────────────────────────────
 // A `Math.random()` a szimulációban TILOS: gépenként más sorozatot ad, tehát
 // azonnal desyncet okoz. Minden véletlen innen jön, a meccs seedjéből.
 //
+// ── MIÉRT CSAK EGÉSZ-MŰVELETEK ───────────────────────────────────────────
 // A generátorok csak egész-műveletekre (`Math.imul`, eltolás, XOR) épülnek,
-// azok pedig bitre definiáltak — ez a rész eleve determinizmus-biztos.
+// azok pedig bitre definiáltak — ez a rész eleve determinizmus-biztos. A
+// lebegőpontos `Math.sin/pow` alapú „olcsóbb" hash-ek pont ezért tiltottak a
+// `sim/` alatt: a motorok utolsó bitje eltérhet.
 // (A minta a TELEPESEK `src/core/rng.js`-éből származik, ott már bizonyított.)
 
 /**

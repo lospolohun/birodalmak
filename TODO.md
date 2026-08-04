@@ -1,9 +1,14 @@
 # TODO — AGE OF THE CRYSTALS
 
-Állapot: **v0.17** (`cb814b0` + a 2026-08-04-i felhős kör). A helyzetkép és a
+Állapot: **v0.18.0** (a 2026-08-04-i felhős kör két menete). A helyzetkép és a
 MIÉRT-ek az [`ATADO.md`](ATADO.md)-ben, a mérések a
 [`qa/V0.17_EREDMENY.md`](qa/V0.17_EREDMENY.md)-ben; ez a lista csak azt mondja
 meg, **mit kell csinálni és milyen sorrendben**.
+
+⚠️ **A verzió-számozás átrendeződött.** A `PLAN.md` funkciónként osztotta ki a
+számokat, a fejlesztés viszont körönként haladt, és a v0.12-ről a v0.16-ra
+ugrott. A v0.13–v0.15 ezért **nyugdíjazott szám** (`kimaradt`), a tartalmuk
+hátrébb került: **QA-kör → v0.19, nyelvek → v0.20, kirakás → v0.21.**
 
 Jelölés: `[ ]` nyitott · `[~]` félkész, van kód · `[x]` kész
 Sáv: **SIM** = `src/sim/` (determinizmus-szabály!) · **UI** = `src/ui/` ·
@@ -43,20 +48,16 @@ Sáv: **SIM** = `src/sim/` (determinizmus-szabály!) · **UI** = `src/ui/` ·
       lejátszott meccs a betöltés után **futóként támadt fel**.
 
 ### [x] SIM · A `VERZIO` végre igazat mond
-`src/core/config.js` → `VERZIO` `'0.10.1'` → **`'0.17'`**. A konstans a v0.10/1
-óta nem lett léptetve, közben a fán rajta van a v0.11–v0.17 — vagyis a
+`src/core/config.js` → `VERZIO` `'0.10.1'` → **`'0.18.0'`**. A konstans a v0.10/1
+óta nem lett léptetve, közben a fán rajta van a v0.11–v0.18 — vagyis a
 `CLAUDE.md` szerinti „mérvadó verzió" hét körön át hazudott. A menü alcíme, a
 HUD sávja, a `__aoc.verzio` és az FPS-szonda fejléce mind ebből olvas.
 
-- [ ] **KÖVETKEZMÉNY, AMI MÉG NYITVA VAN:** az `INTERFACES.md` `verzio:
-      '0.10.1'` példasora most eltér, tehát a kiadás-ellenőrző 24. (lágy)
-      elvárása sárgára vált. Egy sor — de az `INTERFACES.md` ebben a körben más
-      agent sávja volt. **ellenőrizendő**, hogy időközben nem írta-e át valaki.
-- [ ] **DÖNTÉS KELL:** a párhuzamos képzés-sáv a saját fejlécében már
-      **`v0.18`**-nak nevezi a munkáját (`kepzes.js`, `parancsok.js` →
-      `kepzes_torles`). A `VERZIO` viszont most `'0.17'`. Vagy a
-      fejléc-jelölések mennek vissza v0.17-re, vagy a `VERZIO` megy tovább
-      v0.18-ra — **de csendben ne maradjon így.**
+- [x] Az `INTERFACES.md` `verzio:` példasora `'0.18.0'` — a 24. elvárás zöld.
+- [x] **A v0.17/v0.18 névütközés eldőlve: `0.18.0`.** A szonda 14. vizsgálata a
+      v0.17 (a meccs vége), a 15. a v0.18 (sor-törlés + korszak-gát); a `VERZIO`
+      a legutóbb elkészült kört jelöli. A `kepzes.js` és a `parancsok.js`
+      fejléc-jelölése így helyes, nem kell visszaírni.
 
 ### [~] RND · A látvány-sávok félbehagyott hibái
 A háromból kettő lezárva.
@@ -226,16 +227,19 @@ hétszer égett meg zöld kapu melletti halott rendszeren.
 ## P2 — a terv többi része
 
 - [ ] **v0.10/2 kampány** — el sem kezdődött.
-- [ ] **v0.14 magyar + angol** — el sem kezdődött. A UI most csupa magyar
-      szöveg; a panelek szövegei egy helyre gyűjtendők.
-- [~] **v0.15 SkyNet deploy.** A `vite.config.js` `base`-e `'./'` (relatív), és
-      a fejléce ma már részletesen megindokolja, miért nem `/aotc/`: az
+- [ ] **v0.19 QA-kör** (volt v0.13) — a STATIKUS fele megvan (`npm run kiadas`,
+      61/61), a mérő fele NEM: FPS-mérés minden lépcsőn, UX-végigjátszás,
+      balansz-átnézés. ⚠️ Az FPS-hez GPU kell, tehát ez az iMac dolga.
+- [ ] **v0.20 magyar + angol** (volt v0.14) — el sem kezdődött. A UI most csupa
+      magyar szöveg; a panelek szövegei egy helyre gyűjtendők.
+- [x] **v0.21 SkyNet deploy** (volt v0.15) — **a `base`-kérdés LEZÁRVA.**
+      A `vite.config.js` `base`-e `'./'` (relatív), a `PLAN.md` `DÖNTÉS:` sora
+      ezt rögzíti, és a kiadás-ellenőrző 57. elvárása (ami maga is hibás volt:
+      akkor is sárgázott, ha a két oldal már egyetértett) zöld. Az érv: az
       abszolút `base` egyetlen konkrét URL-hez kötné a buildet, holott az
       adat-URI-s favicon és a „nincs képfájl, nincs külső betűtípus" ígéret épp
-      azt mondja ki, hogy a `dist/` bárhová másolható. ⚠️ **ellenőrizendő:** a
-      `vite.config.js`, a `PLAN.md` és a `kiadas_ellenorzo.mjs` mind mozgott a
-      kör végén — valószínűleg épp ez az ellentmondás (az 57. sárga) zárult le.
-      **Futtasd le a `npm run kiadas`-t, mielőtt bármit állítasz.**
+      azt mondja ki, hogy a `dist/` bárhová másolható.
+      ⚠️ A deploy-LÁNC (a kirakás maga) ettől még nincs meg — az a v0.21.
 - [ ] **v0.9/2b vége:** az egyedi egység saját alakja megvan (alabárdos bajnok,
       civenként példány-adatból változó), de a NYOLC NÉP külön modellje nincs.
 - [x] **Balansz: Hegyi bányász vs Folyami kereskedő.** Tükör-kontrollal

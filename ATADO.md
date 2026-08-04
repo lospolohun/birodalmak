@@ -4,7 +4,7 @@
 > vissza a felhőbe; **ez a felhőből szól a következőnek**. A 0., az 5. és a
 > **6. pont** a lényeg — a 6. nélkül ugyanabba a falba futsz, amibe ma én.
 
-- **Verzió:** `src/core/config.js` → `VERZIO` = **`'0.17'`** (a `package.json`
+- **Verzió:** `src/core/config.js` → `VERZIO` = **`'0.18.0'`** (a `package.json`
   verziója NEM ez, és soha nem is volt az)
 - **Ág:** `claude/age-of-crystals-w73aoj`
 - **Kiindulási commit:** `cb814b0` — „v0.17 — a meccsnek VÉGE LEHET, és a kapu
@@ -168,8 +168,14 @@ kész meccs mentése   0x472a9c23 → betöltve 0x472a9c23
   riasztást, és nem töri meg a „nincs képfájl" ígéretet.
 - **`bevitel.celPont()` publikus**; a `_celPont()` `@deprecated` átirányítás
   maradt, hogy a régi hívások ne törjenek.
-- **`VERZIO` `'0.10.1'` → `'0.17'`.** A konstans a v0.10/1 óta nem lett
+- **`VERZIO` `'0.10.1'` → `'0.18.0'`.** A konstans a v0.10/1 óta nem lett
   léptetve, tehát a `CLAUDE.md` szerinti „mérvadó verzió" hét körön át hazudott.
+- **A verzió-számozás átrendezve.** A v0.13–v0.15 **nyugdíjazott szám**: a
+  fejlesztés a v0.12-ről a v0.16-ra ugrott, a panel-kör már annak a nevén
+  született. A tartalmuk hátrébb került — QA-kör → v0.19, nyelvek → v0.20,
+  kirakás → v0.21 —, és a `PLAN.md` `kimaradt` sorral jelöli a három számot.
+  ⚠️ A kiadás-ellenőrző 21. elvárása ezért kapott `kimaradt`-kivételt: e nélkül
+  a 21. és a 25. (hézagmentesség) egymásnak feszült.
 
 ---
 
@@ -365,14 +371,14 @@ Amit ezekből olvasni lehetett, és amit **ELLENŐRIZNED KELL**:
    billentyűn túl egérrel is működne.
 3. **Képzési sor törlése bekerül a simbe** (`kepzes.js` + `parancsok.js`
    `kepzes_torles`), **visszatérítés NÉLKÜL** — az érték a népesség- és
-   sor-hely felszabadítása, nem a nyersanyag. ⚠️ **Az az ág a saját fejlécében
-   `v0.18`-nak nevezi magát**, miközben a `VERZIO` most `'0.17'`. A kettőt
-   össze kell húzni: vagy a fejléc-jelölés lesz v0.17, vagy a `VERZIO` megy
-   tovább v0.18-ra. **Ez döntés, ne csendben old meg.**
-4. **A `PLAN.md`, a `vite.config.js` és a `kiadas_ellenorzo.mjs` is mozgott** —
-   valószínűleg a base/`/aotc/` ellentmondás (az 57. sárga) körül. **Futtasd le
-   a `npm run kiadas`-t**, mielőtt bármit állítasz a sárgák számáról: a
-   `TODO.md`-ben lévő lista a v0.16-os futásból való.
+   sor-hely felszabadítása, nem a nyersanyag. ✅ **A v0.17/v0.18 névütközés
+   eldőlt: a `VERZIO` `0.18.0`.** A szonda 14. vizsgálata a v0.17 (a meccs
+   vége), a 15. a v0.18 — a `VERZIO` a legutóbb elkészült kört jelöli, tehát a
+   `kepzes.js`/`parancsok.js` fejléc-jelölése helyes.
+4. ✅ **A kiadás-kapu ELŐSZÖR teljesen zöld: 61/61, nulla figyelmeztetés.**
+   A `base` relatív (`'./'`), a `PLAN.md` `DÖNTÉS:` sora rögzíti. ⚠️ Ez STATIKUS
+   kapu: az FPS-t, a UX-végigjátszást és a balanszt szerkezetileg nem látja —
+   azok a v0.19-es QA-kör tételei, és GPU-s gép kell hozzájuk.
 
 **És a legfontosabb: futtasd le újra a `npm run det`-et a teljes, összeállt
 fán.** Az én 14/14-em a `cb814b0`-ra vonatkozik, plusz a `VERZIO` egysoros

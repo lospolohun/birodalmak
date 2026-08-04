@@ -181,7 +181,7 @@ window.__aoc = {
   reteg(nev, be),                  // 'terep'|'props'|'egysegek'|'viz'|'ui' ki/be
   meres(masodperc) -> Promise<{fps, kepkocka, atlagMs, p95Ms, simMs, renderMs, haromszog, rajzhivas}>,
   simHash(),                       // sim.allapotHash()
-  verzio: '0.10.1',                // MINDIG a src/core/config.js VERZIO-ja
+  verzio: '0.18.0',                // MINDIG a src/core/config.js VERZIO-ja
 
   // ── v0.2 ────────────────────────────────────────────────────────────
   kijeloles(),                     // a kijelölt indexek MÁSOLATA
@@ -302,15 +302,16 @@ bevitel.epuletKereso           // ⬅ EZT A RENDER-SÁV ÁLLÍTJA BE, lásd alá
 kattintás-úton). Olvasd ki (`p.x`, `p.y`), ne tedd el — a következő hívás
 felülírja.
 
-### Épület-kijelölés: mi kész, és mi hiányzik még
+### Épület-kijelölés (v0.18 óta TELJES)
 
-- **kész (UI):** a `kijeloltEpulet` mező, a beállítás/törlés útja, és a `V`
-  billentyű, ami a kurzorhoz legközelebbi saját épületet választja ki. A
-  `panel_kijeloles.js` épület-nézete ebből él, és MOST is megjelenik.
-- **hiányzik (RND):** a 3D-s épület-kattintás — sugárvetés az épület-példány-
-  hálókra. Ez a `src/render/` sávja (`gazdasag3d.js` / `epulet_formak.js` tudja,
-  hol állnak a példányok), a `bevitel.js` pedig szándékosan nem ismeri a
-  `three`-t. A becsatlakozási pont EGY sor, a render-oldalról:
+- **UI:** a `kijeloltEpulet`, a beállítás/törlés útja, és a `V` billentyű, ami a
+  kurzorhoz legközelebbi saját épületet választja ki.
+- **RND:** a 3D-s épület-kattintás megvan — `gazdasag3d.js` → `epuletTalalat()`,
+  amit a `bevitel.js` konstruktora ALAPÉRTELMEZÉSBEN beköt az `epuletKereso`-be.
+
+⚠️ **A tárolás a `kijeloles.epulet`**, a `bevitel.kijeloltEpulet` pedig getter/
+setter fölötte. Egy igazság, két név — ezért kel életre tőle a `jeloles_kontur.js`
+alapterület-kerete is. Ha új olvasót írsz, mindegy, melyiket kérdezed.
 
 ```js
 // A visszaadott szám ÉPÜLET-INDEX a sim.epuletek-be, vagy -1, ha ott nincs
@@ -321,8 +322,16 @@ bevitel.epuletKereso = (kepX, kepY, szel, mag, kamera) => epuletIndexVagyMinusz1
 ```
 
 ⚠️ A kereső **nem írhat sim-állapotot**, és nem a látvány-hálóból kell
-válaszolnia, ha az LOD-ol: ugyanaz a csapda, mint a `talajPont()`-nál (a
-terep-hálóra metszés zoomfüggő célpontot adna).
+válaszolnia: az `epuletTalalat()` ezért sugár × SIM-IGAZSÁG dobozt metsz
+(`EP_MERET` alapterület + magasság-keret), nem `Raycaster`-t a példány-hálókra.
+Az épülő ház példány-mátrixa a készültséggel van **lelapítva**, tehát a hálóra
+metszés a félkész laktanyát alig találná el, holott az állványa teljes
+magasságban ott áll — ugyanaz a csapda, mint a `talajPont()`-nál.
+
+⚠️ **Nyitott, és nem látvány-kérdés:** a kereső ELLENSÉGES épületet is visszaad,
+a `panel_kijeloles_adat.js` `_epulet()`-je pedig csapatfüggetlenül kiírja a
+képzési sort és a kutatást. A v0.8 lockstepben ez az ellenfél termelésének
+kiszivárgása. A javítás helye a panel adatrétege, nem a kereső.
 
 ## Ikonok (`src/ui/ikonok.js` — EGY gazdája van)
 

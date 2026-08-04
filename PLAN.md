@@ -18,12 +18,31 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **kész** — lásd alább |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | **kész** — lásd alább |
 | v0.10 | Térkép-presetek, kampány | v0.10/1 **kész** — lásd alább |
-| v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
-| v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
-| v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
-| v0.14 | **Nyelvek: magyar + angol** — teljes fordítás, nyelvválasztó a menüben | |
-| v0.15 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build (relatív `base`) | |
+| v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | **kész** (`npm run menu`) |
+| v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | **kész** (`npm run hang`) |
+| v0.13 | — | **kimaradt** (a számozás ugrott, lásd alább) |
+| v0.14 | — | **kimaradt** (a számozás ugrott, lásd alább) |
+| v0.15 | — | **kimaradt** (a számozás ugrott, lásd alább) |
+| v0.16 | **A játékréteg:** nyolc UI-panel, ikon-készlet, nyolc látvány-sáv, terep-paletta | **kész** — lásd alább |
+| v0.17 | **A meccs vége:** győzelmi feltétel, feladás, a vég utáni parancsok elutasítása | **kész** (`qa/V0.17_EREDMENY.md`) |
+| v0.18 | Sor-törlés, korszak-gát az építésnél, épület-kijelölés, törmelék-látvány | **kész** — lásd alább |
+| v0.19 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | a statikus kapu megvan (`npm run kiadas`), az FPS/UX-kör NEM |
+| v0.20 | **Nyelvek: magyar + angol** — teljes fordítás, nyelvválasztó a menüben | |
+| v0.21 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |
 | v1.0 | Kiadási kapu, PWA | |
+
+⚠️ **A v0.13–v0.15 NYUGDÍJAZOTT SZÁM, nem elmaradt munka.** A terv funkciónként
+osztotta ki a számokat (v0.13 QA-kör, v0.14 nyelvek, v0.15 kirakás), a fejlesztés
+viszont körönként haladt, és a v0.12-ről egyenesen a v0.16-ra ugrott — a panel-kör
+már annak a számnak a nevén született meg, a kód fejlécei is így hivatkoznak rá
+(„a v0.15-ig ez a fájl MAGA volt a HUD"). A három szám tehát elégett; a
+TARTALMUK hátrébb került (v0.19–v0.21), változatlanul.
+
+⚠️ A kiadás-kapu 21. elvárása („a kész verziók összefüggő előtagot alkotnak") a
+`kimaradt` sorokat ÁTUGORJA. Az elvárás célja az, hogy elkapja, ha kész munka
+előz meg függőben lévőt — egy nyugdíjazott szám viszont nem függő munka. Ha a
+kivétel bármikor arra szolgálna, hogy valódi elmaradást tüntessünk el, az a
+kaput üresíti ki: `kimaradt` csak akkor írható, ha a tartalom máshol MEGJELENIK.
 
 ## A v0.4 állása
 
@@ -664,7 +683,81 @@ A négy új gát mind ki lett próbálva szabotázzsal: minden preset a nyílt m
 állítva 6/6 → 1/6 ujjlenyomat; `folyoSzeles: 0` → 196 → 17 vizes sor;
 `gazloDb: 0` → 4 → 1 vízblokk; a nyílt mező amplitúdója 5.0 → 5.2 → elmozdulás.
 
-## A záró lépcsők (v0.11–v0.13)
+## A v0.11 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.11/1 | menü-állapotgép (`ui/menu_adat.js`) | **kész** |
+| v0.11/2 | menü-felület, civ-választó bekötése (`ui/menu.js`) | **kész** |
+
+Kapu: `npm run menu`. A menü-adatréteg szándékosan külön fájl a felülettől —
+az állapotgép így node-ban szondázható, DOM nélkül. Ugyanaz a szétvágás, mint a
+panelek `*_adat.js` / `*.js` párjainál.
+
+## A v0.12 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.12/1 | hang-mag és katalógus (`audio/hang.js`, `audio/hang_katalogus.js`) | **kész** |
+| v0.12/2 | sim-esemény → hang híd (`ui/hang_hid.js`) | **kész** |
+
+Kapu: `npm run hang`. ⚠️ A fenti kikötés — **a hang SOHA nem szólhat bele a
+simbe** — nem történelem, hanem élő szabály: a híd a sim esemény-naplóját
+OLVASSA és eldobja. Egy „mikor szólt utoljára" időbélyeg a sim állapotában
+azonnali desync lenne a v0.8-ban. A hangnak saját órája van.
+
+## A v0.16 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.16/1 | panel-szerződés, ikon-készlet (`ui/ikonok.js`), a HUD szétvágása | **kész** |
+| v0.16/2 | nyolc UI-panel adat+felület párban, mind saját szondával | **kész** |
+| v0.16/3 | nyolc látvány-sáv, terep-paletta, partvonal, közeli részletesség | **kész** |
+
+Kapuk: `npm run p:epites | p:kijeloles | p:kepzes | p:tech | p:uzenetek |
+p:statisztika | p:minimap`. Ez a kör tette a motorból JÁTÉKOT: a v0.15-ig minden
+építés és képzés rejtett billentyű volt (`B`, `N`, `L`, `C`), a `hud.js` pedig
+maga szedte az adatot és formázott is. Minden panel `*_adat.js` (node-ban
+szondázható, DOM nélkül) és `*.js` (felület) párra bomlik.
+
+## A v0.18 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.18/1 | képzési sor törlése (`kepzes_torles`) | **kész** — visszatérítés NÉLKÜL |
+| v0.18/2 | korszak-gát az építésnél | **kész a simben, NINCS ÉLESÍTVE** |
+| v0.18/3 | épület-kijelölés 3D-s kattintással | **kész** |
+| v0.18/4 | törmelék: süllyedés és színtér | **kész** |
+
+**A sor-törlés nem térít vissza.** A v0.5 szakasza ezt még lehetetlennek írta le,
+és az érv fele ma is áll — de nem a nullszaldós rendelés–törlés kör a veszély,
+hanem hogy létrejönne egy `keszlet += …` ág, ami a levonást SORBAÁLLÁSKOR, a
+visszatérítést TÖRLÉSKOR számolná újra. Ma bitre egyeznek; az első technológia
+vagy korszak-bónusz, ami az egység árához nyúl, csendben nyersanyag-gyárat
+csinálna belőle (rendelj olcsón, töröld drágán). Kivédeni csak sor-elemenként
+eltett kifizetett árral lehetne — új tömb a hashben és a mentésben. Az ár tehát
+ugyanúgy vész el, mint a félbehagyott épületé; a funkció értéke a **népesség- és
+sor-hely** azonnali felszabadítása. A fej törlésekor a mögötte álló a TELJES
+idővel indul, különben olcsó lándzsás + törlés = félidős lovag.
+
+⚠️ **A korszak-gát kész, de az élő tábla csupa nulla.** Nem félkész munka, hanem
+mért döntés: élesítve nem visszafogja a gépet, hanem megszünteti ellenfélként —
+16 000 tick, azonos seed mellett a nehéz gép álló épülete 13 → 4, az élő munkása
+12 → 0, és a saját központját is elveszti. Az ok visszamutat a nyitott listára: a
+gép egyetlen korszakot sem vált, tehát a kapu sosem nyílik ki előtte, az `ai.js`
+`_buildOrder`-e pedig az első meg nem épülő tételnél `return`-öl, így beragad.
+**A szonda 15. köre viszont BEKAPCSOLVA járatja a saját sim-jén** (27/27
+elutasítás, A/B kontrollal) — a kód a kapun belül van, csak a világon nincs
+bekapcsolva. Az élesítés három előfeltétele: (1) a gép tudjon korszakot váltani,
+(2) a `_buildOrder` `continue`-oljon a tiltott tételen, ne `return`-öljön,
+(3) a `panel_epites_adat.js` vegye át a sim tábláját, különben a gomb engedi,
+amit a sim eldob.
+
+## A záró lépcsők (v0.11–v0.13 kész, v0.19–v0.20 hátra)
+
+⚠️ Az alábbi három (v0.11 menü, v0.12 hang, v0.13 QA-kör) **elkészült** — a
+szövegük megmarad, mert a MIÉRT-et magyarázza, és a v0.12 hang-szabálya
+(„a hang SOHA nem szólhat bele a simbe") továbbra is élő kikötés, nem történelem.
 
 **v0.11 — főmenü.** A minta a TELEPESEK főmenüje. Amíg nincs menü, a játék
 minden indításnál ugyanabba az állapotba esik, és a seed, a pályaméret meg a
@@ -686,7 +779,7 @@ determinizmus-kör, FPS-mérés minden lépcsőn, balansz-átnézés (a v0.9 nyo
 civje), UX-végigjátszás és hibalista. A `qa/` mappa eddigi jelentései ennek az
 előfutárai.
 
-**v0.14 — magyar + angol.** Teljes fordítás, nyelvválasztó a főmenüben (ezért
+**v0.19 — magyar + angol.** Teljes fordítás, nyelvválasztó a főmenüben (ezért
 jön a menü UTÁN). A szerkezet a TELEPESEK i18n-jéből átvehető.
 
 ⚠️ **A KÓD magyar marad — a SZÖVEG lesz kétnyelvű.** Ez a kettő nem ugyanaz, és
@@ -694,7 +787,7 @@ a keverésük itt konkrét munkát jelent: a `src/sim/` alatt MA is vannak
 megjelenítendő feliratok — `ALAKZAT_NEV`, `ALLAS_NEV`, `NYERS_NEV`,
 `KORSZAK_NEV`, `EPULET_NEV`, `TAMADAS_NEV`, `PANCEL_NEV`. Ezek magyar
 szövegek egy olyan rétegben, aminek semmilyen felhasználói szövegről nem
-szabadna tudnia. A v0.14 első lépése ezeket KULCSOKKÁ alakítani (`'alakzat.ek'`),
+szabadna tudnia. A v0.19 első lépése ezeket KULCSOKKÁ alakítani (`'alakzat.ek'`),
 és a feloldást a UI-ba tenni. A sim így node-ban is ugyanaz marad, és a
 nyelvváltás egyetlen réteget érint.
 
@@ -703,7 +796,7 @@ A második lépés a HUD és a menü: ott ma nyers magyar sztringek vannak
 átmenniük — enélkül a nyelvváltás felerészben megtörténne, ami rosszabb, mint
 ha egynyelvű maradna.
 
-**v0.15 — kirakás SkyNetre.** A cél `https://skynet.lospolo.hu/aotc`.
+**v0.20 — kirakás SkyNetre.** A cél `https://skynet.lospolo.hu/aotc`.
 
 A build STATIKUS (`vite build` → `dist/`), tehát a SkyNet PHP-s kiszolgálója
 tökéletesen elég hozzá — nem kell futó Node-processz.
@@ -737,7 +830,7 @@ bekerül, a `vite.config.js` fejlécét és ezt a szakaszt EGYÜTT kell átírni
 ⚠️ **A v0.8 relay-szerver NEM fér el itt.** A netcode külön futó Node-processzt
 igényel (lásd „Őszinte kockázatok"), a SkyNet viszont PHP-t szolgál ki. A
 kirakott build tehát EGYJÁTÉKOS marad, amíg a relay nem kap saját helyet (VPS
-vagy állandó portot adó szolgáltatás). Ezt a v0.14-nek nem kell megoldania, de
+vagy állandó portot adó szolgáltatás). Ezt a v0.19-nek nem kell megoldania, de
 tudni kell róla, hogy ne az élesben derüljön ki.
 
 ## Miért ebben a sorrendben

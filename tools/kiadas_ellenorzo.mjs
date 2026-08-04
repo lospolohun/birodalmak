@@ -683,9 +683,19 @@ elvar('a VERZIO és a PLAN.md utolsó „kész" verziója egyezik', () => {
 elvar('a kész verziók összefüggő előtagot alkotnak a PLAN.md-ben', () => {
   // Egy „kész" sor egy nem-kész UTÁN azt jelenti, hogy a terv sorrendje és a
   // munka sorrendje elvált — ilyenkor a kiadási kapu nem tudja, mit zár le.
+  //
+  // ⚠️ A `kimaradt` sor KIVÉTEL, és ez nem kiskapu. A v0.18-ig a v0.13–v0.15
+  // egyszerűen HIÁNYZOTT a táblázatból: a fejlesztés a v0.12-ről a v0.16-ra
+  // ugrott, és a három szám elégett. Egy nyugdíjazott szám nem függő munka,
+  // tehát nem is törheti meg az előtagot — a lyuk elhallgatása viszont a 25.
+  // elvárást (hézagmentesség) buktatta, vagyis a két gát egymásnak feszült.
+  // A `kimaradt` az egyetlen becsületes kiút: a szám LÁTSZIK, de nem számít
+  // adósságnak. Ára, hogy a tartalmának máshol meg KELL jelennie — ezt a
+  // `qa/KIADAS_ELVARASOK.md` 21. pontja köti ki, és emberi szem őrzi.
   const h = [];
   let voltNemKesz = null;
   for (const s of PLAN_SOROK) {
+    if (/kimaradt/.test(s.allapot)) continue;
     const kesz = /kész/.test(s.allapot);
     if (!kesz && !voltNemKesz) voltNemKesz = s.verzio;
     if (kesz && voltNemKesz) h.push(s.verzio + ' kész, pedig ' + voltNemKesz + ' még nem az');
