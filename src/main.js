@@ -49,7 +49,9 @@ class Jatek {
     this.sim.szondaFelallas(CEL_EGYSEG);
 
     this.mag = new Mag3D(vaszon);
-    this.kamera = new Kamera3D(vaszon, this.sim);
+    // A `sajatCsapat` nem díszítés: ebből tudja a kamera, MELYIK központhoz
+    // nézzen induláskor. A pálya közepe a v0.7-es köddel felderítetlen.
+    this.kamera = new Kamera3D(vaszon, this.sim, { sajatCsapat: 0 });
     // A LOD és a látómező-vágás MINDEN rétegnek kell — enélkül a terep, a
     // díszlet és a figurák is teljes felbontáson rajzolódnának, és a mérés
     // értelmetlen lenne. Kétféleképp adjuk át: a `core3d` nyilvántartásába

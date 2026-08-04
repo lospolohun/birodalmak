@@ -7,7 +7,16 @@
 //   WASD / nyilak / képernyőszél   → pásztázás
 //   görgő / +,-                    → zoom
 //   Q,E vagy JOBB-gomb húzás       → forgatás (+ függőleges húzás: dőlés)
-//   szóköz                         → vissza a pálya közepére
+//   szóköz                         → vissza a SAJÁT központhoz
+//
+// ── MIÉRT NEM A PÁLYA KÖZEPE AZ OTTHON ────────────────────────────────────
+// A v0.1-től a v0.6-ig az volt, és jó is volt: köd nélkül a pálya közepén
+// terep, fák és kristályok látszottak. A v0.7/1 hadi köde ezt CSENDBEN
+// játszhatatlanná tette: a saját központ `n*0.22`-nél áll, a pálya közepe
+// felderítetlen, tehát a játék TELJESEN FEKETE KÉPERNYŐVEL indult — 3 %
+// felfedezettséggel, a sereg a képen kívül. Se hibaüzenet, se bukó kapu:
+// a determinizmus-szonda ezt elvből nem látja, mert minden gépen egyforma.
+// Ezért az „otthon" a saját központ, és a szóköz is oda visz vissza.
 //
 // ── MIÉRT NEM SZABAD PARAMÉTER A DŐLÉS ────────────────────────────────────
 // A dőlést a ZOOM-TÁVOLSÁGBÓL számoljuk (közel laposabb, távol madártávlat), a
@@ -33,8 +42,26 @@
 // zárja ki, hogy egy beragadt billentyű elmozdítsa a képet).
 
 import { THREE, feloldVaszon, jegyezdKamera } from './core3d.js';
+import { EPULET } from '../sim/epuletek.js';
 
 const FOK = Math.PI / 180;
+
+/**
+ * A csapat központjának helye, vagy `null`, ha nincs (még nem épült fel, vagy
+ * a hívó olyan simmel jött, aminek nincs épület-táblája). A KÖZPONT azért jó
+ * horgony, mert a felállásból mindig van belőle pontosan egy csapatonként, és
+ * a köd is körülötte nyílik ki elsőnek.
+ */
+function kozpontHelye(sim, csapat) {
+  const ep = sim && sim.epuletek;
+  if (!ep || !ep.db) return null;
+  for (let i = 0; i < ep.db; i++) {
+    if (ep.tipus[i] === EPULET.KOZPONT && ep.csapat[i] === csapat && ep.el(i)) {
+      return { x: ep.x[i], z: ep.y[i] };
+    }
+  }
+  return null;
+}
 
 /** A tartani kívánt VÍZSZINTES látószög. */
 const VIZSZINTES_FOV = 68 * FOK;
@@ -45,7 +72,7 @@ export class Kamera3D {
   /**
    * @param {HTMLCanvasElement|any} vaszon vászon (vagy jelenet/mag — feloldjuk)
    * @param {import('../sim/sim.js').Sim|any} [sim] a pálya méretéhez és a talaj-magassághoz
-   * @param {{tav?:number, forgas?:number, kozep?:boolean}} [opciok]
+   * @param {{tav?:number, forgas?:number, kozep?:boolean, sajatCsapat?:number}} [opciok]
    */
   constructor(vaszon, sim, opciok = {}) {
     this.vaszon = feloldVaszon(vaszon);
@@ -58,10 +85,16 @@ export class Kamera3D {
     this._n = n;
     this.racs = (sim && sim.racs) ? sim.racs : null;
 
-    // cél-állapot (ide tart) és aktuális (itt van)
+    // Az „otthon": ide nézünk induláskor, és ide visz vissza a szóköz. A saját
+    // központ, ha van — pálya-közép csak akkor, ha nincs (lásd a fejlécet).
     const k = n * 0.5;
-    this.celX = k; this.celZ = k; this.celY = 0;
-    this.x = k; this.z = k; this.y = 0;
+    const kp = kozpontHelye(sim, opciok.sajatCsapat ?? 0);
+    this.otthonX = kp ? kp.x : k;
+    this.otthonZ = kp ? kp.z : k;
+
+    // cél-állapot (ide tart) és aktuális (itt van)
+    this.celX = this.otthonX; this.celZ = this.otthonZ; this.celY = 0;
+    this.x = this.otthonX; this.z = this.otthonZ; this.y = 0;
     this.tTav = opciok.tav ?? 70; this.tav = this.tTav;
     this.tForgas = opciok.forgas ?? (-35 * FOK); this.forgas = this.tForgas;
 
@@ -84,7 +117,7 @@ export class Kamera3D {
     this._utolsoIdo = 0;
 
     this._kotesek();
-    if (opciok.kozep !== false) this.kozepre(k, k);
+    if (opciok.kozep !== false) this.kozepre(this.otthonX, this.otthonZ);
     this._alkalmaz();
     this.atmeret();
     // Felírjuk magunkat: a terep- és tájelem-réteg innen veszi a kamerát, ha a
@@ -105,7 +138,7 @@ export class Kamera3D {
       // A szóköz és a nyilak alapból GÖRGETIK az oldalt — a játékvászon fölött
       // ez azt jelenti, hogy a HUD elcsúszik a kamera alól.
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-      if (e.code === 'Space') this.kozepre(this._n * 0.5, this._n * 0.5);
+      if (e.code === 'Space') this.kozepre(this.otthonX, this.otthonZ);
     };
     const fel = (e) => this._billentyuk.delete(e.code);
     // A fókusz elvesztésekor a billentyűk BENT RAGADNAK (a `keyup` már a másik
