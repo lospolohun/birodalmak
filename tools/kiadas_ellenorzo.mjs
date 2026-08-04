@@ -1144,21 +1144,32 @@ elvar('nincs halott fájl a src/ alatt (main.js-ből vagy szondából elérhető
 // ══════════════════════════════════════════════════════════════════════════
 cim('J) BUILD ÉS KIRAKÁS');
 
-elvar('a vite.config.js `base`-e a verzióhoz illik (v0.15: /aotc/)', () => {
-  const vc = forras(join(GYOKER, 'vite.config.js')).kod;
-  const m = /base\s*:\s*'([^']*)'/.exec(vc);
-  const minor = VERZIO ? Number(VERZIO.split('.')[1]) : 0;
-  if (minor >= 15) {
-    if (!m || m[1] !== '/aotc/') {
-      return rossz(['a v0.15-től `base: \'/aotc/\'` kell — a SkyNet alkönyvtárból szolgál ki']);
-    }
-    return jo("base = '/aotc/'");
+elvar('a vite.config.js `base`-e és a PLAN.md kirakási kikötése összeér', () => {
+  // ⚠️ LÁGY, mert KÉT jó megoldás van, és a kettő nem ugyanaz a szöveg. A
+  // `PLAN.md` v0.15-ös szakasza `base: '/aotc/'`-t ír elő; a `vite.config.js`
+  // relatív `'./'`-t használ, ami szintén működik alkönyvtárból — viszont a
+  // kettő ellentmond egymásnak, és a fájl-kommentben szereplő útvonal sem
+  // ugyanaz, mint a tervben. Ez az a fajta eltérés, ami CSAK élesben derül ki
+  // (a `vite preview` gyökérből szolgál ki), tehát ki kell mondani.
+  const vc = forras(join(GYOKER, 'vite.config.js'));
+  const m = /base\s*:\s*'([^']*)'/.exec(vc.kod);
+  const tervUt = (/base:\s*'([^']*)'/.exec(PLAN) || [])[1] || null;
+  const h = [];
+  if (!m) {
+    h.push('a vite.config.js-ben nincs `base`, a PLAN.md viszont ' + tervUt + '-t ír elő');
+  } else if (tervUt && m[1] !== tervUt && m[1] !== './') {
+    h.push("vite.config.js base = '" + m[1] + "', a PLAN.md szerint '" + tervUt + "'");
+  } else if (tervUt && m[1] === './') {
+    h.push("vite.config.js base = './' (relatív), a PLAN.md v0.15-ös kikötése viszont '"
+      + tervUt + "' — a kettő közül csak az egyik lehet a terv");
   }
-  if (m && m[1] !== '/') {
-    return rossz(['a `base` már be van állítva (' + m[1] + '), pedig a kirakás a v0.15 dolga']);
+  // A fájl kommentjében szereplő cél-útvonal is egyezzen a tervvel.
+  const kommentUt = (/`(\/[\w-]+\/)`/.exec(vc.nyers) || [])[1];
+  if (kommentUt && tervUt && kommentUt !== tervUt) {
+    h.push('a vite.config.js kommentje `' + kommentUt + '`-t mond, a PLAN.md `' + tervUt + '`-t');
   }
-  return jo('a v0.15 előtt gyökérből szolgálunk ki — nincs base');
-});
+  return rossz(h);
+}, true);
 
 elvar('a .gitignore kizárja a node_modules-t és a dist-et', () => {
   const gi = olvas('.gitignore');

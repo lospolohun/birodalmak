@@ -122,7 +122,7 @@ const STILUS = `
 .aoc-osszegzes { display: flex; flex-direction: column; gap: 3px; }
 .aoc-osszegzes span { display: flex; justify-content: space-between; gap: 12px; }
 .aoc-osszegzes i { opacity: 0.6; font-style: normal; }
-/* A civ-lap a MEGLÉVŐ `CivValaszto`-t hordja, ami teljes képernyős. A saját
+/* A civ-lap a MEGLÉVŐ CivValaszto-t hordja, ami teljes képernyős. A saját
    sávjaink e fölé kerülnek, és helyet is hagyunk nekik. */
 .aoc-menu .civ-valaszto { padding-top: 64px; padding-bottom: 92px; z-index: 30; }
 .aoc-civ-sav {
