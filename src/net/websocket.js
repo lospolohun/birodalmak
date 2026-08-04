@@ -22,14 +22,22 @@
 // jóindulatára bízott — ugyanaz a tanulság, ami a `Lockstep.indit()`-et
 // kikényszerítette.
 //
-// ── ÚJRACSATLAKOZÁS: MÉG NINCS ────────────────────────────────────────────
-// Ha a kapcsolat elszakad, a meccs itt megáll. Az újracsatlakozás (a mentés
-// átküldése egy visszatérő játékosnak) a v0.8/3 dolga — a `Mentes` réteg már
-// megvan hozzá, a szoba pedig fenntartja a kiesett helyét.
+// ── ÚJRACSATLAKOZÁS (v0.8/3) ──────────────────────────────────────────────
+// A már FUTÓ meccsbe belépő nem `rajt`-ot kap, hanem PILLANATKÉPET — a világ
+// állapota csak a kliensekben létezik, a szerver nem szimulál. Ezért két új
+// horog: a `pillanatkep` (ha tőlünk kérnek egyet egy visszatérőnek) és a
+// `visszater` (ha mi kaptunk egyet).
+//
+// ⚠️ EZ A RÉTEG NEM ISMERI A `Lockstep`-ET. A pillanatkép átlátszó adat: itt
+// csak becsomagoljuk és kicsomagoljuk. Ha ez a réteg belenyúlna, két helyen
+// kellene tudni, mi a világ állapota — és a kettő előbb-utóbb szétcsúszna.
 
-export const KAPCSOLAT = { CSATLAKOZIK: 0, VAR: 1, FUT: 2, BONTVA: 3, HIBA: 4 };
+export const KAPCSOLAT = {
+  CSATLAKOZIK: 0, VAR: 1, FUT: 2, BONTVA: 3, HIBA: 4, VISSZATER: 5,
+};
 export const KAPCSOLAT_NEV = [
   'csatlakozik…', 'vár a többi játékosra', 'fut', 'a kapcsolat megszakadt', 'hiba',
+  'visszatérés — pillanatkép érkezik',
 ];
 
 export class WebSocketSzallitas {
@@ -47,6 +55,10 @@ export class WebSocketSzallitas {
     this._rajt = horgok.rajt;
     this._fogad = horgok.fogad;
     this._valtozas = horgok.valtozas || (() => {});
+    /** ÚJRACSATLAKOZÁS (v0.8/3): pillanatkép adása és fogadása. */
+    this._pillanatkep = horgok.pillanatkep || null;
+    this._visszater = horgok.visszater || null;
+    this._futoMeccs = false;
     this.allapot = KAPCSOLAT.CSATLAKOZIK;
     this.jatekos = -1;
     this.jatekosDb = 0;
@@ -87,7 +99,27 @@ export class WebSocketSzallitas {
       this.jatekos = u.jatekos | 0;
       this.jatekosDb = u.jatekosDb | 0;
       this.seed = u.seed >>> 0;
-      this._allapot(KAPCSOLAT.VAR);
+      // MÁR FUTÓ meccsbe léptünk be: nem rajt jön, hanem pillanatkép. A
+      // gazdának mást kell tennie a kettővel, ezért látnia kell a különbséget.
+      this._futoMeccs = !!u.fut;
+      this._allapot(u.fut ? KAPCSOLAT.VISSZATER : KAPCSOLAT.VAR);
+      return;
+    }
+    if (u.fajta === 'mentes_kell') {
+      // EGY TÁRS VISSZATÉRT, és tőlünk kérnek pillanatképet. A `pillanatkep`
+      // visszahívás a gazdáé — ez a réteg nem ismeri a `Lockstep`-et.
+      if (this._pillanatkep) {
+        const p = this._pillanatkep();
+        if (p) this.kuld({ fajta: 'mentes', kinek: u.kinek | 0, adat: p });
+      }
+      return;
+    }
+    if (u.fajta === 'mentes') {
+      // MEGJÖTT A PILLANATKÉP. Innentől futunk.
+      this._allapot(KAPCSOLAT.FUT);
+      if (this._visszater) this._visszater(u.adat, {
+        jatekos: this.jatekos, jatekosDb: this.jatekosDb, seed: this.seed,
+      });
       return;
     }
     if (u.fajta === 'rajt') {

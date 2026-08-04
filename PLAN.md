@@ -331,7 +331,8 @@ külön „emlékezett épületek" állapotot igényel, ami a v0.11 UI-körébe 
 |---|---|---|
 | v0.8/1 | lockstep mag, hurok-szállítás, desync-detektor | **kész** |
 | v0.8/2 | WebSocket relay (szerver + kliens) | **kész** |
-| v0.8/3 | újracsatlakozás a mentésből, késleltetés-simítás | hátravan |
+| v0.8/3 | újracsatlakozás a mentésből | **kész** |
+| v0.8/4 | késleltetés-simítás (adaptív körhossz) | hátravan |
 
 **A hálózat nem világállapotot küld.** Nem pozíciókat, nem életerőt, nem
 nyersanyagot — egyetlen dolgot: ki mit parancsolt, és melyik körre. Minden gép
@@ -408,6 +409,37 @@ néhány hamis riasztás után senki nem hinne a kapunak.
 Mérve (200 kör, valódi socket, külön folyamatban futó relay): 202 csomag
 mindkét irányban, 21 végrehajtott parancs oldalanként, 198 hash-vizsgálat, a
 két szimuláció **bitre azonos**.
+
+### v0.8/3 — újracsatlakozás pillanatképből
+
+A szerver **nem tud pillanatképet adni**, mert nem szimulál: a világ állapota
+csak a kliensekben létezik. A visszatérő ezért egy **társtól** kapja, a relay
+pedig csak továbbítja — átlátszó csomagként, bele sem nézve. A relay ezzel sem
+lesz okosabb a játékról.
+
+A pillanatképet a `Lockstep` készíti, és **kör határán**: a `Sim` állapota
+pontosan a `kor`-adik kör kezdetén áll, onnan folytatható a hurok. Tick közben
+készített mentésből nem lehetne visszatérni — a visszatérő a kör közepén
+ébredne, és a kör parancsai vagy kimaradnának, vagy másodszor is lefutnának.
+
+⚠️ **A mentésen felül a már elküldött, de még végre nem hajtott csomagok is
+mennek.** A bemenet-késleltetés miatt minden gép két körrel előre küld, tehát a
+visszatérés pillanatában mindenkinek van 1-2 környi csomagja „útban". Azokat a
+visszatérő már nem kaphatja meg a hálózatról (nem volt kapcsolatban, amikor
+kimentek), és a lockstep nélkülük **örökre várna rájuk** — a meccs a
+visszatéréssel állna meg végleg. Ez nem elmélet: a szonda gátját úgy próbáltam
+ki, hogy kivettem őket, és a meccs a 202. körnél beragadt.
+
+A visszatérőnek a **saját** hiányzó csomagjait is el kell küldenie a rés
+köreire — ezt az `indit(kor)` intézi, ugyanaz a függvény, ami a meccs elején
+tölti ki ugyanezt a rést, csak nem a 0. körnél.
+
+A v0.7/2-ben ezt írtuk a mentésről: *„a v0.8 újracsatlakozása a saját
+felfedezett térképét kell visszakapja"*. Ez az a pillanat — a mentés-formátum
+változtatás nélkül elég volt hozzá.
+
+Mérve: a B kliens kiesett a 200. körnél, pillanatképből visszatért, mindkét
+kliens elfutott a 260. körig, és a két szimuláció **bitre azonos**.
 
 ## A záró lépcsők (v0.11–v0.13)
 

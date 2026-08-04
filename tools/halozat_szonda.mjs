@@ -1,4 +1,4 @@
-// AGE OF THE CRYSTALS — HÁLÓZATI SZONDA (v0.8/2).
+// AGE OF THE CRYSTALS — HÁLÓZATI SZONDA (v0.8/2–3).
 //
 // ── MIÉRT NEM A DETERMINIZMUS-SZONDÁBAN VAN ───────────────────────────────
 // A `npm run det` TISZTA: nincs benne port, nincs időzítés, nincs másik
@@ -48,7 +48,7 @@ const cim = (t) => console.log('\n' + t + '\n' + '─'.repeat(78));
 
 const varj = (ms) => new Promise((r) => setTimeout(r, ms));
 
-cim('AGE OF THE CRYSTALS — HÁLÓZATI SZONDA (v0.8/2)');
+cim('AGE OF THE CRYSTALS — HÁLÓZATI SZONDA (v0.8/2–3)');
 
 // ── A RELAY INDÍTÁSA KÜLÖN FOLYAMATBAN ────────────────────────────────────
 // Külön folyamat, nem import: így a vizsgálat pontosan azt futtatja, amit a
@@ -77,20 +77,38 @@ sor('relay', 'fut', 'port ' + PORT + ', külön folyamat');
  * seeddel — a terep abból épül, tehát előbb nem is lehetne.
  */
 function kliens(nev) {
-  const k = { nev, sim: null, ls: null, kesz: false, parancsDb: 0 };
-  k.szallitas = new WebSocketSzallitas('ws://127.0.0.1:' + PORT + '?szoba=szonda', {
-    rajt: ({ jatekos, jatekosDb, seed }) => {
-      k.sim = new Sim({ seed, n: 256, maxEgyseg: 2000 });
-      k.sim.szondaFelallasV06(24);
-      k.ls = new Lockstep(k.sim, {
-        jatekos, jatekosDb, kuld: (u) => k.szallitas.kuld(u),
-      });
-      // INDÍTÁS a bekötés UTÁN — lásd `Lockstep.indit()` fejlécét.
-      k.ls.indit();
-      k.kesz = true;
-    },
-    fogad: (u) => { if (k.ls) k.ls.fogad(u); },
-  });
+  const k = { nev, sim: null, ls: null, kesz: false, parancsDb: 0, visszatert: false };
+  k.kapcsol = () => {
+    k.szallitas = new WebSocketSzallitas('ws://127.0.0.1:' + PORT + '?szoba=szonda', {
+      rajt: ({ jatekos, jatekosDb, seed }) => {
+        k.sim = new Sim({ seed, n: 256, maxEgyseg: 2000 });
+        k.sim.szondaFelallasV06(24);
+        k.ls = new Lockstep(k.sim, {
+          jatekos, jatekosDb, kuld: (u) => k.szallitas.kuld(u),
+        });
+        // INDÍTÁS a bekötés UTÁN — lásd `Lockstep.indit()` fejlécét.
+        k.ls.indit();
+        k.kesz = true;
+      },
+      // ÚJRACSATLAKOZÁS: a világot a pillanatképből kapjuk, nem a seedből
+      // építjük. A `Sim`-et attól még ugyanazzal a seeddel hozzuk létre — a
+      // terep abból következik, és a `betoltes` külön ellenőrzi is, hogy
+      // egyezik-e.
+      visszater: (p, { jatekos, jatekosDb, seed }) => {
+        k.sim = new Sim({ seed, n: 256, maxEgyseg: 2000 });
+        k.ls = new Lockstep(k.sim, {
+          jatekos, jatekosDb, kuld: (u) => k.szallitas.kuld(u),
+        });
+        const e = k.ls.visszaallit(p);
+        if (!e.ok) { console.log('  ⛔ VISSZAÁLLÁS BUKOTT: ' + e.hiba); bukas++; }
+        k.kesz = true;
+        k.visszatert = true;
+      },
+      pillanatkep: () => (k.ls ? k.ls.pillanatkep() : null),
+      fogad: (u) => { if (k.ls) k.ls.fogad(u); },
+    });
+  };
+  k.kapcsol();
   return k;
 }
 
@@ -114,8 +132,9 @@ if (A.szallitas.seed !== B.szallitas.seed) {
 // ── A MECCS ───────────────────────────────────────────────────────────────
 // A körökhöz `await`-elünk, mert a csomagok VALÓDI socketen jönnek: a
 // `lep()` csak akkor lép, ha megérkezett mindenki csomagja, addig vár.
+async function meccs(celKor) {
 let lepesNelkul = 0;
-for (let k = 0; k < KOROK * 4 && (A.ls.kor < KOROK || B.ls.kor < KOROK); k++) {
+for (let k = 0; k < celKor * 6 && (A.ls.kor < celKor || B.ls.kor < celKor); k++) {
   // Parancsok: mindkét játékos, körszámból származtatva — determinisztikus
   // „játékos", nem véletlen.
   for (const g of [A, B]) {
@@ -147,6 +166,8 @@ for (let k = 0; k < KOROK * 4 && (A.ls.kor < KOROK || B.ls.kor < KOROK); k++) {
     await varj(0);
   }
 }
+}
+await meccs(KOROK);
 
 const la = A.ls.osszesites(), lb = B.ls.osszesites();
 const ha = A.sim.allapotHash(), hb = B.sim.allapotHash();
@@ -188,6 +209,62 @@ if (la.vegrehajtottParancs === 0 || lb.vegrehajtottParancs === 0) {
 if (la.hashVizsgalat === 0 || lb.hashVizsgalat === 0) {
   console.log('\n  ⛔ A DESYNC-DETEKTOR EGYSZER SEM FUTOTT LE a hálózaton át.');
   bukas++;
+}
+
+// ── ÚJRACSATLAKOZÁS-PRÓBA (v0.8/3) ────────────────────────────────────────
+//
+// A B kliens KIESIK, majd VISSZATÉR. A szerver nem tud pillanatképet adni (nem
+// szimulál), ezért az A klienstől kéri el, és továbbítja. A követelmény:
+//
+//   • a visszatérő SIMJE a pillanatképből álljon vissza (nem a seedből épüljön
+//     újra — az a 0. tick világa lenne);
+//   • a meccs MENJEN TOVÁBB, ne ragadjon be;
+//   • és a végén a két szimuláció megint BITRE azonos legyen.
+//
+// ⚠️ A HARMADIK PONT A LÉNYEG. Egy visszatérés, ami „működik", de a világot
+// egy hajszálnyival máshogy állítja vissza, PONTOSAN olyan, mint egy desync —
+// csak nehezebb észrevenni, mert a kliens szemszögéből minden rendben zajlott.
+{
+  const korElotte = A.ls.kor;
+  B.szallitas.bont();
+  await varj(150);
+
+  B.kesz = false;
+  B.kapcsol();
+  for (let i = 0; i < 200 && !B.kesz; i++) await varj(25);
+
+  sor('újracsatlakozás', B.visszatert ? 'pillanatképből' : 'NEM SIKERÜLT',
+    'kiesés a ' + korElotte + '. körnél, visszatérés a ' + (B.ls ? B.ls.kor : -1) + '.-nél');
+  if (!B.kesz || !B.visszatert) {
+    console.log('\n  ⛔ A VISSZATÉRŐ KLIENS NEM KAPOTT PILLANATKÉPET.');
+    console.log('     A relay a `mentes_kell`-t az élő társnak küldi, az pedig a');
+    console.log('     `mentes`-t a címzettnek. Nézd meg mindkét irányt.');
+    bukas++;
+  } else {
+    // TOVÁBB A MECCSEL. Ha a visszaállás rossz, ez vagy beragad (hiányzó
+    // csomagok), vagy szétcsúszó hash-sel fut tovább — mindkettőt látjuk.
+    await meccs(A.ls.kor + 60);
+    const ua = A.sim.allapotHash(), ub = B.sim.allapotHash();
+    const rla = A.ls.osszesites(), rlb = B.ls.osszesites();
+    sor('visszatérés után', rla.vegrehajtottKor + ' / ' + rlb.vegrehajtottKor + ' kör',
+      'a visszatérő a ' + B.ls.kor + '. körnél tart');
+    sor('hash a folytatás után', '0x' + (ua >>> 0).toString(16).padStart(8, '0')
+      + (ua === ub ? '  =  ' : '  ≠  ') + '0x' + (ub >>> 0).toString(16).padStart(8, '0'));
+    if (A.ls.kor <= korElotte + 5) {
+      console.log('\n  \u26d4 A MECCS BERAGADT A VISSZATÉRÉS UTÁN.');
+      console.log('     A visszatérő a bemenet-késleltetés miatt hiányzó SAJÁT csomagjait');
+      console.log('     nem küldte el (`indit(kor)`), vagy a pillanatképből hiányoztak a');
+      console.log('     társ már elküldött, de még végre nem hajtott csomagjai.');
+      bukas++;
+    }
+    if (ua !== ub) {
+      console.log('\n  \u26d4 A VISSZATÉRŐ MÁS VILÁGBAN FOLYTATTA. A pillanatkép nem állította');
+      console.log('     vissza pontosan az állapotot — ez ugyanaz a hiba-osztály, amit a');
+      console.log('     determinizmus-szonda 10. vizsgálata őriz (mentés → betöltés →');
+      console.log('     folytatás). Ott zöld, itt piros: a KÜLÖNBSÉG a hálózati úton van.');
+      bukas++;
+    }
+  }
 }
 
 // ── HAMISÍTÁS-PRÓBA ───────────────────────────────────────────────────────

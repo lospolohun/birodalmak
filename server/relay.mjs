@@ -71,6 +71,9 @@ class Szoba {
      * nulla, a relay „fut", de semmit nem csinál.
      */
     this.tovabbitott = 0;
+    /** Újracsatlakozás-statisztika (v0.8/3). */
+    this.pillanatkepKeres = 0;
+    this.pillanatkepAtadva = 0;
   }
 
   /** Az első szabad hely, vagy -1 ha tele van. */
@@ -138,13 +141,36 @@ kiszolgalo.on('connection', (kapcsolat, keres) => {
     jatekosDb: szoba.jatekosDb,
     seed: szoba.seed,
     letszam: szoba.letszam,
+    // A MÁR FUTÓ meccsbe belépő nem rajtol, hanem VISSZATÉR — más a dolga.
+    fut: szoba.elindult,
   });
 
-  // BETELT A SZOBA → mehet a rajt. Mindenki egyszerre kapja.
   if (!szoba.elindult && szoba.letszam === szoba.jatekosDb) {
+    // BETELT A SZOBA → mehet a rajt. Mindenki egyszerre kapja.
     szoba.elindult = true;
     console.log(`[relay] ${szobaNev}: INDUL (seed ${szoba.seed})`);
     for (let i = 0; i < szoba.jatekosDb; i++) szoba.kuld(i, { fajta: 'rajt' });
+  } else if (szoba.elindult) {
+    // ── ÚJRACSATLAKOZÁS (v0.8/3) ──────────────────────────────────────
+    //
+    // ⚠️ A SZERVER NEM TUD PILLANATKÉPET ADNI, mert nem szimulál — a világ
+    // állapota csak a kliensekben létezik. Ezért egy TÁRSTÓL kérjük el, és
+    // csak továbbítjuk. A relay ezzel sem lesz okosabb a játékról: az adatot
+    // átlátszó csomagként kezeli, nem nézi meg, mi van benne.
+    //
+    // A társ választása: az ELSŐ élő kapcsolat, növekvő index szerint. Fix
+    // szabály, nem véletlen — így a hibakeresésnél is tudni lehet, ki adta.
+    let ki = -1;
+    for (let i = 0; i < szoba.jatekosDb; i++) {
+      if (i !== hely && szoba.kapcsolatok[i] && szoba.kapcsolatok[i].readyState === 1) { ki = i; break; }
+    }
+    if (ki < 0) {
+      szoba.kuld(hely, { fajta: 'hiba', ok: 'nincs kitől pillanatképet kérni' });
+    } else {
+      console.log(`[relay] ${szobaNev}: a ${hely}. játékos visszatér, pillanatképet a ${ki}. adja`);
+      szoba.kuld(ki, { fajta: 'mentes_kell', kinek: hely });
+      szoba.pillanatkepKeres++;
+    }
   }
 
   kapcsolat.on('message', (nyers) => {
@@ -153,7 +179,22 @@ kiszolgalo.on('connection', (kapcsolat, keres) => {
     // futó meccs is ezen a folyamaton él — egy elemzési hiba ott is véget
     // vetne a játéknak.
     try { u = JSON.parse(nyers.toString()); } catch (h) { return; }
-    if (!u || u.fajta !== 'kor') return;
+    if (!u || !u.fajta) return;
+
+    if (u.fajta === 'mentes') {
+      // PILLANATKÉP EGY VISSZATÉRŐNEK. Címzett szerint megy, nem szórásban —
+      // a többieket nem érdekli, és nagy csomag (a v0.7/2 mentése).
+      const cimzett = u.kinek | 0;
+      if (cimzett >= 0 && cimzett < szoba.jatekosDb) {
+        szoba.kuld(cimzett, u);
+        szoba.pillanatkepAtadva++;
+        console.log(`[relay] ${szobaNev}: pillanatkép átadva a ${cimzett}. játékosnak`
+          + ` (${(JSON.stringify(u).length / 1024) | 0} kB)`);
+      }
+      return;
+    }
+
+    if (u.fajta !== 'kor') return;
     // A JÁTÉKOS-AZONOSÍTÓ BÉLYEGZÉSE — lásd a fejlécet. Amit a kliens írt
     // bele, azt eldobjuk.
     u.jatekos = hely;

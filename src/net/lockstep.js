@@ -53,6 +53,7 @@
 // hogy a detektor kiszúrja.
 
 import { KESLELTETES } from '../sim/sim.js';
+import { mentes, betoltes } from '../sim/mentes.js';
 
 /** Hány tick egy kör. 20 Hz-en 4 tick = 5 kör másodpercenként. */
 export const KOR_TICK = 4;
@@ -137,6 +138,8 @@ export class Lockstep {
      * végig azonnali hálózaton futott, tehát a `VAR` ág ki sem próbáltatott.
      */
     this.varakozasDb = 0;
+    /** Hányszor álltunk vissza pillanatképből (v0.8/3). */
+    this.ujracsatlakozasDb = 0;
     /** A desync körszáma, vagy -1. */
     this.desyncKor = -1;
     this.desyncMienk = 0;
@@ -161,13 +164,77 @@ export class Lockstep {
    * NE KÜLDJÖN, MIELŐTT A HÍVÓ BEFEJEZTE A BEKÖTÉSÉT. A külön `indit()` teszi
    * ezt a sorrendet kimondottá ahelyett, hogy a hívó jóindulatára bízná.
    */
-  indit() {
+  indit(kezdoKor = 0) {
     if (this._elindult) return;
     this._elindult = true;
-    // A 0. kör végrehajtásához a 0. kör csomagjai kellenek — azokat viszont a
-    // `KESLELTETES_KOR`-ral előre küldjük, tehát az első köröknek nincs
-    // valódi feladójuk. Ezek az üres csomagok töltik ki a rést.
-    for (let k = 0; k < KESLELTETES_KOR; k++) this._csomagKuld(k);
+    // A `kezdoKor`. kör végrehajtásához az arra a körre szóló csomagok
+    // kellenek — azokat viszont a `KESLELTETES_KOR`-ral előre küldjük, tehát
+    // az első köröknek nincs valódi feladójuk. Ezek az üres csomagok töltik ki
+    // a rést. ÚJRACSATLAKOZÁSNÁL ugyanez a rés keletkezik, csak nem a 0., hanem
+    // a visszatérés körénél — ezért paraméteres a kezdet.
+    for (let k = 0; k < KESLELTETES_KOR; k++) this._csomagKuld(kezdoKor + k);
+  }
+
+  /**
+   * PILLANATKÉP egy ÚJRACSATLAKOZÓ JÁTÉKOSNAK (v0.8/3).
+   *
+   * ── MIÉRT PONT ITT LEHET KÉSZÍTENI ─────────────────────────────────────
+   * A `Sim` állapota a `kor`-adik kör KEZDETÉN áll — pontosan azon a határon,
+   * ahonnan a lockstep-hurok folytatható. Tick közben készített mentésből nem
+   * lehetne visszatérni a körökbe: a visszatérő a kör közepén ébredne, és a
+   * kör parancsai vagy kimaradnának, vagy másodszor is lefutnának.
+   *
+   * ── AMIT A MENTÉSEN FELÜL KÜLDÜNK ──────────────────────────────────────
+   * ⚠️ A MÁR ELKÜLDÖTT, DE MÉG VÉGRE NEM HAJTOTT CSOMAGOKAT IS. A bemenet-
+   * késleltetés miatt minden gép `KESLELTETES_KOR` körrel előre küld: a
+   * visszatérés pillanatában tehát mindenkinek van 1-2 környi csomagja
+   * „útban". Azokat a visszatérő már nem kaphatja meg a hálózatról (nem volt
+   * kapcsolatban, amikor kimentek), és a lockstep nélkülük ÖRÖKRE várna rájuk
+   * — a meccs a visszatéréssel állna meg végleg.
+   *
+   * A mentés a v0.7/2 formátuma. Ott vezettük be, hogy „a v0.8 újracsatlakozása
+   * a saját felfedezett térképét kell visszakapja" — ez az a pillanat.
+   */
+  pillanatkep() {
+    const csomagok = [];
+    for (const [k, sor] of this._csomagok) {
+      if (k < this.kor) continue;
+      for (let j = 0; j < this.jatekosDb; j++) {
+        if (sor[j] === null) continue;
+        csomagok.push({ fajta: 'kor', kor: k, jatekos: j, parancsok: sor[j], hashKor: -1, hash: 0 });
+      }
+    }
+    // RÖGZÍTETT SORREND: kör, azon belül játékos. A `Map` beszúrási sorrendje
+    // a hálózat érkezési sorrendjét tükrözi, ami gépenként más — a visszatérő
+    // viszont ugyanazt az állapotot kell kapja, akárki adta a pillanatképet.
+    csomagok.sort((a, b) => (a.kor - b.kor) || (a.jatekos - b.jatekos));
+    return { kor: this.kor, kovetkezoTick: this.sim.tick, mentes: mentes(this.sim), csomagok };
+  }
+
+  /**
+   * VISSZAÁLLÁS egy pillanatképből — az újracsatlakozó oldalán.
+   * @returns {{ok:boolean, hiba?:string}}
+   */
+  visszaallit(p) {
+    if (!p || !p.mentes) return { ok: false, hiba: 'üres pillanatkép' };
+    const e = betoltes(this.sim, p.mentes);
+    if (!e.ok) return e;
+    this.kor = p.kor | 0;
+    this._csomagok.clear();
+    this._hashek.clear();
+    this._sajatHash.clear();
+    this._helyi.length = 0;
+    this.allapot = ALLAPOT.FUT;
+    this._varakozas = 0;
+    // A kapott csomagok UGYANAZON az úton mennek be, mint a hálózatról jövők.
+    for (let i = 0; i < p.csomagok.length; i++) this.fogad(p.csomagok[i]);
+    // ⚠️ A SAJÁT csomagjaink a rés köreire MÉG HIÁNYOZNAK: a pillanatkép a
+    // TÁRSAKÉT hozta el, a mieinket viszont a kiesésünk alatt senki nem küldte
+    // el helyettünk. Az `indit` pontosan ezt a rést tölti ki.
+    this._elindult = false;
+    this.indit(this.kor);
+    this.ujracsatlakozasDb++;
+    return { ok: true };
   }
 
   /**
@@ -339,6 +406,7 @@ export class Lockstep {
       vegrehajtottParancs: this.vegrehajtottParancs,
       hashVizsgalat: this.hashVizsgalat,
       varakozas: this.varakozasDb,
+      ujracsatlakozas: this.ujracsatlakozasDb,
       desyncKor: this.desyncKor,
       desyncJatekos: this.desyncJatekos,
       desyncMienk: this.desyncMienk,
