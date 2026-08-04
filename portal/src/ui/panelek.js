@@ -15,14 +15,17 @@ import { DIMENZIOK, dimenzioDij } from '../sim/dimenziok.js';
 import { TECHNOLOGIAK, tech } from '../sim/kutatas.js';
 import { DOLGOZOK, dolgozoBer } from '../sim/dolgozok.js';
 import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
-import { FAJOK } from '../sim/lenyek.js';
+import { bestiariumot } from './bestiarium.js';
+import * as tarolo from './tarolo.js';
 
 const LAPOK = [
   { kod: 'dimenzio', ikon: '🌀', cim: 'Dimenziók' },
   { kod: 'kutatas', ikon: '🔬', cim: 'Kutatás' },
   { kod: 'dolgozo', ikon: '👷', cim: 'Dolgozók' },
+  { kod: 'bestiarium', ikon: '🐾', cim: 'Bestiárium' },
   { kod: 'statisztika', ikon: '📊', cim: 'Statisztika' },
   { kod: 'naplo', ikon: '📜', cim: 'Napló' },
+  { kod: 'mentes', ikon: '💾', cim: 'Mentés' },
   { kod: 'sugo', ikon: '❓', cim: 'Súgó' },
 ];
 
@@ -82,6 +85,8 @@ export class Panelek {
       case 'dimenzio': return this._dimenziok(p);
       case 'kutatas': return this._kutatas(p);
       case 'dolgozo': return this._dolgozok(p);
+      case 'bestiarium': return bestiariumot(p, this.sim);
+      case 'mentes': return this._mentes(p);
       case 'statisztika': return this._statisztika(p);
       case 'naplo': return this._naplo(p);
       case 'sugo': return this._sugo(p);
@@ -341,6 +346,74 @@ export class Panelek {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  _mentes(p) {
+    const sim = this.sim;
+    be(p, el('h2', null, '💾 Mentés és betöltés'));
+
+    // A mentés a seed + a parancsnapló. Ezt itt ki is mondjuk, mert
+    // magyarázza, miért tart a betöltés néhány másodpercig — enélkül a
+    // folyamatjelző csak lassúságnak látszana.
+    const magy = el('div', 'tetel');
+    magy.innerHTML = '<p>A mentés nem a világ pillanatképe, hanem a <b>seed + a parancsnaplód</b> ' +
+      '(most ' + szam(sim.napló.length) + ' parancs). Betöltéskor a világ újrajátszódik, ' +
+      'ezért néhány másodpercet vesz igénybe — cserébe bitre ugyanaz lesz.</p>';
+    be(p, magy);
+
+    be(p, el('h4', null, 'Mentőhelyek'));
+    for (const h of tarolo.lista()) {
+      const t = el('div', 'tetel');
+      const fej = el('div', 'fej');
+      be(fej, el('b', null, h.nev), el('span', null, h.adat ? `${h.adat.elonezet.nap}. nap` : 'üres'));
+      be(t, fej);
+      if (h.adat) {
+        const e = h.adat.elonezet;
+        be(t, el('div', 'sorok')).lastChild.innerHTML =
+          `pénz <b>${szam(e.penz)}</b> · hírnév <b>${e.hirnev}</b> · kapu <b>${e.kapu}</b> · ` +
+          `${e.fejezet + 1}. fejezet${e.vege ? ' · <b style="color:#ffd257">vége</b>' : ''}`;
+      }
+      const gombok = el('div', 'sorok');
+      if (h.hely !== 'auto') {
+        const m = el('button', 'mini', h.adat ? 'Felülír' : 'Mentés ide');
+        m.onclick = () => {
+          const v = tarolo.ment(sim, h.hely);
+          this.hud.uzen(v.rendben ? `Mentve: ${h.nev}${v.ok ? ' (' + v.ok + ')' : ''}` : 'Nem sikerült menteni: ' + v.ok,
+            v.rendben ? 'jo' : 'baj');
+          this._ora = 1;
+        };
+        be(gombok, m);
+      }
+      if (h.adat) {
+        const b2 = el('button', 'mini', 'Betöltés');
+        b2.onclick = () => {
+          if (confirm('A mostani játszás elveszik, ha nem mentetted el. Betöltöd?')) tarolo.betoltestKer(h.hely);
+        };
+        const tor = el('button', 'mini vesz', 'Törlés');
+        tor.onclick = () => { tarolo.torol(h.hely); this._ora = 1; };
+        be(gombok, b2, tor);
+      }
+      be(t, gombok);
+      be(p, t);
+    }
+
+    be(p, el('h4', null, 'Új játszás'));
+    const uj = el('div', 'tetel');
+    uj.innerHTML = '<p>Minden világ egy seedből nő ki. Ugyanaz a seed ugyanazt a világot adja — ' +
+      'hibajelentéshez ezt írd le. A mostani: <b>' + sim.seed + '</b></p>';
+    const mezo = el('input');
+    mezo.type = 'text';
+    mezo.placeholder = 'seed (üresen: véletlen)';
+    mezo.style.cssText = 'width:100%;margin:6px 0;background:#1a2144;color:#e6ecff;border:1px solid rgba(140,160,230,.25);border-radius:6px;padding:6px;';
+    const indit = el('button', 'mini', 'Új állomás indítása');
+    indit.onclick = () => {
+      if (!confirm('A mostani játszás elveszik, ha nem mentetted el. Új állomást kezdesz?')) return;
+      const sz = (Number(mezo.value) | 0);
+      location.search = sz ? `?seed=${sz}` : '';
+    };
+    be(uj, mezo, indit);
+    be(p, uj);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   _sugo(p) {
     be(p, el('h2', null, '❓ Hogyan működik'));
     const reszek = [
@@ -349,6 +422,7 @@ export class Panelek {
       ['👷 Épület személyzet nélkül félsebességgel megy', 'A piros gyémánt az épület fölött azt jelenti: nincs benne senki. A sárga azt, hogy kevesen vannak, vagy hosszú a sor.'],
       ['⚡ Az áramszünet a legalattomosabb hiba', 'Nem üzenettel jelentkezik, csak minden lassabb lesz. Ha a felső sávban a villám piros, építs energiamagot.'],
       ['🔧 A kapu romlik', 'Minden kapu instabilabb lesz, és a forgalom gyorsítja. A portálkarbantartó + mérnök MINDEN kaput karbantart, tehát egy központi műhely az egész hálózatot tartja. 100 %-nál a kapu összeomlik.'],
+      ['💾 A mentés a naplód', 'A játék automatikusan ment minden nap végén, és három kézi hely is van. A mentés a seedet és a parancsaidat tartalmazza, nem a világ pillanatképét — ezért a betöltés újrajátssza a partit, és ezért lesz bitre ugyanaz.'],
       ['⚖️ A döntéseid maradandók', 'A fejezetek végén választanod kell. A véglegesen lezárt világ soha nem nyílik meg újra — ez nem hiba, hanem a történeted.'],
     ];
     for (const [cim, sz] of reszek) {

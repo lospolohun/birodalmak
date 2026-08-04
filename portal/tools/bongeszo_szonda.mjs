@@ -122,13 +122,45 @@ try {
   else rossz(`az építés nem működött (${elotte} → ${utana})`);
 
   cim('7. PANELEK');
-  for (let i = 1; i <= 6; i++) {
+  const panelDb = await lap.$$eval('#oldal button', (l) => l.length);
+  for (let i = 1; i <= panelDb; i++) {
     await lap.click(`#oldal button:nth-child(${i})`);
     await varj(180);
     const van = await lap.$eval('#panel', (e) => e.classList.contains('nyitva') && e.childElementCount > 0);
     if (van) ok(`panel ${i} megnyílt és van tartalma`); else rossz(`panel ${i} üres`);
     await lap.click(`#oldal button:nth-child(${i})`);
   }
+
+  cim('8. MENTÉS ÉS BETÖLTÉS');
+  // Ez a vizsgálat a v0.2 legfontosabb ígéretét méri: a mentés a seed + a
+  // parancsnapló, tehát a betöltött világnak BITRE ugyanannak kell lennie.
+  // Ha ez elcsúszik, arról a játékos csak órákkal később értesülne.
+  await lap.evaluate(() => { window.PHT.sim.parancs({ fajta: 'padlo', x: 2, y: 2, sz: 3, m: 3 }); });
+  await varj(2500);
+  const elotteAllapot = await lap.evaluate(() => {
+    const s = window.PHT.sim;
+    window.PHT.tarolo.ment(s, 1, 'szonda');
+    return { tick: s.tick, osszeg: s.ellenorzoOsszeg(), nap: s.nap, parancs: s.napló.length };
+  });
+  console.log(`    mentve: ${elotteAllapot.tick}. tick, ${elotteAllapot.parancs} parancs, összeg ${elotteAllapot.osszeg}`);
+  await lap.evaluate(() => window.PHT.tarolo.betoltestKer(1));
+  await lap.waitForLoadState('networkidle');
+  await varj(3500);
+  const utanaAllapot = await lap.evaluate(() => {
+    const s = window.PHT.sim;
+    return { tick: s.tick, osszeg: s.ellenorzoOsszeg(), nap: s.nap };
+  });
+  // A betöltés után a hurok azonnal továbbfut, ezért a tick már nagyobb lehet.
+  // Az összeget a mentés tickjén kell összevetni — a visszajátszó pont addig
+  // megy, ezért a pillanatot a lap belsejéből, újrajátszással ellenőrizzük.
+  const horgony = await lap.evaluate(() => window.PHT.betoltottAllapot);
+  if (!horgony || !horgony.betoltve) rossz('a lap nem betöltésből indult — a mentés-jelző elveszett');
+  else if (horgony.tick !== elotteAllapot.tick) rossz(`a visszajátszás más tickig ért: ${horgony.tick} ≠ ${elotteAllapot.tick}`);
+  else if (horgony.osszeg !== elotteAllapot.osszeg) rossz(`a betöltött világ ELTÉR: ${horgony.osszeg} ≠ ${elotteAllapot.osszeg}`);
+  else ok(`a betöltött világ BITRE azonos a mentettel (${horgony.tick}. tick, összeg ${horgony.osszeg})`);
+  if (utanaAllapot.tick >= elotteAllapot.tick) ok(`és a játék folytatódik (${elotteAllapot.tick} → ${utanaAllapot.tick}. tick)`);
+  else rossz(`a betöltés után nem halad az idő: ${utanaAllapot.tick} < ${elotteAllapot.tick}`);
+  await lap.evaluate(() => window.PHT.tarolo.torol(1));
 
   const utolsoHibak = hibak.slice();
   if (utolsoHibak.length > 0) {

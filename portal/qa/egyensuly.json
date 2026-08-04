@@ -1,0 +1,2452 @@
+{
+ "keszult": "egyensuly.mjs",
+ "tickek": 12000,
+ "napok": 10,
+ "seedek": [
+  31337
+ ],
+ "kezdoPenz": 16000,
+ "maxUtas": 1200,
+ "strategiak": [
+  "nemtorodom",
+  "ovatos",
+  "terjeszkedo",
+  "bevetel_maximalizalo",
+  "olcso",
+  "kiegyensulyozott"
+ ],
+ "futasok": [
+  {
+   "strategia": "nemtorodom",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 1,
+   "fejezetAllapot": "fut",
+   "penzVeg": 24727,
+   "penzMin": 16000,
+   "penzMinNap": 1,
+   "penz5": 20044,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 52.9,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 44.5,
+   "hirnevMin": 41.6,
+   "negativNapok": 0,
+   "csodkozeliNapok": 0,
+   "tavozo": 262,
+   "elegedett": 65,
+   "duhos": 13,
+   "elegedettArany": 0.2480916030534351,
+   "duhosArany": 0.04961832061068702,
+   "utasCsucs": 2,
+   "utasAtlag": 0.35033333333333333,
+   "plafonArany": 0,
+   "aramszunetArany": 0,
+   "kosz": 7,
+   "epuletDb": 2,
+   "dolgozoDb": 0,
+   "nyitottKapu": 1,
+   "osszeomlas": 1,
+   "techek": [],
+   "techDb": 0,
+   "epuletek": [
+    {
+     "kod": "portal",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 263,
+     "bevetel": 8942,
+     "instabilitas": 593
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 8942,
+   "szolgaltatasBevetel": 0,
+   "osszBevetel": 9272,
+   "osszKoltseg": 2250,
+   "hianyok": [
+    [
+     "biztonsag",
+     262
+    ],
+    [
+     "poggyasz",
+     118
+    ],
+    [
+     "vasarlas",
+     101
+    ],
+    [
+     "ehseg",
+     83
+    ],
+    [
+     "pihenes",
+     81
+    ],
+    [
+     "wc",
+     64
+    ],
+    [
+     "info",
+     55
+    ],
+    [
+     "konyv",
+     49
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 16815,
+     "hirnev": 54.4,
+     "utas": 1,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 952,
+     "koltseg": 137
+    },
+    {
+     "nap": 2,
+     "penz": 17630,
+     "hirnev": 53.9,
+     "utas": 1,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 952,
+     "koltseg": 137
+    },
+    {
+     "nap": 3,
+     "penz": 18414,
+     "hirnev": 53.5,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 918,
+     "koltseg": 134
+    },
+    {
+     "nap": 4,
+     "penz": 19229,
+     "hirnev": 53.1,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 952,
+     "koltseg": 137
+    },
+    {
+     "nap": 5,
+     "penz": 20044,
+     "hirnev": 52.9,
+     "utas": 1,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 952,
+     "koltseg": 137
+    },
+    {
+     "nap": 6,
+     "penz": 23028,
+     "hirnev": 52.6,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 3118,
+     "koltseg": 134
+    },
+    {
+     "nap": 7,
+     "penz": 22384,
+     "hirnev": 41.6,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 0,
+     "fejezet": 1,
+     "bevetel": 612,
+     "koltseg": 1256
+    },
+    {
+     "nap": 8,
+     "penz": 22331,
+     "hirnev": 41.6,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 0,
+     "koltseg": 53
+    },
+    {
+     "nap": 9,
+     "penz": 23022,
+     "hirnev": 42.5,
+     "utas": 0,
+     "epulet": 2,
+     "dolgozo": 0,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 816,
+     "koltseg": 125
+    }
+   ]
+  },
+  {
+   "strategia": "ovatos",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 1,
+   "fejezetAllapot": "fut",
+   "penzVeg": 14475,
+   "penzMin": 7737,
+   "penzMinNap": 2,
+   "penz5": 13618,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 74.7,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 88.3,
+   "hirnevMin": 56.8,
+   "negativNapok": 0,
+   "csodkozeliNapok": 0,
+   "tavozo": 316,
+   "elegedett": 316,
+   "duhos": 0,
+   "elegedettArany": 1,
+   "duhosArany": 0,
+   "utasCsucs": 23,
+   "utasAtlag": 16.717166666666667,
+   "plafonArany": 0,
+   "aramszunetArany": 0,
+   "kosz": 0,
+   "epuletDb": 11,
+   "dolgozoDb": 12,
+   "nyitottKapu": 1,
+   "osszeomlas": 0,
+   "techek": [
+    {
+     "kod": "gyors_sorok",
+     "tick": 11581,
+     "nap": 10
+    }
+   ],
+   "techDb": 1,
+   "epuletek": [
+    {
+     "kod": "bolt",
+     "db": 1,
+     "bevetel": 6025,
+     "kiszolgalt": 119,
+     "ar": 780,
+     "megterules": 7.7243589743589745,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "etterem",
+     "db": 1,
+     "bevetel": 4443,
+     "kiszolgalt": 106,
+     "ar": 1000,
+     "megterules": 4.443,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "poggyasz",
+     "db": 1,
+     "bevetel": 2998,
+     "kiszolgalt": 131,
+     "ar": 1200,
+     "megterules": 2.4983333333333335,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "wc",
+     "db": 1,
+     "bevetel": 385,
+     "kiszolgalt": 75,
+     "ar": 380,
+     "megterules": 1.013157894736842,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "portal",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "biztonsag",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 329,
+     "ar": 950,
+     "megterules": 0,
+     "sorMax": 1,
+     "sorAtlag": 0.008403361344537815
+    },
+    {
+     "kod": "varo",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 99,
+     "ar": 300,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "takarito",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 430,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "info",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 62,
+     "ar": 340,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 335,
+     "bevetel": 11390,
+     "instabilitas": 748
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 11390,
+   "szolgaltatasBevetel": 13851,
+   "osszBevetel": 24568,
+   "osszKoltseg": 26658,
+   "hianyok": [
+    [
+     "konyv",
+     65
+    ],
+    [
+     "poggyasz",
+     9
+    ],
+    [
+     "ehseg",
+     3
+    ],
+    [
+     "vasarlas",
+     3
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 8075,
+     "hirnev": 56.8,
+     "utas": 14,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 1036,
+     "koltseg": 8961
+    },
+    {
+     "nap": 2,
+     "penz": 11048,
+     "hirnev": 64.4,
+     "utas": 17,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 4725,
+     "koltseg": 1752
+    },
+    {
+     "nap": 3,
+     "penz": 10674,
+     "hirnev": 68.7,
+     "utas": 14,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2484,
+     "koltseg": 2858
+    },
+    {
+     "nap": 4,
+     "penz": 12259,
+     "hirnev": 71.8,
+     "utas": 17,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2646,
+     "koltseg": 1061
+    },
+    {
+     "nap": 5,
+     "penz": 13618,
+     "hirnev": 74.7,
+     "utas": 19,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2420,
+     "koltseg": 1061
+    },
+    {
+     "nap": 6,
+     "penz": 10981,
+     "hirnev": 77.6,
+     "utas": 17,
+     "epulet": 11,
+     "dolgozo": 12,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2849,
+     "koltseg": 5486
+    },
+    {
+     "nap": 7,
+     "penz": 12378,
+     "hirnev": 80.2,
+     "utas": 17,
+     "epulet": 11,
+     "dolgozo": 12,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2589,
+     "koltseg": 1192
+    },
+    {
+     "nap": 8,
+     "penz": 13358,
+     "hirnev": 85.9,
+     "utas": 19,
+     "epulet": 11,
+     "dolgozo": 12,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2875,
+     "koltseg": 1895
+    },
+    {
+     "nap": 9,
+     "penz": 13910,
+     "hirnev": 87.2,
+     "utas": 19,
+     "epulet": 11,
+     "dolgozo": 12,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 2944,
+     "koltseg": 2392
+    }
+   ]
+  },
+  {
+   "strategia": "terjeszkedo",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 4,
+   "fejezetAllapot": "fut",
+   "penzVeg": 79170,
+   "penzMin": 424,
+   "penzMinNap": 3,
+   "penz5": 18337,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 50,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 0.1,
+   "hirnevMin": 0.1,
+   "negativNapok": 0,
+   "csodkozeliNapok": 0,
+   "tavozo": 2026,
+   "elegedett": 336,
+   "duhos": 1607,
+   "elegedettArany": 0.16584402764067127,
+   "duhosArany": 0.7931885488647581,
+   "utasCsucs": 1081,
+   "utasAtlag": 511.9001666666667,
+   "plafonArany": 0,
+   "aramszunetArany": 0.020833333333333332,
+   "kosz": 1000,
+   "epuletDb": 28,
+   "dolgozoDb": 37,
+   "nyitottKapu": 6,
+   "osszeomlas": 0,
+   "techek": [
+    {
+     "kod": "kapu_hangolas",
+     "tick": 1141,
+     "nap": 1
+    },
+    {
+     "kod": "stabil_kapuk",
+     "tick": 2881,
+     "nap": 3
+    },
+    {
+     "kod": "kristaly_takarek",
+     "tick": 5461,
+     "nap": 5
+    },
+    {
+     "kod": "kapu_szkenner",
+     "tick": 7261,
+     "nap": 7
+    },
+    {
+     "kod": "ido_kotes",
+     "tick": 9301,
+     "nap": 8
+    },
+    {
+     "kod": "fejlett_boltok",
+     "tick": 10381,
+     "nap": 9
+    },
+    {
+     "kod": "vip_ellatas",
+     "tick": 11881,
+     "nap": 10
+    }
+   ],
+   "techDb": 7,
+   "epuletek": [
+    {
+     "kod": "etterem",
+     "db": 1,
+     "bevetel": 24185,
+     "kiszolgalt": 424,
+     "ar": 1000,
+     "megterules": 24.185,
+     "sorMax": 110,
+     "sorAtlag": 37.58974358974359
+    },
+    {
+     "kod": "bolt",
+     "db": 1,
+     "bevetel": 19406,
+     "kiszolgalt": 320,
+     "ar": 780,
+     "megterules": 24.879487179487178,
+     "sorMax": 213,
+     "sorAtlag": 104.36521739130434
+    },
+    {
+     "kod": "poggyasz",
+     "db": 1,
+     "bevetel": 18984,
+     "kiszolgalt": 626,
+     "ar": 1200,
+     "megterules": 15.82,
+     "sorMax": 13,
+     "sorAtlag": 2.9051724137931036
+    },
+    {
+     "kod": "vam",
+     "db": 1,
+     "bevetel": 7468,
+     "kiszolgalt": 344,
+     "ar": 850,
+     "megterules": 8.785882352941176,
+     "sorMax": 346,
+     "sorAtlag": 151.28
+    },
+    {
+     "kod": "wc",
+     "db": 1,
+     "bevetel": 934,
+     "kiszolgalt": 168,
+     "ar": 380,
+     "megterules": 2.457894736842105,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "portal",
+     "db": 6,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "biztonsag",
+     "db": 12,
+     "bevetel": 0,
+     "kiszolgalt": 3038,
+     "ar": 950,
+     "megterules": 0,
+     "sorMax": 49,
+     "sorAtlag": 4.2631578947368425
+    },
+    {
+     "kod": "varo",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 543,
+     "ar": 300,
+     "megterules": 0,
+     "sorMax": 135,
+     "sorAtlag": 47.932203389830505
+    },
+    {
+     "kod": "takarito",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 430,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "karbantarto",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1500,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 763,
+     "bevetel": 34138,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 522,
+     "bevetel": 30493,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 513,
+     "bevetel": 38985,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 485,
+     "bevetel": 41173,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 431,
+     "bevetel": 52145,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 5,
+     "dijSzorzo": 1,
+     "osszUtas": 385,
+     "bevetel": 44925,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 241859,
+   "szolgaltatasBevetel": 70977,
+   "osszBevetel": 267144,
+   "osszKoltseg": 253987,
+   "hianyok": [
+    [
+     "konyv",
+     726
+    ],
+    [
+     "info",
+     427
+    ],
+    [
+     "sepru",
+     305
+    ],
+    [
+     "hules",
+     256
+    ],
+    [
+     "melegedes",
+     54
+    ],
+    [
+     "vip",
+     25
+    ],
+    [
+     "poggyasz",
+     25
+    ],
+    [
+     "ehseg",
+     18
+    ],
+    [
+     "vasarlas",
+     16
+    ],
+    [
+     "pihenes",
+     15
+    ],
+    [
+     "wc",
+     13
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 7864,
+     "hirnev": 57,
+     "utas": 15,
+     "epulet": 9,
+     "dolgozo": 10,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 1561,
+     "koltseg": 9697
+    },
+    {
+     "nap": 2,
+     "penz": 1780,
+     "hirnev": 63.7,
+     "utas": 123,
+     "epulet": 15,
+     "dolgozo": 16,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 18972,
+     "koltseg": 25056
+    },
+    {
+     "nap": 3,
+     "penz": 1758,
+     "hirnev": 63.4,
+     "utas": 213,
+     "epulet": 18,
+     "dolgozo": 19,
+     "kapu": 5,
+     "fejezet": 4,
+     "bevetel": 13574,
+     "koltseg": 13596
+    },
+    {
+     "nap": 4,
+     "penz": 10548,
+     "hirnev": 47.1,
+     "utas": 289,
+     "epulet": 20,
+     "dolgozo": 21,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 22165,
+     "koltseg": 13375
+    },
+    {
+     "nap": 5,
+     "penz": 18337,
+     "hirnev": 50,
+     "utas": 396,
+     "epulet": 21,
+     "dolgozo": 23,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 25092,
+     "koltseg": 17303
+    },
+    {
+     "nap": 6,
+     "penz": 26187,
+     "hirnev": 39.5,
+     "utas": 695,
+     "epulet": 24,
+     "dolgozo": 29,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 41995,
+     "koltseg": 34144
+    },
+    {
+     "nap": 7,
+     "penz": 19266,
+     "hirnev": 12.1,
+     "utas": 881,
+     "epulet": 26,
+     "dolgozo": 33,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 43502,
+     "koltseg": 50423
+    },
+    {
+     "nap": 8,
+     "penz": 5196,
+     "hirnev": 3.3,
+     "utas": 965,
+     "epulet": 27,
+     "dolgozo": 35,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 47003,
+     "koltseg": 61073
+    },
+    {
+     "nap": 9,
+     "penz": 29156,
+     "hirnev": 0.1,
+     "utas": 1008,
+     "epulet": 28,
+     "dolgozo": 37,
+     "kapu": 6,
+     "fejezet": 4,
+     "bevetel": 53280,
+     "koltseg": 29320
+    }
+   ]
+  },
+  {
+   "strategia": "bevetel_maximalizalo",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 4,
+   "fejezetAllapot": "fut",
+   "penzVeg": 6668,
+   "penzMin": 2856,
+   "penzMinNap": 10,
+   "penz5": 5026,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 78.3,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 91.9,
+   "hirnevMin": 57.3,
+   "negativNapok": 0,
+   "csodkozeliNapok": 0,
+   "tavozo": 568,
+   "elegedett": 563,
+   "duhos": 3,
+   "elegedettArany": 0.9911971830985915,
+   "duhosArany": 0.00528169014084507,
+   "utasCsucs": 214,
+   "utasAtlag": 60.49475,
+   "plafonArany": 0,
+   "aramszunetArany": 0,
+   "kosz": 0,
+   "epuletDb": 40,
+   "dolgozoDb": 45,
+   "nyitottKapu": 5,
+   "osszeomlas": 0,
+   "techek": [
+    {
+     "kod": "fejlett_boltok",
+     "tick": 1321,
+     "nap": 2
+    },
+    {
+     "kod": "vip_ellatas",
+     "tick": 3781,
+     "nap": 4
+    },
+    {
+     "kod": "gyors_sorok",
+     "tick": 5941,
+     "nap": 5
+    },
+    {
+     "kod": "kapu_hangolas",
+     "tick": 7741,
+     "nap": 7
+    },
+    {
+     "kod": "stabil_kapuk",
+     "tick": 9061,
+     "nap": 8
+    },
+    {
+     "kod": "energia_halo",
+     "tick": 10261,
+     "nap": 9
+    }
+   ],
+   "techDb": 6,
+   "epuletek": [
+    {
+     "kod": "bolt",
+     "db": 5,
+     "bevetel": 11743,
+     "kiszolgalt": 207,
+     "ar": 780,
+     "megterules": 3.011025641025641,
+     "sorMax": 1,
+     "sorAtlag": 0.00625
+    },
+    {
+     "kod": "konyvesbolt",
+     "db": 3,
+     "bevetel": 11699,
+     "kiszolgalt": 166,
+     "ar": 860,
+     "megterules": 4.5344961240310075,
+     "sorMax": 3,
+     "sorAtlag": 0.11333333333333333
+    },
+    {
+     "kod": "etterem",
+     "db": 4,
+     "bevetel": 10982,
+     "kiszolgalt": 176,
+     "ar": 1000,
+     "megterules": 2.7455,
+     "sorMax": 1,
+     "sorAtlag": 0.0051813471502590676
+    },
+    {
+     "kod": "poggyasz",
+     "db": 2,
+     "bevetel": 5127,
+     "kiszolgalt": 254,
+     "ar": 1200,
+     "megterules": 2.13625,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "vam",
+     "db": 2,
+     "bevetel": 1902,
+     "kiszolgalt": 88,
+     "ar": 850,
+     "megterules": 1.1188235294117648,
+     "sorMax": 1,
+     "sorAtlag": 0.01639344262295082
+    },
+    {
+     "kod": "wc",
+     "db": 2,
+     "bevetel": 431,
+     "kiszolgalt": 97,
+     "ar": 380,
+     "megterules": 0.5671052631578948,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "seprupark",
+     "db": 1,
+     "bevetel": 198,
+     "kiszolgalt": 11,
+     "ar": 520,
+     "megterules": 0.38076923076923075,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "portal",
+     "db": 5,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "biztonsag",
+     "db": 4,
+     "bevetel": 0,
+     "kiszolgalt": 720,
+     "ar": 950,
+     "megterules": 0,
+     "sorMax": 7,
+     "sorAtlag": 0.6593406593406593
+    },
+    {
+     "kod": "varo",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 211,
+     "ar": 300,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "takarito",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 430,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "reklam",
+     "db": 3,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 470,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "info",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 152,
+     "ar": 340,
+     "megterules": 0,
+     "sorMax": 1,
+     "sorAtlag": 0.00909090909090909
+    },
+    {
+     "kod": "vip",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 3200,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "karbantarto",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1500,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1.3,
+     "osszUtas": 419,
+     "bevetel": 18426,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1.3,
+     "osszUtas": 199,
+     "bevetel": 10919,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1.3,
+     "osszUtas": 114,
+     "bevetel": 8174,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1.3,
+     "osszUtas": 45,
+     "bevetel": 3626,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 1,
+     "bevetel": 88,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 41233,
+   "szolgaltatasBevetel": 42082,
+   "osszBevetel": 73858,
+   "osszKoltseg": 87002,
+   "hianyok": [
+    [
+     "poggyasz",
+     36
+    ],
+    [
+     "pihenes",
+     27
+    ],
+    [
+     "ehseg",
+     23
+    ],
+    [
+     "wc",
+     21
+    ],
+    [
+     "vasarlas",
+     20
+    ],
+    [
+     "info",
+     17
+    ],
+    [
+     "biztonsag",
+     13
+    ],
+    [
+     "konyv",
+     10
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 2989,
+     "hirnev": 57.3,
+     "utas": 9,
+     "epulet": 15,
+     "dolgozo": 13,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 1613,
+     "koltseg": 14624
+    },
+    {
+     "nap": 2,
+     "penz": 6259,
+     "hirnev": 62.2,
+     "utas": 35,
+     "epulet": 15,
+     "dolgozo": 13,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 7578,
+     "koltseg": 4308
+    },
+    {
+     "nap": 3,
+     "penz": 8077,
+     "hirnev": 68.7,
+     "utas": 14,
+     "epulet": 15,
+     "dolgozo": 13,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 3036,
+     "koltseg": 1218
+    },
+    {
+     "nap": 4,
+     "penz": 6904,
+     "hirnev": 72.1,
+     "utas": 34,
+     "epulet": 16,
+     "dolgozo": 16,
+     "kapu": 1,
+     "fejezet": 1,
+     "bevetel": 4246,
+     "koltseg": 5419
+    },
+    {
+     "nap": 5,
+     "penz": 5026,
+     "hirnev": 78.3,
+     "utas": 18,
+     "epulet": 19,
+     "dolgozo": 18,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 9614,
+     "koltseg": 11492
+    },
+    {
+     "nap": 6,
+     "penz": 5865,
+     "hirnev": 81.8,
+     "utas": 66,
+     "epulet": 22,
+     "dolgozo": 22,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 8048,
+     "koltseg": 7209
+    },
+    {
+     "nap": 7,
+     "penz": 9004,
+     "hirnev": 86.9,
+     "utas": 73,
+     "epulet": 23,
+     "dolgozo": 24,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 9465,
+     "koltseg": 6326
+    },
+    {
+     "nap": 8,
+     "penz": 8122,
+     "hirnev": 90.4,
+     "utas": 112,
+     "epulet": 28,
+     "dolgozo": 30,
+     "kapu": 3,
+     "fejezet": 4,
+     "bevetel": 15491,
+     "koltseg": 16373
+    },
+    {
+     "nap": 9,
+     "penz": 2856,
+     "hirnev": 93.1,
+     "utas": 148,
+     "epulet": 34,
+     "dolgozo": 36,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 14767,
+     "koltseg": 20033
+    }
+   ]
+  },
+  {
+   "strategia": "olcso",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 4,
+   "fejezetAllapot": "fut",
+   "penzVeg": 35960,
+   "penzMin": -783,
+   "penzMinNap": 5,
+   "penz5": 3698,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 87.4,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 73.5,
+   "hirnevMin": 57.7,
+   "negativNapok": 1,
+   "csodkozeliNapok": 0,
+   "tavozo": 1828,
+   "elegedett": 1616,
+   "duhos": 150,
+   "elegedettArany": 0.8840262582056893,
+   "duhosArany": 0.08205689277899343,
+   "utasCsucs": 788,
+   "utasAtlag": 252.71233333333333,
+   "plafonArany": 0,
+   "aramszunetArany": 0.0008333333333333334,
+   "kosz": 1,
+   "epuletDb": 94,
+   "dolgozoDb": 100,
+   "nyitottKapu": 5,
+   "osszeomlas": 0,
+   "techek": [
+    {
+     "kod": "gyors_sorok",
+     "tick": 1021,
+     "nap": 1
+    },
+    {
+     "kod": "kapu_hangolas",
+     "tick": 3961,
+     "nap": 4
+    },
+    {
+     "kod": "takaritorobot",
+     "tick": 7561,
+     "nap": 7
+    },
+    {
+     "kod": "auto_poggyasz",
+     "tick": 9001,
+     "nap": 8
+    },
+    {
+     "kod": "fejlett_boltok",
+     "tick": 10081,
+     "nap": 9
+    },
+    {
+     "kod": "stabil_kapuk",
+     "tick": 11401,
+     "nap": 10
+    }
+   ],
+   "techDb": 6,
+   "epuletek": [
+    {
+     "kod": "bolt",
+     "db": 8,
+     "bevetel": 41743,
+     "kiszolgalt": 735,
+     "ar": 780,
+     "megterules": 6.689583333333333,
+     "sorMax": 7,
+     "sorAtlag": 0.29691211401425177
+    },
+    {
+     "kod": "etterem",
+     "db": 10,
+     "bevetel": 39805,
+     "kiszolgalt": 614,
+     "ar": 1000,
+     "megterules": 3.9805,
+     "sorMax": 16,
+     "sorAtlag": 0.18625277161862527
+    },
+    {
+     "kod": "konyvesbolt",
+     "db": 1,
+     "bevetel": 19000,
+     "kiszolgalt": 323,
+     "ar": 860,
+     "megterules": 22.093023255813954,
+     "sorMax": 203,
+     "sorAtlag": 51.329896907216494
+    },
+    {
+     "kod": "poggyasz",
+     "db": 5,
+     "bevetel": 18610,
+     "kiszolgalt": 781,
+     "ar": 1200,
+     "megterules": 3.1016666666666666,
+     "sorMax": 5,
+     "sorAtlag": 0.06551724137931035
+    },
+    {
+     "kod": "vam",
+     "db": 2,
+     "bevetel": 13133,
+     "kiszolgalt": 601,
+     "ar": 850,
+     "megterules": 7.725294117647059,
+     "sorMax": 55,
+     "sorAtlag": 9.837349397590362
+    },
+    {
+     "kod": "seprupark",
+     "db": 1,
+     "bevetel": 3330,
+     "kiszolgalt": 185,
+     "ar": 520,
+     "megterules": 6.403846153846154,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "wc",
+     "db": 13,
+     "bevetel": 1405,
+     "kiszolgalt": 263,
+     "ar": 380,
+     "megterules": 0.28441295546558704,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "portal",
+     "db": 5,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 6,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "biztonsag",
+     "db": 20,
+     "bevetel": 0,
+     "kiszolgalt": 2475,
+     "ar": 950,
+     "megterules": 0,
+     "sorMax": 8,
+     "sorAtlag": 0.17073170731707318
+    },
+    {
+     "kod": "varo",
+     "db": 14,
+     "bevetel": 0,
+     "kiszolgalt": 636,
+     "ar": 300,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "takarito",
+     "db": 4,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 430,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "info",
+     "db": 3,
+     "bevetel": 0,
+     "kiszolgalt": 418,
+     "ar": 340,
+     "megterules": 0,
+     "sorMax": 3,
+     "sorAtlag": 0.033707865168539325
+    },
+    {
+     "kod": "karbantarto",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1500,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "hoforras",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 126,
+     "ar": 640,
+     "megterules": 0,
+     "sorMax": 2,
+     "sorAtlag": 0.07317073170731707
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 3,
+     "dijSzorzo": 0.6,
+     "osszUtas": 811,
+     "bevetel": 17606,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 3,
+     "dijSzorzo": 0.6,
+     "osszUtas": 650,
+     "bevetel": 17295,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 2,
+     "dijSzorzo": 0.6,
+     "osszUtas": 539,
+     "bevetel": 18647,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 2,
+     "dijSzorzo": 0.6,
+     "osszUtas": 345,
+     "bevetel": 13462,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 2,
+     "dijSzorzo": 0.6,
+     "osszUtas": 271,
+     "bevetel": 15073,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 82083,
+   "szolgaltatasBevetel": 137026,
+   "osszBevetel": 176073,
+   "osszKoltseg": 169247,
+   "hianyok": [
+    [
+     "vip",
+     53
+    ],
+    [
+     "poggyasz",
+     50
+    ],
+    [
+     "biztonsag",
+     45
+    ],
+    [
+     "konyv",
+     37
+    ],
+    [
+     "ehseg",
+     31
+    ],
+    [
+     "pihenes",
+     27
+    ],
+    [
+     "wc",
+     23
+    ],
+    [
+     "info",
+     17
+    ],
+    [
+     "vasarlas",
+     3
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 7307,
+     "hirnev": 57.7,
+     "utas": 19,
+     "epulet": 10,
+     "dolgozo": 11,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 1492,
+     "koltseg": 10185
+    },
+    {
+     "nap": 2,
+     "penz": 4787,
+     "hirnev": 66.2,
+     "utas": 99,
+     "epulet": 21,
+     "dolgozo": 22,
+     "kapu": 2,
+     "fejezet": 4,
+     "bevetel": 16728,
+     "koltseg": 19248
+    },
+    {
+     "nap": 3,
+     "penz": 3998,
+     "hirnev": 77.2,
+     "utas": 86,
+     "epulet": 22,
+     "dolgozo": 22,
+     "kapu": 3,
+     "fejezet": 4,
+     "bevetel": 8942,
+     "koltseg": 9731
+    },
+    {
+     "nap": 4,
+     "penz": -783,
+     "hirnev": 83,
+     "utas": 184,
+     "epulet": 33,
+     "dolgozo": 33,
+     "kapu": 3,
+     "fejezet": 4,
+     "bevetel": 12474,
+     "koltseg": 17255
+    },
+    {
+     "nap": 5,
+     "penz": 3698,
+     "hirnev": 87.4,
+     "utas": 218,
+     "epulet": 39,
+     "dolgozo": 43,
+     "kapu": 3,
+     "fejezet": 4,
+     "bevetel": 18155,
+     "koltseg": 13674
+    },
+    {
+     "nap": 6,
+     "penz": 4258,
+     "hirnev": 91.9,
+     "utas": 278,
+     "epulet": 46,
+     "dolgozo": 49,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 20685,
+     "koltseg": 20125
+    },
+    {
+     "nap": 7,
+     "penz": 12171,
+     "hirnev": 88.1,
+     "utas": 308,
+     "epulet": 51,
+     "dolgozo": 52,
+     "kapu": 5,
+     "fejezet": 4,
+     "bevetel": 27913,
+     "koltseg": 20000
+    },
+    {
+     "nap": 8,
+     "penz": 16078,
+     "hirnev": 79.3,
+     "utas": 423,
+     "epulet": 63,
+     "dolgozo": 67,
+     "kapu": 5,
+     "fejezet": 4,
+     "bevetel": 30110,
+     "koltseg": 26203
+    },
+    {
+     "nap": 9,
+     "penz": 22826,
+     "hirnev": 81.4,
+     "utas": 558,
+     "epulet": 77,
+     "dolgozo": 82,
+     "kapu": 5,
+     "fejezet": 4,
+     "bevetel": 39574,
+     "koltseg": 32826
+    }
+   ]
+  },
+  {
+   "strategia": "kiegyensulyozott",
+   "seed": 31337,
+   "tickek": 12000,
+   "nap": 10,
+   "veg": null,
+   "vegNap": null,
+   "fejezet": 4,
+   "fejezetAllapot": "fut",
+   "penzVeg": 39968,
+   "penzMin": 3089,
+   "penzMinNap": 8,
+   "penz5": 9420,
+   "penz10": null,
+   "penz20": null,
+   "penz30": null,
+   "penz50": null,
+   "hirnev5": 84.4,
+   "hirnev10": null,
+   "hirnev20": null,
+   "hirnev30": null,
+   "hirnev50": null,
+   "hirnevVeg": 90.1,
+   "hirnevMin": 57.4,
+   "negativNapok": 0,
+   "csodkozeliNapok": 0,
+   "tavozo": 1051,
+   "elegedett": 1018,
+   "duhos": 20,
+   "elegedettArany": 0.9686013320647003,
+   "duhosArany": 0.019029495718363463,
+   "utasCsucs": 356,
+   "utasAtlag": 100.21183333333333,
+   "plafonArany": 0,
+   "aramszunetArany": 0.0008333333333333334,
+   "kosz": 1,
+   "epuletDb": 51,
+   "dolgozoDb": 54,
+   "nyitottKapu": 4,
+   "osszeomlas": 0,
+   "techek": [
+    {
+     "kod": "gyors_sorok",
+     "tick": 1021,
+     "nap": 1
+    },
+    {
+     "kod": "kapu_hangolas",
+     "tick": 4381,
+     "nap": 4
+    },
+    {
+     "kod": "fejlett_boltok",
+     "tick": 5821,
+     "nap": 5
+    },
+    {
+     "kod": "stabil_kapuk",
+     "tick": 7081,
+     "nap": 6
+    },
+    {
+     "kod": "kristaly_takarek",
+     "tick": 8161,
+     "nap": 7
+    },
+    {
+     "kod": "energia_halo",
+     "tick": 10141,
+     "nap": 9
+    },
+    {
+     "kod": "takaritorobot",
+     "tick": 11161,
+     "nap": 10
+    }
+   ],
+   "techDb": 7,
+   "epuletek": [
+    {
+     "kod": "etterem",
+     "db": 5,
+     "bevetel": 25880,
+     "kiszolgalt": 341,
+     "ar": 1000,
+     "megterules": 5.176,
+     "sorMax": 2,
+     "sorAtlag": 0.017857142857142856
+    },
+    {
+     "kod": "bolt",
+     "db": 5,
+     "bevetel": 23239,
+     "kiszolgalt": 389,
+     "ar": 780,
+     "megterules": 5.958717948717949,
+     "sorMax": 2,
+     "sorAtlag": 0.06787330316742081
+    },
+    {
+     "kod": "konyvesbolt",
+     "db": 3,
+     "bevetel": 18545,
+     "kiszolgalt": 278,
+     "ar": 860,
+     "megterules": 7.187984496124031,
+     "sorMax": 7,
+     "sorAtlag": 0.43333333333333335
+    },
+    {
+     "kod": "poggyasz",
+     "db": 3,
+     "bevetel": 11321,
+     "kiszolgalt": 491,
+     "ar": 1200,
+     "megterules": 3.144722222222222,
+     "sorMax": 2,
+     "sorAtlag": 0.043478260869565216
+    },
+    {
+     "kod": "vam",
+     "db": 1,
+     "bevetel": 4799,
+     "kiszolgalt": 220,
+     "ar": 850,
+     "megterules": 5.645882352941176,
+     "sorMax": 20,
+     "sorAtlag": 4.290909090909091
+    },
+    {
+     "kod": "wc",
+     "db": 5,
+     "bevetel": 700,
+     "kiszolgalt": 144,
+     "ar": 380,
+     "megterules": 0.3684210526315789,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "portal",
+     "db": 4,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 2600,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "energiamag",
+     "db": 3,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1800,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "biztonsag",
+     "db": 8,
+     "bevetel": 0,
+     "kiszolgalt": 1267,
+     "ar": 950,
+     "megterules": 0,
+     "sorMax": 9,
+     "sorAtlag": 0.5928338762214984
+    },
+    {
+     "kod": "varo",
+     "db": 5,
+     "bevetel": 0,
+     "kiszolgalt": 430,
+     "ar": 300,
+     "megterules": 0,
+     "sorMax": 1,
+     "sorAtlag": 0.008733624454148471
+    },
+    {
+     "kod": "takarito",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 430,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "info",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 280,
+     "ar": 340,
+     "megterules": 0,
+     "sorMax": 4,
+     "sorAtlag": 0.13157894736842105
+    },
+    {
+     "kod": "reklam",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 470,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "karbantarto",
+     "db": 2,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 1500,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "seprupark",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 0,
+     "ar": 520,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    },
+    {
+     "kod": "jegkamra",
+     "db": 1,
+     "bevetel": 0,
+     "kiszolgalt": 90,
+     "ar": 640,
+     "megterules": 0,
+     "sorMax": 0,
+     "sorAtlag": 0
+    }
+   ],
+   "dimenziok": [
+    {
+     "kod": "zsibvasar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 3,
+     "dijSzorzo": 1,
+     "osszUtas": 500,
+     "bevetel": 18572,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kodmocsar",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 3,
+     "dijSzorzo": 1,
+     "osszUtas": 426,
+     "bevetel": 19173,
+     "instabilitas": 0
+    },
+    {
+     "kod": "kohegyseg",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 3,
+     "dijSzorzo": 1,
+     "osszUtas": 273,
+     "bevetel": 16275,
+     "instabilitas": 0
+    },
+    {
+     "kod": "boszorkanyliget",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "parazsmely",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    },
+    {
+     "kod": "fagyperem",
+     "nyitva": true,
+     "lezarva": false,
+     "szint": 2,
+     "dijSzorzo": 1,
+     "osszUtas": 204,
+     "bevetel": 18411,
+     "instabilitas": 0
+    },
+    {
+     "kod": "sarkanytronus",
+     "nyitva": false,
+     "lezarva": false,
+     "szint": 1,
+     "dijSzorzo": 1,
+     "osszUtas": 0,
+     "bevetel": 0,
+     "instabilitas": 0
+    }
+   ],
+   "portaldij": 72431,
+   "szolgaltatasBevetel": 84484,
+   "osszBevetel": 121743,
+   "osszKoltseg": 115107,
+   "hianyok": [
+    [
+     "biztonsag",
+     34
+    ],
+    [
+     "poggyasz",
+     29
+    ],
+    [
+     "info",
+     18
+    ],
+    [
+     "wc",
+     18
+    ],
+    [
+     "pihenes",
+     17
+    ],
+    [
+     "konyv",
+     15
+    ],
+    [
+     "ehseg",
+     7
+    ],
+    [
+     "vasarlas",
+     4
+    ]
+   ],
+   "napiSor": [
+    {
+     "nap": 1,
+     "penz": 5400,
+     "hirnev": 57.4,
+     "utas": 15,
+     "epulet": 13,
+     "dolgozo": 12,
+     "kapu": 1,
+     "fejezet": 0,
+     "bevetel": 1683,
+     "koltseg": 12283
+    },
+    {
+     "nap": 2,
+     "penz": 5824,
+     "hirnev": 65.8,
+     "utas": 21,
+     "epulet": 15,
+     "dolgozo": 14,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 9394,
+     "koltseg": 8970
+    },
+    {
+     "nap": 3,
+     "penz": 3671,
+     "hirnev": 72.1,
+     "utas": 32,
+     "epulet": 17,
+     "dolgozo": 16,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 5277,
+     "koltseg": 7430
+    },
+    {
+     "nap": 4,
+     "penz": 7512,
+     "hirnev": 78.5,
+     "utas": 44,
+     "epulet": 17,
+     "dolgozo": 16,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 7713,
+     "koltseg": 3872
+    },
+    {
+     "nap": 5,
+     "penz": 9420,
+     "hirnev": 84.4,
+     "utas": 49,
+     "epulet": 19,
+     "dolgozo": 18,
+     "kapu": 2,
+     "fejezet": 3,
+     "bevetel": 8264,
+     "koltseg": 6356
+    },
+    {
+     "nap": 6,
+     "penz": 9082,
+     "hirnev": 88.8,
+     "utas": 84,
+     "epulet": 25,
+     "dolgozo": 23,
+     "kapu": 3,
+     "fejezet": 4,
+     "bevetel": 15860,
+     "koltseg": 16198
+    },
+    {
+     "nap": 7,
+     "penz": 3511,
+     "hirnev": 94.8,
+     "utas": 151,
+     "epulet": 32,
+     "dolgozo": 31,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 17990,
+     "koltseg": 23561
+    },
+    {
+     "nap": 8,
+     "penz": 14995,
+     "hirnev": 95.3,
+     "utas": 199,
+     "epulet": 38,
+     "dolgozo": 39,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 25877,
+     "koltseg": 14393
+    },
+    {
+     "nap": 9,
+     "penz": 22636,
+     "hirnev": 95.1,
+     "utas": 241,
+     "epulet": 41,
+     "dolgozo": 42,
+     "kapu": 4,
+     "fejezet": 4,
+     "bevetel": 29685,
+     "koltseg": 22044
+    }
+   ]
+  }
+ ],
+ "dijKiserlet": [],
+ "techKiserlet": []
+}
