@@ -26,6 +26,7 @@ import { Visszajatszo } from './sim/mentes.js';
 import { Szinter } from './render/szinter.js';
 import { Allomas3d } from './render/allomas3d.js';
 import { Lenyek3d } from './render/lenyek3d.js';
+import { Hatasok3d } from './render/hatasok3d.js';
 import { Hud } from './ui/hud.js';
 import { EpitesSav } from './ui/epites.js';
 import { Panelek } from './ui/panelek.js';
@@ -76,6 +77,7 @@ async function indit() {
   const szinter = new Szinter(vaszon);
   const allomas = new Allomas3d(szinter, sim);
   const lenyek = new Lenyek3d(szinter, sim);
+  const hatasok = new Hatasok3d(szinter, sim);
   // A kamera a kezdő kapura néz — az üres rács közepe semmit nem mondana.
   szinter.cel.set(sim.kezdoX + 9, 0, sim.kezdoY + 8);
   szinter.tav = 32;
@@ -127,10 +129,10 @@ async function indit() {
 
   bevitel({ vaszon, sim, szinter, epitesSav, panelek, vezerlo, hang });
   vezerlo.szint(0);
-  hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas });
+  hurok({ sim, szinter, allomas, lenyek, hatasok, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas });
 
   // Kényelmi kapaszkodó hibakereséshez: a konzolból elérhető a világ.
-  window.PHT = { sim, szinter, allomas, lenyek, hud, panelek, epitesSav, modalok, bevezeto, tarolo, hang, beallitas, betoltottAllapot };
+  window.PHT = { sim, szinter, allomas, lenyek, hatasok, hud, panelek, epitesSav, modalok, bevezeto, tarolo, hang, beallitas, betoltottAllapot };
   console.log(`%cPORTAL HUB TYCOON%c  seed=${sim.seed}${mentes ? '  (betöltve)' : ''}`,
     'color:#9b6bff;font-weight:700', 'color:#93a0c8');
   if (mentes) hud.uzen(`Mentés betöltve — ${sim.nap}. nap`, 'jo');
@@ -230,7 +232,7 @@ function huzottTeglalap(cella) {
 //  HUROK
 // ══════════════════════════════════════════════════════════════════════════
 
-function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas }) {
+function hurok({ sim, szinter, allomas, lenyek, hatasok, hud, epitesSav, panelek, modalok, bevezeto, vezerlo, hang, beallitas }) {
   let utolsoIdo = performance.now();
   let maradek = 0;
   let ido = 0;
@@ -357,6 +359,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     // ── SÚGÓBUBORÉK A KÉZ ESZKÖZNÉL ─────────────────────────────────────
     if (cella && e.fajta === 'kez') {
       const azon = sim.racs.epuletAzon(cella.x, cella.y, vezerlo.szintIdx());
+      allomas.kiemel(azon);
       if (azon >= 0) {
         const ep = sim.epuletek[azon];
         const t = EPULETEK[ep.tipusIdx];
@@ -368,7 +371,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
           egerX, egerY,
         );
       } else hud.buborekot(null);
-    } else if (e.fajta !== 'kez') hud.buborekot(null);
+    } else { if (e.fajta !== 'kez') hud.buborekot(null); allomas.kiemel(-1); }
 
     // ── FELÜLET ─────────────────────────────────────────────────────────
     hud.frissit();
@@ -415,8 +418,13 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     if (beallitas.hangAuto) hang.frissit(sim, dt);
 
     // ── RAJZOLÁS ────────────────────────────────────────────────────────
+    // A napszak a sim ÓRÁJÁBÓL jön (hányadik tick a napból), nem a valós
+    // időből: így a szüneteltetett játékban nem megy tovább az idő, és a
+    // gyorsításban sem szalad el az égbolt a gazdaságtól.
+    szinter.napszak(sim.tick);
     allomas.frissit(ido);
     lenyek.frissit(ido);
+    hatasok.frissit(ido, dt);
     szinter.rajzol();
   }
 
