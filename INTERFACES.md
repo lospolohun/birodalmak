@@ -199,3 +199,115 @@ alatt a kijelölés üres, tehát a réteg költsége nulla — a v0.1 lépcsői
 
 `src/core/config.js` → `export const VERZIO`. A `package.json` verziója **nem**
 ez (a TELEPESEK-ben ez rendszeresen félrevezetett).
+
+---
+
+# v0.16 — A JÁTÉKRÉTEG SZERZŐDÉSE (UI-panelek és látvány-sávok)
+
+Ez a szakasz azért van, mert a v0.16-ot **sok agent írja párhuzamosan**, és a
+korábbi körökben a `main.js` és az `alap.css` volt a torlódási pont. A szabály:
+**egy fájlnak egy gazdája van**, a panelek pedig NEM ismerik egymást — csak ezt
+a szerződést.
+
+## Miért panel-szerződés, és miért nem „mindenki ír a HUD-ba"
+
+A v0.11-ig a HUD egyetlen fájl volt, ami maga szedte össze az adatot, maga
+formázott és maga rajzolt. Amíg egy fejlesztői szöveg-overlay volt, ez helyes
+döntés volt. Játék-HUD-ként viszont nyolc-tíz független dolog kerül a képernyőre
+(nyersanyag-sáv, építés-panel, kijelölés-panel, képzési sor, technológiafa,
+minimap, üzenetek, sebesség-váltó), és ezek külön ütemben, külön adatból élnek.
+Egy fájlban ez összeér; külön fájlban nem.
+
+## A panel-szerződés
+
+Minden panel ugyanezt adja, és SEMMI mást nem feltételez:
+
+```js
+import './panel_valami.css';        // a SAJÁT stílusa, senki máséba nem ír
+import { IKON, ikonSvg } from './ikonok.js';
+
+/** Hova kéri magát a HUD-vázon. */
+export const PANEL = {
+  nev: 'epites',
+  hely: 'also_kozep',   // 'felso' | 'also_bal' | 'also_kozep' | 'also_jobb' | 'jobb_also' | 'kepernyo'
+  cim: 'Építés',
+};
+
+export class PanelEpites {
+  /**
+   * @param {HTMLElement} gyoker   ÜRES <div>, a HUD-váz adja; a panel csak ebbe ír
+   * @param {import('../sim/sim.js').Sim} sim
+   * @param {import('./bevitel.js').Bevitel} bevitel  kijelölés olvasása + parancs-beadás
+   * @param {{sajatCsapat:number, uzenet:(szoveg:string,fajta?:string)=>void}} opciok
+   */
+  constructor(gyoker, sim, bevitel, opciok) {}
+  /** Képkockánként. NULLA allokáció; csak akkor írj DOM-ot, ha VÁLTOZOTT. */
+  frissit(sim, most) {}
+  set enabled(v) {}
+  /** Eseménykezelők leszedése — a meccs végén a váz ezt hívja. */
+  bont() {}
+}
+```
+
+Négy kikötés, mindegyik egy-egy konkrét hibából:
+
+1. **A panel SOSEM ír sim-állapotot.** Hatni egyetlen úton lehet:
+   `sim.parancs({ fajta: '…', … })` vagy a `bevitel` felülete. Ami megkerüli a
+   parancs-sort, az a v0.8 lockstepjén nem megy át.
+2. **A panel a `gyoker`-én kívülre nem nyúl.** Nincs `document.querySelector`
+   más panel elemeire, nincs globális stílus. A CSS-ed a saját fájlodban van, és
+   minden osztályneved a panel nevével kezdődik (`aoc-epites-…`).
+3. **`frissit()` nem allokál, és nem ír DOM-ot fölöslegesen.** A HUD 60-144 Hz-en
+   fut. Tárold el, mit írtál ki utoljára, és csak eltérésre nyúlj a DOM-hoz —
+   különben a szöveg-újraírás önmagában visz el képkockát.
+4. **A panel node-ban NEM fut** (DOM-ot használ). Amit szondázni akarsz belőle,
+   az az ADATRÉTEG: tedd `panel_valami_adat.js`-be, ami DOM-mentes, és azt
+   szondázd. Ez a `menu.js` / `menu_adat.js` bevált mintája.
+
+## A HUD-váz felülete (`src/ui/hud.js` — EGY gazdája van)
+
+A váz nem tud a panelek belsejéről. Amit ad:
+
+```js
+hud.helyek                 // { felso, also_bal, also_kozep, also_jobb, jobb_also, kepernyo }
+hud.uzenet(szoveg, fajta)  // 'info' | 'figyelem' | 'baj' — a tanácsadó-sáv
+hud.panel(nev)             // egy felmountolt panel, ha kell
+```
+
+## Ikonok (`src/ui/ikonok.js` — EGY gazdája van)
+
+Minden panel innen kér ikont, és SEHONNAN máshonnan. Nincs képfájl és nincs
+külső betűtípus: beágyazott SVG, hogy a `dist/` egyetlen fájl maradjon.
+
+```js
+import { IKON, ikonSvg } from './ikonok.js';
+elem.innerHTML = ikonSvg(IKON.ETEL, 18);   // SVG-forrás, nem elem
+```
+
+`IKON` kulcsai: a négy nyersanyag (`ETEL FA KO KRISTALY`), `NEP`, `KORSZAK`,
+`IDO`, a hat egységtípus (`MUNKAS LANDZSAS IJASZ LOVAG OSTROMGEP EGYEDI`), a
+tizenegy épület (`KOZPONT RAKTAR FAL KAPU HAZ LAKTANYA IJASZDA ISTALLO
+OSTROMMUHELY TORONY PIAC`), és a vezérlők (`SEBESSEG SZUNET HANG TETLEN
+FIGYELEM BAJ INFO`).
+
+⚠️ `ikonSvg` ISMERETLEN névre **dob**, nem ad üres stringet. Egy elgépelt
+ikonnév különben némán eltűnő gombot csinál — pontosan az a hibafajta, amiből
+ebben a projektben már öt volt.
+
+## Látvány-sávok (`src/render/`) — ki mit birtokol
+
+| sáv | fájlok |
+|---|---|
+| világítás, árnyék, ég, nap-ciklus | `core3d.js` |
+| terep | `terrain3d.js` |
+| díszlet (fa, szikla, kristály) | `props3d.js` |
+| épületek | `gazdasag3d.js`, `epulet_formak.js` |
+| egységek, animáció | `units3d.js`, `egyseg_figurak.js` |
+| kijelölés és parancs-visszajelzés | `kijeloles3d.js` |
+| lövedék, ostrom | `lovedek3d.js`, `ostrom3d.js` |
+| hadi köd | `kod3d.js` |
+| kamera | `camera3d.js` |
+
+Mindegyik tartja a fenti „Render-réteg elvárt felülete" szerződést
+(`frissit` / `enabled` / `haromszog`), mert az FPS-szonda réteg-bontása ezen
+múlik. Aki elrontja, az a mérést rontja el, nem csak a látványt.

@@ -151,8 +151,18 @@ export class Hud {
     const k = sim.kepzes.osszesites(cs);
     const t = sim.technologia.osszesites(cs);
     const kod = sim.kod.osszesites(cs);
-    this._ir('mnk', m.munkas, String(mu.dolgozik));
-    this._ir('kat', m.katona, h.elo[cs] + ' (elesett ' + h.halottak[cs] + ')');
+    // ⚠️ MIT ÍRUNK IDE, ÉS MIÉRT PONT EZT
+    // A v0.11-ig a „munkás" a `dolgozik`-ot mutatta, a „katona" pedig a csapat
+    // ÖSSZES élő egységét. A meccs elején tehát „MUNKÁS 0 · KATONA 8" állt itt,
+    // miközben 4 paraszt és 4 katona volt a pályán. Aki ezt elolvasta, azt
+    // hitte, nincs parasztja — vagyis a gazdaságot el sem lehet kezdeni. Nem a
+    // szám volt rossz, hanem amit a CÍMKE ígért róla.
+    // Most: a paraszt-számláló a darabszámot mondja, és zárójelben a tétleneket
+    // (az a szám, amiért a játékos egyáltalán ránéz), a katona-számláló pedig
+    // tényleg csak a katonákat.
+    this._ir('mnk', m.munkas, mu.db + (mu.tetlen ? ' (tétlen ' + mu.tetlen + ')' : ''));
+    this._ir('kat', m.katona, Math.max(0, h.elo[cs] - mu.db)
+      + ' (elesett ' + h.halottak[cs] + ')');
     this._ir('sor', m.sorban, k.sorban + ' (kész ' + k.keszult + ')');
     this._ir('tec', m.tech, t.kesz + (t.folyik ? ' (+' + t.folyik + ' folyik)' : ''));
     // A felfedezettség a v0.7 hadi ködjéből jön. Nem dísz: ebből látja a

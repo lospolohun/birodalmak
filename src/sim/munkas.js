@@ -431,16 +431,27 @@ export class Munkasok {
     }
   }
 
-  /** Statisztika a jelentésekhez. */
+  /**
+   * Statisztika a jelentésekhez.
+   *
+   * ⚠️ A `db` (HÁNY paraszt van) és a `dolgozik` (hány DOLGOZIK közülük) két
+   * külön szám, és a HUD-nak mindkettő kell. A `db` a v0.11-ig hiányzott, a
+   * HUD pedig a `dolgozik`-ot írta ki „MUNKÁS" címke alatt: a meccs elején
+   * „MUNKÁS 0" állt ott, holott négy paraszt ácsorgott a központ mellett. Ez
+   * nem szépséghiba volt — a játékos ebből azt olvasta ki, hogy nincs
+   * parasztja, tehát a gazdaság elindíthatatlan.
+   */
   osszesites(csapat) {
     const e = this.sim.egysegek;
-    let dolgozik = 0, cipel = 0;
+    let db = 0, dolgozik = 0, cipel = 0;
     for (let i = 0; i < e.db; i++) {
       if (e.csapat[i] !== csapat || e.tipus[i] !== TIPUS.MUNKAS) continue;
+      if (!this.sim.harc.elo[i]) continue;
+      db++;
       if (this.allapot[i] !== MUNKA.NINCS) dolgozik++;
       cipel += this.cipelDb[i];
     }
-    return { dolgozik, cipel };
+    return { db, tetlen: db - dolgozik, dolgozik, cipel };
   }
 }
 
