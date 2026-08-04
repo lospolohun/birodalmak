@@ -816,13 +816,30 @@ elvar('az `npm run szonda` lánc minden szonda-parancsot tartalmaz', () => {
   // A gyűjtő-parancs a projekt „mindent lefuttat" gombja. Ami kimarad belőle,
   // az a gyakorlatban SOSEM fut le — a v0.9/3 civ-szondája pontosan így maradt
   // kívül a kapun.
-  const lanc = String((PKG.scripts || {}).szonda || '');
-  if (!lanc) return rossz(['nincs `szonda` script a package.json-ban']);
+  const scripts = PKG.scripts || {};
+  if (!scripts.szonda) return rossz(['nincs `szonda` script a package.json-ban']);
+
+  // ⚠️ A LÁNCOT KI KELL BONTANI, NEM SZÖVEGKÉNT NÉZNI
+  // A v0.16-ban nyolc panel-szonda jött, és egy gyűjtő-parancs (`panelek`) fogja
+  // őket össze — a `szonda` azt hívja. Szövegre nézve ez „hiányzó" szondáknak
+  // látszana, holott mind lefut. A hamis riasztás pont olyan káros, mint a
+  // néma kapu: megtanítja az embert figyelmen kívül hagyni a pirosat.
+  // Ezért a láncot REKURZÍVAN bontjuk ki, ahogy az npm is tenné.
+  const kibont = (nev, latott = new Set()) => {
+    if (latott.has(nev)) return '';
+    latott.add(nev);
+    const parancs = String(scripts[nev] || '');
+    let ki = parancs;
+    for (const m of parancs.matchAll(/npm\s+run\s+([\w:-]+)/g)) ki += ' ' + kibont(m[1], latott);
+    return ki;
+  };
+  const lanc = kibont('szonda');
+
   const h = [];
-  for (const [nev, parancs] of Object.entries(PKG.scripts || {})) {
+  for (const [nev, parancs] of Object.entries(scripts)) {
     if (nev === 'szonda') continue;
-    if (!/_szonda\.mjs/.test(String(parancs))) continue;
-    if (!new RegExp('\\b' + nev + '\\b').test(lanc)) h.push('npm run ' + nev + ' — nincs a `szonda` láncban');
+    if (!/_szonda\.mjs|_ellenorzo\.mjs/.test(String(parancs))) continue;
+    if (!lanc.includes(String(parancs))) h.push('npm run ' + nev + ' — nincs a `szonda` láncban');
   }
   return rossz(h);
 });
@@ -1074,15 +1091,43 @@ elvar('a mentés szöveges párja is megvan (mentesSzoveg / betoltesSzoveg)', ()
 // ══════════════════════════════════════════════════════════════════════════
 cim('I) RENDER-SZERZŐDÉS ÉS HALOTT KÓD');
 
-elvar('minden render-osztály adja a frissit / enabled / haromszog hármast', () => {
+elvar('minden FELMOUNTOLT render-réteg adja a frissit / enabled / haromszog hármast', () => {
   // Az FPS-szonda ezen a hármason kapcsolja ki a rétegeket egyesével — a
   // képkocka-költség bontása ezen múlik. Egy réteg, ami nem adja, kimarad a
   // mérésből, és a hiányzó ezredmásodpercek senkinek nem tűnnek fel.
+  //
+  // ⚠️ MIÉRT A `retegek` LISTÁJÁBÓL DOLGOZUNK, ÉS NEM MINDEN OSZTÁLYBÓL
+  // Az első változat a `src/render/` MINDEN exportált osztályát megkövetelte.
+  // A v0.16-ig ez ártalmatlan volt: ott minden osztály réteg is volt egyben.
+  // A v0.16 látvány-sávjai viszont hoztak SEGÉD-osztályokat is — effekt-készlet
+  // (előre foglalt pool), forma-építő, árnyék-kezelő, raj —, amik sosem kerülnek
+  // a `retegek` közé, tehát a szonda sem kapcsolja ki őket.
+  //
+  // Rájuk aggatni egy hazug `set enabled` / `get haromszog` párost rosszabb a
+  // semminél: a kapu zöld lenne, de a szerződés ATTÓL még nem teljesülne, és a
+  // következő olvasó azt hinné, hogy ezek is kikapcsolható rétegek. Ezért a
+  // gát mostantól onnan indul, ami az IGAZSÁG: a `main.js` `retegek` blokkja.
+  // Ami oda be van kötve, arra a hármas KÖTELEZŐ; ami nincs, az segéd.
+  const mainKod = forras(join(GYOKER, 'src/main.js')).kod;
+  const blokk = mainKod.match(/this\.retegek\s*=\s*\{([\s\S]*?)\n\s{4}\};/);
+  if (!blokk) {
+    return rossz(['a `main.js`-ben nem található a `this.retegek = { … }` blokk — '
+      + 'ez a gát abból dolgozik, tehát így semmit nem őriz']);
+  }
+  // A blokkban és az utána következő feltételes bekötésekben szereplő
+  // `new Valami(` nevek — ez a felmountolt rétegek halmaza.
+  const utoBlokk = mainKod.slice(blokk.index, blokk.index + blokk[0].length + 600);
+  const retegNevek = new Set();
+  for (const m of utoBlokk.matchAll(/new\s+(?:\w+\.)?(\w+)\s*\(/g)) retegNevek.add(m[1]);
+
   const h = [];
+  let ellenorzott = 0;
   for (const p of RENDER) {
     const k = forras(p).kod;
     for (const m of k.matchAll(/export\s+class\s+(\w+)/g)) {
       const nev = m[1];
+      if (!retegNevek.has(nev)) continue;   // segéd-osztály, nem réteg
+      ellenorzott++;
       const utan = k.slice(m.index);
       const hiany = [];
       if (!/\n\s{2}frissit\s*\(/.test(utan)) hiany.push('frissit()');
@@ -1091,7 +1136,15 @@ elvar('minden render-osztály adja a frissit / enabled / haromszog hármast', ()
       if (hiany.length) h.push(rel(p) + ' → ' + nev + ': hiányzik ' + hiany.join(', '));
     }
   }
-  return rossz(h);
+  // ⚠️ Ha a felismerés elromlik (átnevezett blokk, más alak), a gát NÉMÁN
+  // nullát ellenőrizne, és örökre zöld maradna. Ez pontosan az a hibafajta,
+  // amiből ennek a projektnek hat volt — ezért a nulla maga is bukás.
+  if (ellenorzott === 0) {
+    return rossz(['egyetlen réteget sem sikerült beazonosítani a `retegek` blokkból — '
+      + 'a gát így semmit nem őriz']);
+  }
+  if (h.length) return rossz(h);
+  return jo(ellenorzott + ' felmountolt réteg, mind adja a hármast');
 });
 
 elvar('a render `frissit()`-je nem allokál képkockánként', () => {

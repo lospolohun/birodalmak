@@ -1,0 +1,373 @@
+/* AGE OF THE CRYSTALS — STATISZTIKA-PANEL STÍLUSA (v0.16).
+
+   ── MINDEN OSZTÁLYNÉV `aoc-stat-` ELŐTAGGAL ──────────────────────────────
+   A v0.16-ot sok agent írja párhuzamosan, és a panelek NEM ismerik egymást.
+   Az előtag ezért nem ízlés kérdése: e nélkül két panel `.kartya` szabálya
+   csendben egymásra írna, és a hiba a MÁSIK panelen jelentkezne.
+
+   ── ⚠️ REJTVE `display: none`, NEM CSAK ÁTTETSZŐEN ───────────────────────
+   Az `alap.css` csak az ÜRES panel-gyökérnek veszi el az egeret
+   (`.aoc-hely-kepernyo > .aoc-panel:empty`). Ez a panel viszont SOSEM üres:
+   a lapja és a vége-képernyője a mountoláskor felépül. Ha a rejtett állapot
+   csak `opacity: 0` lenne, egy csukott statisztika az EGÉSZ pályát
+   kattinthatatlanná tenné — és a hiba a kijelölésnek látszana, nem a
+   statisztikának. Ezért a rejtés kiveszi az elemet a rendezésből.
+
+   ── MIÉRT `tabular-nums` MINDENÜTT ───────────────────────────────────────
+   A táblázat és a görbe-feliratok számai VÁLTOZNAK. Arányos számjegyekkel a
+   99 → 100 váltás elmozdítja a sort, és a szem elveszti a helyét. Ugyanaz a
+   szabály, mint az `alap.css` felső sávjában. */
+
+.aoc-stat {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: #dfe7f5;
+  background: rgba(3, 6, 12, 0.72);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+}
+
+/* Lásd a fejléc figyelmeztetését: a rejtett réteg nem foghatja el az egeret.
+
+   ⚠️ AZ `!important` ITT NEM LUSTASÁG. Ez az EGY osztály rejt el hatféle elemet
+   (a gyökeret, a lapot, a vége-képernyőt, a kártyákat, a mérleg-dobozt), és
+   mindegyiknek van saját `display` szabálya — `flex`, `grid`, `block`. Azonos
+   specificitásnál a KÉSŐBBI szabály nyerne, vagyis a rejtés némán hatástalan
+   lenne minden olyan elemen, aminek a stílusa lejjebb áll a fájlban. Ez a
+   hibafajta pontosan úgy néz ki, mint egy „néha nem záródik be" panel.
+   Az `enabled` kapcsoló ettől működik: az SOR-stílust (inline) ír, ami az
+   `!important` osztállyal SEM ütközik — mindkettő `none`-t ad. */
+.aoc-stat-rejtve { display: none !important; }
+
+/* ══ A LAP ═══════════════════════════════════════════════════════════════ */
+
+.aoc-stat-lap {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 94vw);
+  height: min(860px, 92vh);
+  border-radius: 10px;
+  border: 1px solid rgba(120, 190, 255, 0.28);
+  background: linear-gradient(180deg, rgba(10, 16, 27, 0.98), rgba(7, 11, 19, 0.98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+}
+
+.aoc-stat-fej {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(120, 190, 255, 0.2);
+  background: rgba(12, 19, 32, 0.9);
+}
+.aoc-stat-cim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #ffd479;
+}
+.aoc-stat-cim svg, .aoc-stat-ido svg { display: block; }
+.aoc-stat-ido {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.aoc-stat-fulek { display: flex; gap: 3px; margin-left: auto; }
+.aoc-stat-ful {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9c8e0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s linear, color 0.12s linear;
+}
+.aoc-stat-ful:hover { background: rgba(120, 190, 255, 0.2); color: #eaf2ff; }
+.aoc-stat-ful-aktiv { background: rgba(120, 190, 255, 0.34); color: #ffffff; }
+
+.aoc-stat-zar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c8d6ec;
+  font: inherit;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+.aoc-stat-zar:hover { background: rgba(255, 122, 104, 0.3); color: #fff; }
+
+/* ── Élő fejléc: a két csapat pillanatnyi számai ───────────────────────── */
+
+.aoc-stat-elo {
+  display: flex;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(120, 190, 255, 0.14);
+}
+.aoc-stat-elo-csapat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid currentColor;
+  background: rgba(255, 255, 255, 0.04);
+}
+.aoc-stat-elo-nev {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.aoc-stat-elo-mezo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #dfe7f5;
+  font-size: 13px;
+}
+.aoc-stat-elo-mezo svg { display: block; opacity: 0.85; }
+.aoc-stat-elo-mezo b { font-weight: 700; }
+
+/* ══ A GRAFIKON-RÁCS ═════════════════════════════════════════════════════ */
+
+.aoc-stat-test { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+
+.aoc-stat-racs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.aoc-stat-kartya {
+  padding: 8px 10px 4px;
+  border-radius: 7px;
+  border: 1px solid rgba(120, 190, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+.aoc-stat-kartya-fej { display: flex; align-items: center; gap: 8px; }
+.aoc-stat-kartya-cim {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+.aoc-stat-kartya-cim svg { display: block; }
+.aoc-stat-kartya-ertek { display: flex; gap: 10px; margin-left: auto; font-size: 13px; }
+.aoc-stat-kartya-ertek b { font-weight: 700; }
+
+.aoc-stat-abra { display: block; width: 100%; height: 112px; }
+.aoc-stat-racsvonal { stroke: rgba(150, 190, 240, 0.16); stroke-width: 1; }
+.aoc-stat-tengely {
+  fill: rgba(200, 216, 240, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+}
+/* A vonal SOSEM kitöltött: két egymást keresztező görbe kitöltéssel
+   olvashatatlan lenne, márpedig itt épp az összehasonlítás a lényeg. */
+.aoc-stat-vonal {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ══ CSAPATSZÍNEK ════════════════════════════════════════════════════════
+   Ugyanaz a két szín, amit a minimap (`minimap_adat.js`) és a `gazdasag3d.js`
+   használ — a görbe színe így ugyanazt jelenti, mint a kis térkép pontja. */
+.aoc-stat-cs0 { color: #7fb2ff; }
+.aoc-stat-cs1 { color: #ff9d6a; }
+.aoc-stat-vonal0 { stroke: #7fb2ff; }
+.aoc-stat-vonal1 { stroke: #ff9d6a; }
+
+/* ══ TÁBLÁZAT ════════════════════════════════════════════════════════════ */
+
+.aoc-stat-tabla { display: flex; flex-direction: column; }
+.aoc-stat-sor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.aoc-stat-sor:nth-child(odd) { background: rgba(255, 255, 255, 0.025); }
+.aoc-stat-sor-fej {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.75;
+  background: none;
+}
+.aoc-stat-cella-nev {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.aoc-stat-cella-nev svg { display: block; flex: 0 0 auto; opacity: 0.8; }
+.aoc-stat-cella {
+  flex: 0 0 110px;
+  text-align: right;
+  font-weight: 600;
+  opacity: 0.75;
+}
+/* A vezető oldal kiemelve: e nélkül a szem soronként két számot hasonlítgat,
+   és tizenkilenc sor után feladja. */
+.aoc-stat-vezet {
+  opacity: 1;
+  font-weight: 800;
+  text-shadow: 0 0 10px currentColor;
+}
+.aoc-stat-csoportfej {
+  margin: 10px 0 3px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #ffd479;
+  opacity: 0.85;
+}
+.aoc-stat-alcim {
+  margin: 16px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #ffd479;
+  opacity: 0.85;
+}
+
+/* ══ FORDULÓPONTOK ═══════════════════════════════════════════════════════ */
+
+.aoc-stat-fordulok { display: flex; flex-direction: column; gap: 3px; }
+.aoc-stat-fordulo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border-left: 3px solid currentColor;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+.aoc-stat-fordulo-ikon { display: flex; flex: 0 0 auto; }
+.aoc-stat-fordulo-ikon svg { display: block; }
+.aoc-stat-fordulo-ido {
+  flex: 0 0 46px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.aoc-stat-fordulo-szoveg { color: #dfe7f5; }
+.aoc-stat-ures { padding: 6px 2px; font-size: 13px; opacity: 0.55; }
+
+/* ══ ÁLLÁS-SÁV ═══════════════════════════════════════════════════════════ */
+
+.aoc-stat-lab {
+  padding: 9px 14px 11px;
+  border-top: 1px solid rgba(120, 190, 255, 0.2);
+  background: rgba(12, 19, 32, 0.9);
+}
+.aoc-stat-sav {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.45);
+}
+/* A szélesség képkockánként változhat — az átmenet nélkül a sáv ugrálna. */
+.aoc-stat-sav-resz { background: currentColor; transition: width 0.3s ease-out; }
+.aoc-stat-allas-szoveg { margin-top: 6px; font-size: 13px; font-weight: 600; }
+.aoc-stat-megjegyzes { margin-top: 3px; font-size: 11px; opacity: 0.55; line-height: 1.4; }
+
+/* ══ MECCS VÉGE KÉPERNYŐ ═════════════════════════════════════════════════ */
+
+.aoc-stat-vege {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 6, 12, 0.86);
+  z-index: 2;
+}
+.aoc-stat-vege-lap {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 92vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 22px 26px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 190, 255, 0.3);
+  background: linear-gradient(180deg, rgba(12, 19, 32, 0.99), rgba(7, 11, 19, 0.99));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.7);
+}
+.aoc-stat-vege-cim {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+/* ⚠️ A „GYŐZELEM" ZÖLD CSAK AKKOR JÁR, HA TÉNYLEG AZ. A sim ma nem ismer
+   győzelmi feltételt, ezért a szokásos állapot az `allas` — halkabb, semleges
+   szín. Egy zölden villogó „győzelem" egy eldöntetlen meccs fölött rosszabb,
+   mint a képernyő hiánya. */
+.aoc-stat-vege-cim[data-allapot="gyozelem"] { color: #7fe08c; }
+.aoc-stat-vege-cim[data-allapot="vereseg"] { color: #ff7a68; }
+.aoc-stat-vege-cim[data-allapot="dontetlen"] { color: #ffd479; }
+.aoc-stat-vege-cim[data-allapot="allas"] { color: #cfe0f8; font-size: 24px; }
+.aoc-stat-vege-ok { margin: 4px 0 16px; font-size: 13px; opacity: 0.75; }
+
+.aoc-stat-gombok { display: flex; gap: 8px; margin-top: 20px; }
+.aoc-stat-gomb {
+  padding: 9px 20px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s linear;
+}
+.aoc-stat-gomb-elsodleges { background: #3f7fd0; color: #ffffff; }
+.aoc-stat-gomb-elsodleges:hover { background: #5495e6; }
+.aoc-stat-gomb-masodlagos { background: rgba(255, 255, 255, 0.08); color: #cfdcf0; }
+.aoc-stat-gomb-masodlagos:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* Keskeny képernyőn a kártyák egy oszlopba, a fülek tördelve. */
+@media (max-width: 720px) {
+  .aoc-stat-racs { grid-template-columns: 1fr; }
+  .aoc-stat-fej { flex-wrap: wrap; }
+  .aoc-stat-fulek { margin-left: 0; flex-wrap: wrap; }
+  .aoc-stat-elo { flex-direction: column; }
+  .aoc-stat-cella { flex-basis: 84px; }
+}

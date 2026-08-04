@@ -1,0 +1,117 @@
+/* AGE OF THE CRYSTALS — ÜZENET-PANEL (v0.16).
+ *
+ * ⚠️ MINDEN OSZTÁLYNÉV `aoc-uzenet-` ELŐTAGGAL. A v0.16-ot sok agent írja
+ * párhuzamosan, és a panel-szerződés szerint egy panel CSAK a saját stílusát
+ * hozza. Egyetlen elem-szelektor (`div`, `button`) sincs itt: az kiszivárogna
+ * a többi panelre, és a hibát senki nem kötné ehhez a fájlhoz.
+ *
+ * ⚠️ A GYÖKÉR NEM FOG EGERET. A panel a `kepernyo` helyre kerül, ami a teljes
+ * vásznat lefedi — `pointer-events: none` nélkül egy láthatatlan doboz nyelné
+ * el a kijelölést és a parancs-kattintást a fél képernyőn. Egeret KIZÁRÓLAG a
+ * sorok fognak, és csak amíg látszanak.
+ */
+
+.aoc-uzenet-gyoker {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.aoc-uzenet-sav {
+  position: absolute;
+  /* A felső nyersanyag-sáv alatt, bal oldalt: a klasszikus RTS esemény-hely,
+   * és nem ütközik se a minimappal (jobb alsó), se a hang-kapcsolóval (bal
+   * alsó), se az építés-panellel (alsó közép). */
+  top: 96px;
+  left: 12px;
+  width: min(400px, 34vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.aoc-uzenet-sor {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 9px;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  color: #dfe7f5;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(6, 10, 18, 0.78);
+  border: 1px solid rgba(120, 190, 255, 0.22);
+  border-left-width: 3px;
+  border-radius: 5px;
+  /* A hosszabb mondatok tördelődjenek, de a sáv ne nőjön a képernyő aljáig. */
+  max-height: 4.6em;
+  overflow: hidden;
+  animation: aoc-uzenet-be 180ms ease-out;
+}
+
+/* ⚠️ EZ A SOR NEM ELHAGYHATÓ. A `hidden` attribútum a böngésző alapstílusából
+ * kap `display: none`-t, azt viszont a fenti `display: flex` FELÜLÍRJA (szerzői
+ * stíluslap az UA-lap fölött). Enélkül a `_rajzol()` elrejtett sorai tovább
+ * látszanának — a panel sosem ürülne ki, csak a szövegük fagyna be. Pontosan az
+ * a hibafajta, amit a kód felől nézve senki nem talál meg. */
+.aoc-uzenet-sor[hidden] { display: none; }
+
+.aoc-uzenet-sor:hover {
+  background: rgba(12, 20, 34, 0.92);
+  border-color: rgba(140, 205, 255, 0.6);
+}
+
+.aoc-uzenet-sor:focus-visible {
+  outline: 2px solid rgba(140, 205, 255, 0.8);
+  outline-offset: 1px;
+}
+
+/* A három fajta CSAK a bal szegélyben és az ikon színében tér el. A háttér
+ * végig egyforma marad: színes hátterű dobozok fölött a MONDAT olvashatatlan,
+ * és a lényeg a mondat. */
+.aoc-uzenet-sor[data-fajta="info"] { border-left-color: rgba(120, 190, 255, 0.85); }
+.aoc-uzenet-sor[data-fajta="figyelem"] { border-left-color: rgba(240, 190, 80, 0.9); }
+.aoc-uzenet-sor[data-fajta="baj"] { border-left-color: rgba(240, 96, 84, 0.95); }
+
+.aoc-uzenet-sor[data-fajta="figyelem"] { color: #f3e2bd; }
+.aoc-uzenet-sor[data-fajta="baj"] { color: #f7cfc9; }
+
+.aoc-uzenet-ikon {
+  flex: 0 0 auto;
+  display: block;
+  line-height: 0;
+  margin-top: 1px;
+  opacity: 0.9;
+}
+
+.aoc-uzenet-szoveg {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* A kamera-ugrás jelzése. Halvány, amíg rá nem visz az egér — a sor tartalma a
+ * fontos, ez csak azt ígéri, hogy a kattintásnak van értelme. */
+.aoc-uzenet-ugras {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  opacity: 0.35;
+  letter-spacing: 0;
+}
+
+.aoc-uzenet-sor:hover .aoc-uzenet-ugras { opacity: 0.95; }
+
+@keyframes aoc-uzenet-be {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* A mozgásérzékenységre állított rendszereken a becsúszás elmarad. A panel
+ * riasztásokat mutat — ott a mozgás nem dísz, hanem zavaró. */
+@media (prefers-reduced-motion: reduce) {
+  .aoc-uzenet-sor { animation: none; }
+}

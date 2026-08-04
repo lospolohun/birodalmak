@@ -13,8 +13,24 @@
 //
 // A nyíl a REPÜLÉSI IRÁNYBA fordul. Ehhez a `Lovedekek` eltárolja az utolsó
 // egységvektort, tehát a rendernek nem kell visszaszámolnia semmit.
+//
+// ── EZ A RÉTEG VISZI A HARCI EFFEKTEKET IS (v0.16) ────────────────────────
+// A röppálya és a becsapódás ugyanannak a dolognak a két fele, ezért az
+// `EffektHarc3D` (villanás, szikra, por, füst, törmelék, rom, ostromkő) ennek
+// a rétegnek a gyereke. Két gyakorlati oka is van:
+//
+//   1. A `src/main.js` réteg-táblája ebben a körben NEM módosítható (tizenhat
+//      agent dolgozik ugyanabban a munkafában), tehát egy önálló effekt-réteget
+//      senki nem hozna létre — némán, hibaüzenet nélkül maradna ki a képből.
+//   2. Így az effektek automatikusan követik a lövedék-réteg életciklusát:
+//      `ujraKot`, `enabled`, `bont` mind egy helyen.
+//
+// KÖVETKEZMÉNY: `__aoc.reteg('lovedek', false)` az effekteket is elnémítja, és
+// a `haromszog` az effektek háromszögeit is tartalmazza. Az FPS-szonda
+// réteg-bontásában tehát a `lovedek` sor a NYÍL + EFFEKT együttes költsége.
 
 import { THREE } from './core3d.js';
+import { EffektHarc3D } from './effekt_harc.js';
 
 /** A nyíl a talaj fölött ennyivel repül (a figurák mellmagassága). */
 const MAGASSAG = 0.55;
@@ -37,12 +53,20 @@ export class Lovedek3D {
     this.halo.count = 0;
     szinter.add(this.halo);
     this._db = 0;
+
+    /** Harci és ostrom-effektek (lásd a fejlécet). */
+    this.effekt = new EffektHarc3D(szinter, sim);
   }
 
-  ujraKot() { this.halo.count = 0; this._db = 0; }
+  ujraKot(sim) {
+    this.halo.count = 0;
+    this._db = 0;
+    this.effekt.ujraKot(sim);
+  }
 
   /* eslint-disable no-unused-vars */
-  frissit(sim, alfa) {
+  frissit(sim, alfa, most) {
+    this.effekt.frissit(sim, alfa, most);
     if (!this._enabled) { this.halo.count = 0; return; }
     const lv = sim.lovedekek;
     const racs = sim.racs;
@@ -69,12 +93,22 @@ export class Lovedek3D {
   }
   /* eslint-enable no-unused-vars */
 
-  set enabled(v) { this._enabled = !!v; this.halo.visible = this._enabled; }
+  set enabled(v) {
+    this._enabled = !!v;
+    this.halo.visible = this._enabled;
+    this.effekt.enabled = this._enabled;
+  }
+
   get enabled() { return this._enabled; }
-  /** Négyoldalú henger: 8 palást + 4 fedél háromszög. */
-  get haromszog() { return this._enabled ? this._db * 12 : 0; }
+
+  /**
+   * Négyoldalú henger: 8 palást + 4 fedél háromszög — PLUSZ az effektek.
+   * A kettő egy sorban jelenik meg a szonda réteg-bontásában (lásd a fejlécet).
+   */
+  get haromszog() { return this._enabled ? this._db * 12 + this.effekt.haromszog : 0; }
 
   bont() {
+    this.effekt.bont();
     this.szinter.remove(this.halo);
     this.halo.geometry.dispose();
     this.halo.material.dispose();

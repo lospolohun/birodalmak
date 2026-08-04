@@ -1,0 +1,217 @@
+/* AGE OF THE CRYSTALS — ÉPÍTÉS-PANEL STÍLUSA (v0.16).
+
+   Minden osztálynév `aoc-epites-` előtaggal kezdődik (panel-szerződés 2. pont):
+   tizenhat agent dolgozik ugyanabban a munkafában, és egy `.gomb` vagy `.racs`
+   nevű szabály a szomszéd panel gombjait is átfestené.
+
+   A színek SZÁNDÉKOSAN az `alap.css` palettájából valók — egy szín egy dolgot
+   jelentsen a játék minden felületén. A négy nyersanyag árnyalata megegyezik a
+   `ikonok.js` `NYERS_SZIN`-jével és a minimapéval.
+
+   ⚠️ EGYETLEN GLOBÁLIS SZABÁLY SINCS ITT. Nincs `*`, nincs `body`, nincs
+   elemtípus-szelektor a gyökéren kívül — minden szabály az `.aoc-epites`
+   leszármazottjaira szól. */
+
+.aoc-epites {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px 6px;
+  border-radius: 7px;
+  background: rgba(6, 10, 18, 0.86);
+  border: 1px solid rgba(120, 190, 255, 0.22);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  color: #dfe7f5;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* A panel ELFOGJA az egeret (a HUD többi részével ellentétben) — ide
+     kattintani kell. A vászon alatta marad, a gombok fölött nem. */
+  pointer-events: auto;
+  user-select: none;
+}
+
+/* Lerakási módban a keret aranyra vált: a játékosnak a képernyő szélén is
+   látszania kell, hogy „most egy épületet tartok a kezemben". */
+.aoc-epites[data-lerakas="1"] {
+  border-color: rgba(255, 212, 121, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 212, 121, 0.25) inset, 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+
+.aoc-epites-fej {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.aoc-epites-cim {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  opacity: 0.75;
+}
+
+.aoc-epites-sugo {
+  font-size: 11px;
+  opacity: 0.45;
+}
+
+.aoc-epites-racs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+/* Csoport-elválasztó: gazdaság | katonai | védelem | kereskedelem. Egy tizenegy
+   tagú, tagolatlan gombsort a szem nem tud pásztázni. */
+.aoc-epites-valaszto {
+  width: 1px;
+  margin: 4px 3px;
+  background: rgba(120, 190, 255, 0.18);
+}
+.aoc-epites-valaszto:first-child { display: none; }
+
+.aoc-epites-gomb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 78px;
+  padding: 6px 4px 5px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  background: rgba(14, 22, 36, 0.9);
+  border: 1px solid rgba(120, 190, 255, 0.2);
+  border-radius: 5px;
+  transition: border-color 110ms, background 110ms, transform 90ms;
+}
+
+.aoc-epites-gomb:hover:not(:disabled) {
+  border-color: rgba(120, 190, 255, 0.6);
+  background: rgba(22, 34, 54, 0.95);
+}
+.aoc-epites-gomb:active:not(:disabled) { transform: translateY(1px); }
+.aoc-epites-gomb:focus-visible { outline: 2px solid #ffd479; outline-offset: 2px; }
+
+/* A KIVÁLASZTOTT épület — ugyanaz az arany, mint a panel kerete lerakási
+   módban, hogy a kettő egy dolognak látsszon. */
+.aoc-epites-gomb[data-valasztott="1"] {
+  border-color: #ffd479;
+  background: rgba(255, 212, 121, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 212, 121, 0.4) inset;
+}
+
+/* A TILTOTT gomb. Halvány, de OLVASHATÓ marad — az ár és az idő pont akkor
+   érdekes, amikor még nem telik rá, és a `pointer-events` sem tűnhet el:
+   a rámutatásra a lábléc kiírja, MIÉRT tiltott. */
+.aoc-epites-gomb:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  border-style: dashed;
+  border-color: rgba(120, 190, 255, 0.16);
+  pointer-events: auto;
+}
+
+/* Indok-szerinti jelzés a tiltott gombokon. A szám a `panel_epites_adat.js`
+   `INDOK` kódja — 1 tele, 2 korszak, 3 nincs paraszt, 4 nyersanyag. */
+.aoc-epites-gomb[data-indok="1"] { border-color: rgba(224, 132, 148, 0.4); }
+.aoc-epites-gomb[data-indok="2"] { border-color: rgba(179, 155, 236, 0.45); }
+.aoc-epites-gomb[data-indok="3"] { border-color: rgba(255, 212, 121, 0.4); }
+.aoc-epites-gomb[data-indok="4"] { border-color: rgba(224, 132, 148, 0.3); }
+
+.aoc-epites-ikon {
+  display: block;
+  line-height: 0;
+  opacity: 0.92;
+}
+
+.aoc-epites-nev {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.aoc-epites-ar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.aoc-epites-ar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-style: normal;
+  opacity: 0.85;
+}
+.aoc-epites-ar-tag svg { display: block; }
+
+/* A HIÁNYZÓ nyersanyag pirosan. Ez a legfontosabb egy pillantásnyi információ:
+   nem „nem telik rá", hanem „a KŐ hiányzik" — a játékos ebből tudja, hova
+   küldje a következő parasztot. */
+.aoc-epites-ar-tag[data-hiany="1"] {
+  color: #ff8f9e;
+  opacity: 1;
+  font-weight: 700;
+}
+
+.aoc-epites-ido {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.aoc-epites-ido svg { display: block; }
+
+.aoc-epites-jel {
+  font-size: 9px;
+  letter-spacing: 0.2px;
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.aoc-epites-lab {
+  min-height: 1.4em;
+  font-size: 11px;
+  opacity: 0.8;
+  color: #ffd479;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── A KURZORT KÖVETŐ JELZŐ ───────────────────────────────────────────────
+   A gyökéren BELÜL él (panel-szerződés 2. pont), de `position: fixed`, tehát a
+   képernyő bármely pontjára odaáll. A `pointer-events: none` kritikus: enélkül
+   a jelző elnyelné a saját kattintását, és sosem épülne fel semmi. */
+.aoc-epites-kurzor {
+  position: fixed;
+  z-index: 20;
+  transform: translate(14px, 16px);
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: rgba(6, 10, 18, 0.9);
+  border: 1px solid rgba(120, 230, 160, 0.9);
+  color: #bff0cd;
+}
+
+.aoc-epites-kurzor[data-ok="0"] {
+  border-color: rgba(255, 120, 130, 0.9);
+  color: #ffc2c8;
+}
+
+/* Kisebb képernyőn a gombok szűkülnek, de a sor NEM tördelődik: a tizenegy
+   gomb egy sorban tartása maga az információ (ennyi épület van, ennyi tiltott). */
+@media (max-width: 1100px) {
+  .aoc-epites-gomb { width: 62px; padding: 5px 3px 4px; }
+  .aoc-epites-jel { display: none; }
+}

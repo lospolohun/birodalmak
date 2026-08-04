@@ -1,6 +1,21 @@
-/* AGE OF THE CRYSTALS — minimális héj a v0.1 szondához.
-   A rendes HUD a v0.7-ben jön; itt csak annyi kell, hogy a vászon teljes
-   képernyős legyen és a mérőszámok olvashatók legyenek. */
+/* AGE OF THE CRYSTALS — ALAP-HÉJ ÉS HUD-VÁZ (v0.16).
+
+   ── MI VAN ITT, ÉS MI NINCS ──────────────────────────────────────────────
+   Itt CSAK a héj van: a vászon, a kijelölő-keret, és a HUD-VÁZ — a hat
+   mount-pont, a felső nyersanyag-sáv, a sebesség-váltó és a tanácsadó-sáv.
+
+   A PANELEK STÍLUSA NEM ITT VAN. Minden panel a saját `panel_*.css`-ét hozza,
+   és minden osztályneve a panel nevével kezdődik (`aoc-epites-…`). Ez nem
+   ízlés kérdése: a v0.16-ot sok agent írja párhuzamosan, és egy közös CSS-fájl
+   ugyanúgy torlódási pont lenne, mint egy közös `hud.js`. Aki ide ír
+   panel-szabályt, az a következő agent munkáját írja felül.
+
+   ── MIÉRT NEM FOGJA EL AZ EGERET ─────────────────────────────────────────
+   A `#hud` teljes képernyős, de `pointer-events: none` — különben a HUD
+   láthatatlan üres területei elnyelnék a pálya-kattintást, és a játék
+   irányíthatatlan lenne. A mount-pontok GYEREKEI kapják vissza az egeret
+   (`.aoc-hely > *`), tehát a panel kattintható, a körülötte lévő üres hely nem.
+   Ez a szabály a projekt egyik visszatérő hibája volt — ne vedd ki. */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -20,23 +35,6 @@ html, body {
   touch-action: none;
 }
 
-#hud {
-  position: fixed;
-  top: 8px;
-  left: 10px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: rgba(6, 10, 18, 0.72);
-  border: 1px solid rgba(120, 190, 255, 0.22);
-  /* A HUD sosem foghatja el az egérrel a pályát */
-  pointer-events: none;
-  /* `pre`, nem `nowrap`: a v0.2 óta a HUD több soros (mérőszámok, kijelölés,
-     billentyű-súgó), és a sortöréseket a szöveg maga hozza. */
-  white-space: pre;
-  letter-spacing: 0.2px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-}
-
 /* A keret-kijelölés doboza. Szándékosan DOM és nem 3D: a GPU-nak nulla
    költség, és a képpont-pontos illeszkedés ingyen jön. A `pointer-events`
    kikapcsolása kritikus — enélkül a keret elnyelné a saját felengedését. */
@@ -46,17 +44,17 @@ html, body {
   border: 1px solid rgba(120, 230, 160, 0.95);
   background: rgba(120, 230, 160, 0.14);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45) inset;
-  z-index: 10;
+  z-index: 30;
 }
 
-/* A minimap (v0.7/3). A JOBB ALSÓ sarokban, mert a HUD a bal felsőben ül, és
-   a kettő így sosem takarja egymást — a képernyő közepe pedig marad a
-   játéknak. A `pointer-events` itt SZÁNDÉKOSAN bekapcsolva van (a HUD-dal
-   ellentétben): a minimapra kattintás mozgatja a kamerát. */
-#minimap {
+/* A minimap ÖRÖKÖLT helye: amíg a `minimap.js` a `<body>`-ba teszi magát, a
+   jobb alsó sarokban ül. A szabály SZÁNDÉKOSAN `body > #minimap`: amint a
+   minimap panelként a `jobb_also` mount-pontba költözik, ez a szabály magától
+   kikapcsol, és nem verekszik a panel saját elrendezésével. */
+body > #minimap {
   position: fixed;
-  right: 10px;
-  bottom: 10px;
+  right: 12px;
+  bottom: 12px;
   width: 192px;
   height: 192px;
   border-radius: 4px;
@@ -69,36 +67,195 @@ html, body {
   z-index: 12;
 }
 
-/* ── HUD (v0.7/3) ───────────────────────────────────────────────────────
-   A v0.2 óta a HUD egyetlen szövegblokk volt. Most rögzített MEZŐK vannak,
-   mert egy RTS-ben a nyersanyag-számot a szem sarokkal olvassa — ahhoz
-   viszont rögzített HELY kell, nem folyó szöveg. A `tabular-nums` ezt
-   fejezi be: a számjegyek egyforma szélesek, tehát a szám nem ugrál, amikor
-   99-ről 100-ra vált. */
-.hud-panel { display: flex; flex-direction: column; gap: 2px; }
-.hud-eroforras {
+/* ══ A HUD-VÁZ ═══════════════════════════════════════════════════════════ */
+
+.aoc-hud {
+  position: fixed;
+  inset: 0;
   display: flex;
-  gap: 14px;
-  font-size: 15px;
+  flex-direction: column;
+  pointer-events: none;
+  z-index: 20;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  user-select: none;
+}
+.aoc-hud[hidden] { display: none; }
+
+.aoc-sor { display: flex; }
+/* A középső sáv NYÚLIK — így az alsó sáv a képernyő aljára tapad akkor is, ha
+   egy panel közben megnő. */
+.aoc-sor-kozep { flex: 1 1 auto; min-height: 0; align-items: flex-start; }
+.aoc-sor-also { align-items: flex-end; gap: 10px; padding: 0 12px 12px; }
+
+.aoc-hely { display: flex; }
+.aoc-hely > * { pointer-events: auto; }
+.aoc-hely-felso { flex: 1 1 auto; align-items: flex-start; gap: 10px; }
+.aoc-hely-also-bal { flex: 0 1 auto; align-items: flex-end; gap: 8px; }
+.aoc-hely-also-kozep { flex: 1 1 auto; justify-content: center; align-items: flex-end; gap: 8px; }
+.aoc-hely-also-jobb { flex: 0 1 auto; align-items: flex-end; gap: 8px; }
+.aoc-hely-jobb-also { flex: 0 0 auto; align-items: flex-end; }
+/* Teljes képernyős fedőréteg (párbeszéd, győzelem-képernyő, célkereszt).
+   ⚠️ Egy ÜRES panel-gyökér itt NEM foghatja el az egeret: egy csukott
+   technológiafa különben az egész pályát kattinthatatlanná tenné, és a hiba
+   nem is a HUD-nak látszana. Nyitáskor a panel a saját tartalmával kapja
+   vissza az egeret. */
+.aoc-hely-kepernyo { position: absolute; inset: 0; display: block; }
+.aoc-hely-kepernyo > .aoc-panel:empty { pointer-events: none; }
+
+.aoc-kozep-bal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  max-width: 46vw;
+}
+
+/* ── Felső sáv ─────────────────────────────────────────────────────────
+   Sötét, enyhén áttetsző csík a képernyő tetején. A `tabular-nums` nem
+   dísz: enélkül a szám SZÉLESSÉGE változik 99→100-nál, és a sáv többi eleme
+   megugrik — pont az a mozgás, amitől a szem nem tudja sarokkal olvasni. */
+.aoc-felso-sav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  padding: 5px 12px;
+  background: linear-gradient(180deg, rgba(8, 13, 22, 0.94), rgba(8, 13, 22, 0.72));
+  border-bottom: 1px solid rgba(120, 190, 255, 0.22);
   font-variant-numeric: tabular-nums;
+  pointer-events: auto;
 }
-.hud-eroforras b { font-weight: 700; }
-.hud-sereg { display: flex; gap: 12px; opacity: 0.9; font-variant-numeric: tabular-nums; }
-.hud-eroforras i, .hud-sereg i {
-  font-style: normal;
-  opacity: 0.6;
-  margin-right: 4px;
+
+.aoc-nyers,
+.aoc-jelzo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 5px;
+  border-radius: 5px;
+}
+.aoc-nyers-ikon, .aoc-jelzo-ikon { display: flex; opacity: 0.95; }
+.aoc-nyers-ikon svg, .aoc-jelzo-ikon svg { display: block; }
+
+.aoc-nyers-ertek {
+  font-size: 16px;
+  font-weight: 700;
+  min-width: 3.4ch;
+  text-align: right;
+  letter-spacing: 0.2px;
+}
+/* A trend-nyíl fix szélességű helyet foglal, hogy a megjelenése ne tolja el a
+   mellette álló nyersanyagot. */
+.aoc-nyers-trend {
+  width: 1ch;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.85;
+}
+.aoc-nyers-trend[data-irany="no"] { color: #7fe08c; }
+.aoc-nyers-trend[data-irany="fogy"] { color: #e8756a; }
+
+.aoc-elvalaszto {
+  width: 1px;
+  height: 22px;
+  margin: 0 8px;
+  background: rgba(150, 190, 240, 0.28);
+}
+
+.aoc-jelzo-ertek { font-size: 14px; font-weight: 600; opacity: 0.94; }
+.aoc-jelzo-korszak .aoc-jelzo-ertek { color: #ffd479; }
+.aoc-jelzo-ido .aoc-jelzo-ertek { opacity: 0.7; }
+/* Tele a népesség: ez az az állapot, amiben a játékos ÁLL — nem lehet
+   ugyanolyan halk, mint a többi szám. */
+.aoc-jelzo-nep.tele {
+  background: rgba(230, 110, 90, 0.22);
+  box-shadow: 0 0 0 1px rgba(230, 110, 90, 0.45) inset;
+}
+.aoc-jelzo-nep.tele .aoc-jelzo-ertek { color: #ff9d86; }
+
+/* ── Sebesség-váltó ────────────────────────────────────────────────────
+   ⚠️ A gombok NEM a tick hosszát írják át (az fix 20 Hz és determinisztikus),
+   hanem azt, hány ticket futtat a gazda egy képkockában. Lásd `main.js`. */
+.aoc-sebesseg {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px rgba(150, 190, 240, 0.18) inset;
+}
+.aoc-seb-gomb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #cddaf0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s linear, color 0.12s linear;
+}
+.aoc-seb-gomb:hover { background: rgba(120, 190, 255, 0.18); }
+.aoc-seb-gomb.aktiv { background: rgba(120, 190, 255, 0.34); color: #ffffff; }
+.aoc-seb-gomb svg { display: block; }
+/* Szünetben az egész képernyő halkan jelzi, hogy a világ áll. */
+.aoc-hud[data-sebesseg="0"] .aoc-seb-gomb.aktiv { background: rgba(255, 212, 121, 0.4); color: #1a1206; }
+
+/* ── Tanácsadó-sáv ─────────────────────────────────────────────────────
+   Bal felül, a felső sáv alatt: itt szólal meg, ha nincs hely, elfogyott a
+   fa, vagy elutasított parancsot adtunk. Elhalványul, de nem tűnik el —
+   a hirtelen eltűnő szöveg észrevétlen marad. */
+.aoc-tanacsado {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 9px;
+  border-radius: 6px;
+  border-left: 3px solid #7fb2ff;
+  background: rgba(10, 16, 26, 0.86);
+  font-size: 13px;
+  line-height: 1.35;
+  transition: opacity 0.5s linear;
+  pointer-events: auto;
+}
+.aoc-tanacsado-ikon { display: flex; flex: 0 0 auto; }
+.aoc-tanacsado-ikon svg { display: block; }
+.aoc-tanacsado[data-fajta="info"] { border-left-color: #7fb2ff; color: #d8e6ff; }
+.aoc-tanacsado[data-fajta="info"] .aoc-tanacsado-ikon { color: #7fb2ff; }
+.aoc-tanacsado[data-fajta="figyelem"] { border-left-color: #ffd479; color: #ffe8b6; }
+.aoc-tanacsado[data-fajta="figyelem"] .aoc-tanacsado-ikon { color: #ffd479; }
+.aoc-tanacsado[data-fajta="baj"] { border-left-color: #ff7a68; color: #ffcfc7; }
+.aoc-tanacsado[data-fajta="baj"] .aoc-tanacsado-ikon { color: #ff7a68; }
+.aoc-halvany { opacity: 0; }
+
+/* Fejlesztői mérősor — halkan, de LÁTHATÓAN. Ez a szám mondja meg, hogy a
+   képernyőn látott világ ugyanaz-e, amit a szonda mér. */
+.aoc-mero {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  opacity: 0.5;
+  white-space: pre;
 }
-/* A négy nyersanyag színe MEGEGYEZIK a minimapéval és a 3D-s lelőhelyekével.
-   Egy szín egy dolgot jelentsen a játékban — enélkül a játékosnak minden
-   felületen újra kell tanulnia ugyanazt. */
-.hud-nyers-0 b { color: #e08494; }
-.hud-nyers-1 b { color: #7fc98c; }
-.hud-nyers-2 b { color: #c3c7cf; }
-.hud-nyers-3 b { color: #b39bec; }
-.hud-kijeloles { opacity: 0.95; }
-.hud-uzenet { min-height: 1em; color: #ffd479; }
-.hud-mero, .hud-sugo { opacity: 0.55; font-size: 11px; }
+
+/* Tartalék-kijelölés: amíg a `panel_kijeloles.js` nincs felmountolva. */
+.aoc-tartalek {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(10, 16, 26, 0.78);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre;
+  pointer-events: auto;
+}
+.aoc-tartalek:empty { display: none; }
+
+/* A panelek KERETE a vázé; a belsejük a panelé. Ennyi és nem több. */
+.aoc-panel { pointer-events: auto; }

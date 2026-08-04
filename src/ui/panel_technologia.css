@@ -1,0 +1,318 @@
+/* AGE OF THE CRYSTALS — TECHNOLÓGIA-PANEL (v0.16).
+
+   ── MIÉRT SAJÁT FÁJL ────────────────────────────────────────────────────
+   A panel-szerződés szerint minden panel a SAJÁT stílusát hozza, és senki
+   máséba nem ír. Ezért itt MINDEN osztálynév `aoc-tech-` előtagú, és nincs
+   egyetlen elem-szelektor sem a gyökéren kívül: a `div { … }` alakú szabály
+   tizenhat párhuzamos panel mellett garantáltan átüt valaki máson.
+
+   ── MIÉRT TELJES KÉPERNYŐ ───────────────────────────────────────────────
+   A fa négy korszak-oszlopa és a hozzájuk tartozó indoklások egyszerűen nem
+   férnek el egy sarok-panelben. A mérce a TELEPESEK Akadémia-képernyője: a
+   játék megáll egy pillanatra, a játékos ránéz a teljes képre, dönt, és
+   visszamegy. Ezért `position: fixed` és saját háttér — de a `hely:
+   'kepernyo'` sávban, tehát a HUD-váz dönti el, hova kerül a rétegsorban.
+
+   ── AMI A LEGKÖNNYEBBEN ELROMLIK ────────────────────────────────────────
+   A `pointer-events`. A panel gombjai KATTINTHATÓK kell legyenek (a HUD
+   többi része szándékosan átereszt), viszont amíg REJTVE van, egyáltalán nem
+   foghatja el az egeret — különben a játékos a pálya közepére kattintva egy
+   láthatatlan doboznak parancsolna. A rejtés ezért `display: none`, nem
+   `opacity: 0`. */
+
+.aoc-tech-gyoker {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 10px;
+  gap: 10px;
+  background: linear-gradient(180deg, rgba(4, 7, 13, 0.96) 0%, rgba(6, 11, 20, 0.93) 100%);
+  color: #dfe7f5;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+}
+
+/* REJTÉS: `display:none`, hogy az egeret se fogja el. Lásd a fejlécet. */
+.aoc-tech-rejtve { display: none; }
+
+/* ── FEJLÉC ──────────────────────────────────────────────────────────── */
+
+.aoc-tech-fejlec {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(120, 190, 255, 0.22);
+}
+
+.aoc-tech-cim {
+  font-size: 17px;
+  letter-spacing: 2.5px;
+  font-weight: 700;
+  color: #9fd0ff;
+  text-transform: uppercase;
+}
+
+.aoc-tech-korszak-jel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(111, 208, 232, 0.12);
+  border: 1px solid rgba(111, 208, 232, 0.35);
+  color: #b6e6f5;
+}
+
+.aoc-tech-osszesites {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #93a4bd;
+}
+
+.aoc-tech-szam { color: #dfe7f5; font-weight: 700; }
+.aoc-tech-szam-kesz { color: #7ac46a; }
+.aoc-tech-szam-folyik { color: #e8c96a; }
+.aoc-tech-szam-elerheto { color: #6fd0e8; }
+.aoc-tech-szam-zarva { color: #8c94a4; }
+
+.aoc-tech-bezar {
+  border: 1px solid rgba(120, 190, 255, 0.3);
+  background: rgba(10, 16, 28, 0.9);
+  color: #cfe0f5;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.aoc-tech-bezar:hover { background: rgba(26, 42, 68, 0.95); }
+
+/* ── OSZLOPOK ────────────────────────────────────────────────────────── */
+
+.aoc-tech-racs {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  overflow: auto;
+  align-items: start;
+}
+
+.aoc-tech-oszlop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(9, 14, 24, 0.75);
+  border: 1px solid rgba(120, 190, 255, 0.12);
+}
+
+/* A JELENLEGI korszak oszlopa kiemelve — ez az egyetlen hely, ahol a szem
+   megkapaszkodik, amikor kinyílik a panel. */
+.aoc-tech-oszlop-aktiv {
+  border-color: rgba(111, 208, 232, 0.55);
+  background: rgba(14, 24, 38, 0.85);
+  box-shadow: 0 0 0 1px rgba(111, 208, 232, 0.16) inset;
+}
+/* A MÁR ELÉRT, de nem aktuális korszakok tompábbak, a JÖVŐBELIEK a
+   legtompábbak: a rangsor önmagában is információ. */
+.aoc-tech-oszlop-jovo { opacity: 0.82; }
+
+.aoc-tech-oszlop-fej {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(120, 190, 255, 0.18);
+}
+.aoc-tech-oszlop-nev {
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #cfe0f5;
+}
+.aoc-tech-oszlop-allas {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8c94a4;
+  font-variant-numeric: tabular-nums;
+}
+.aoc-tech-oszlop-nyit { font-size: 11px; color: #8fa2bd; }
+
+/* ── KORSZAKVÁLTÓ KÁRTYA ─────────────────────────────────────────────── */
+
+.aoc-tech-valtas {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(232, 201, 106, 0.45);
+  background: rgba(46, 38, 16, 0.55);
+}
+.aoc-tech-valtas-cim { font-weight: 700; color: #f0d68a; letter-spacing: 0.5px; }
+.aoc-tech-valtas-mondat { font-size: 11px; color: #cbc19a; }
+
+.aoc-tech-gomb {
+  width: 100%;
+  border: 1px solid rgba(232, 201, 106, 0.6);
+  background: rgba(232, 201, 106, 0.16);
+  color: #f4e6b4;
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.aoc-tech-gomb:hover { background: rgba(232, 201, 106, 0.3); }
+.aoc-tech-gomb[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: rgba(140, 148, 164, 0.4);
+  background: rgba(140, 148, 164, 0.1);
+  color: #9aa4b4;
+}
+
+/* ── TECHNOLÓGIA-KÁRTYA ──────────────────────────────────────────────── */
+
+.aoc-tech-kartya {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(120, 190, 255, 0.16);
+  background: rgba(12, 18, 30, 0.8);
+}
+
+.aoc-tech-kartya-fej { display: flex; align-items: center; gap: 7px; }
+.aoc-tech-ikon { display: flex; flex: 0 0 auto; color: #9fd0ff; }
+.aoc-tech-nev {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aoc-tech-jelveny {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  opacity: 0.9;
+}
+
+.aoc-tech-hatas { font-size: 11px; color: #a8b6cc; }
+.aoc-tech-hol { font-size: 11px; color: #7f8ca1; }
+
+.aoc-tech-ar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.aoc-tech-ar-tetel { display: flex; align-items: center; gap: 3px; }
+/* A HIÁNYZÓ nyersanyag pirosan: a játékos így egy pillantással látja, melyik
+   számot kell feltornásznia, és nem kell a mondatot elolvasnia hozzá. */
+.aoc-tech-ar-hianyzik { color: #e8756a; font-weight: 700; }
+
+.aoc-tech-indok {
+  font-size: 11px;
+  color: #e0a89f;
+  border-left: 2px solid rgba(232, 117, 106, 0.5);
+  padding-left: 6px;
+}
+
+/* Haladás-sáv. A szélesség `transform`-mal skálázódna szebben, de itt a
+   szélesség pontosan a százalék, és a panel legfeljebb 10 Hz-en ír — a
+   képkockákat nem ez viszi el. */
+.aoc-tech-sav {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(120, 190, 255, 0.12);
+  overflow: hidden;
+}
+.aoc-tech-sav-belso {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, #e8c96a, #f0d68a);
+}
+.aoc-tech-hatra {
+  font-size: 11px;
+  color: #e8c96a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ÜRES elem NE foglaljon helyet. A kártya `flex` + `gap`, tehát egy magasság
+   nélküli üres `div` is elvisz egy `gap`-nyi sávot — hat kártyán az már két
+   sornyi üres hely a semmiért. (Ez a `:empty`, nem `:blank`: a szöveg-csomópont
+   nélküli elemre illeszkedik, és a panel pontosan így üríti őket.) */
+.aoc-tech-hatra:empty,
+.aoc-tech-indok:empty,
+.aoc-tech-oszlop-nyit:empty { display: none; }
+
+/* ── ÁLLAPOT-SZÍNEK ──────────────────────────────────────────────────── */
+
+.aoc-tech-allapot-kesz {
+  border-color: rgba(122, 196, 106, 0.5);
+  background: rgba(20, 34, 22, 0.8);
+}
+.aoc-tech-allapot-kesz .aoc-tech-jelveny { color: #7ac46a; }
+.aoc-tech-allapot-kesz .aoc-tech-ikon { color: #7ac46a; }
+
+.aoc-tech-allapot-folyik {
+  border-color: rgba(232, 201, 106, 0.55);
+  background: rgba(36, 32, 16, 0.8);
+}
+.aoc-tech-allapot-folyik .aoc-tech-jelveny { color: #e8c96a; }
+.aoc-tech-allapot-folyik .aoc-tech-ikon { color: #e8c96a; }
+
+.aoc-tech-allapot-elerheto {
+  border-color: rgba(111, 208, 232, 0.5);
+  background: rgba(12, 26, 34, 0.85);
+}
+.aoc-tech-allapot-elerheto .aoc-tech-jelveny { color: #6fd0e8; }
+.aoc-tech-allapot-elerheto .aoc-tech-ikon { color: #6fd0e8; }
+
+.aoc-tech-allapot-zarva {
+  border-color: rgba(140, 148, 164, 0.28);
+  background: rgba(10, 13, 20, 0.8);
+  opacity: 0.85;
+}
+.aoc-tech-allapot-zarva .aoc-tech-jelveny { color: #8c94a4; }
+.aoc-tech-allapot-zarva .aoc-tech-ikon { color: #6d7686; }
+.aoc-tech-allapot-zarva .aoc-tech-nev { color: #9aa4b4; }
+
+/* ── LÁBLÉC ──────────────────────────────────────────────────────────── */
+
+.aoc-tech-lablec {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #6f7b8e;
+  padding-top: 6px;
+  border-top: 1px solid rgba(120, 190, 255, 0.14);
+}
+
+/* Kis képernyőn a négy oszlop kettőre esik vissza. A fa így is olvasható
+   marad — négy hasáb 900 képpont alatt már használhatatlanul keskeny. */
+@media (max-width: 900px) {
+  .aoc-tech-racs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

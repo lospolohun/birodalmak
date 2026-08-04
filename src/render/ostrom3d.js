@@ -12,6 +12,16 @@
 //
 // A `props3d.js` fejléce óta ez a projekt mintája: ha egy új dolog nem fér bele
 // a meglévő réteg fogalmi keretébe, akkor NEM a keretet tágítjuk.
+//
+// ── HOL VAN AZ OSTROM LÁTVÁNYA? NEM ITT (v0.16) ───────────────────────────
+// Ez a fájl a GÉPET rajzolja, a CSAPÁSÁT nem. A kilőtt kő íve, a becsapódás
+// törmeléke és a falon maradó rombolás-nyom az `effekt_esemeny.js` /
+// `effekt_keszlet.js` párosban él, a `lovedek3d.js` alá kötve.
+//
+// ⚠️ ÉS EGY DOLGOT ÉRDEMES TUDNI RÓLA: a sim ostromgépe KÖZELHARCOS
+// (`harc.js` → `HATOTAV[TIPUS.OSTROMGEP] = 3,2`), a sebzést azonnal kiosztja,
+// és NEM indít lövedéket. A repülő kő tehát tisztán render-oldali
+// megjelenítés — a `sim.lovedekek` tárban SOHA nem keresd.
 
 import { THREE } from './core3d.js';
 import { TIPUS } from '../sim/units.js';

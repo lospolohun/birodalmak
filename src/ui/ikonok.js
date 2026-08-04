@@ -41,6 +41,9 @@ export const IKON = {
   KOZPONT: 'kozpont', RAKTAR: 'raktar', FAL: 'fal', KAPU: 'kapu',
   HAZ: 'haz', LAKTANYA: 'laktanya', IJASZDA: 'ijaszda', ISTALLO: 'istallo',
   OSTROMMUHELY: 'ostrommuhely', TORONY: 'torony', PIAC: 'piac',
+  // parancsok — a kijelölés-panel gombjai és a 3D parancs-jelölők
+  ALLJ: 'allj', TARTAS: 'tartas', ALLAS: 'allas', ALAKZAT: 'alakzat',
+  MENET: 'menet', TAMADO_MENET: 'tamado_menet', GYUJTES: 'gyujtes',
   // vezérlők és jelzések
   SEBESSEG: 'sebesseg', SZUNET: 'szunet', HANG: 'hang', TETLEN: 'tetlen',
   FIGYELEM: 'figyelem', BAJ: 'baj', INFO: 'info',
@@ -118,6 +121,28 @@ const RAJZ = {
   piac: '<path d="M2 9h20l-2-5H4z"/><rect x="3" y="9" width="18" height="2" opacity=".8"/>'
     + '<path d="M5 11v10M19 11v10" stroke="currentColor" stroke-width="1.6" fill="none"/>'
     + '<rect x="8" y="14" width="8" height="7" opacity=".55"/>',
+
+  // ── parancsok ───────────────────────────────────────────────────────
+  // Ezek a kijelölés-panel gombjai és a 3D parancs-jelölők. Azért kaptak SAJÁT
+  // rajzot, mert az első kör kölcsönzött metaforákkal ment (a „tartás" a fal
+  // ikonját hordta, az „állás" a népességét) — és a kölcsönzött ikon rosszabb,
+  // mint a semmi: a játékos MEGTANULJA rosszul.
+  allj: '<rect x="5" y="5" width="14" height="14" rx="2.5"/>',
+  tartas: '<path d="M12 2l8 4v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6z"/>'
+    + '<path d="M12 7v9" stroke="#000" stroke-width="1.8" opacity=".4" fill="none"/>',
+  allas: '<path d="M12 2l7 3.5v6c0 4.6-3 7.8-7 9-4-1.2-7-4.4-7-9v-6z" opacity=".55"/>'
+    + '<polygon points="12,6 15,12 12,18 9,12"/>',
+  alakzat: '<circle cx="5" cy="6" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="19" cy="6" r="2.2"/>'
+    + '<circle cx="8.5" cy="13" r="2.2" opacity=".8"/><circle cx="15.5" cy="13" r="2.2" opacity=".8"/>'
+    + '<circle cx="12" cy="20" r="2.2" opacity=".6"/>',
+  menet: '<path d="M4 20L18 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+    + '<polygon points="21,3 20,10 14,4"/>',
+  tamado_menet: '<path d="M3 21L16 8" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+    + '<polygon points="21,3 19,11 13,5"/>'
+    + '<path d="M14 17l7 4-4-7" opacity=".75"/>',
+  gyujtes: '<path d="M6 3l3 3-3 3-3-3z" opacity=".8"/>'
+    + '<path d="M8 8l11 11-2.5 2.5L5.5 10.5z"/>'
+    + '<path d="M15 3h6v6" fill="none" stroke="currentColor" stroke-width="1.8" opacity=".55"/>',
 
   // ── vezérlők és jelzések ────────────────────────────────────────────
   sebesseg: '<polygon points="2,4 11,12 2,20"/><polygon points="13,4 22,12 13,20" opacity=".8"/>',

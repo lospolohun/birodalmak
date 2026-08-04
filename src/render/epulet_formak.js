@@ -1,50 +1,59 @@
-// AGE OF THE CRYSTALS — ÉPÜLET-SZILUETTEK (v0.10 · a doboz-korszak vége).
+// AGE OF THE CRYSTALS — ÉPÜLET-SZILUETTEK (v0.16 · a vázlat-korszak vége).
 //
 // Ez a fájl NEM réteg: nincs `frissit()`-je és nem olvas simet. Egyetlen dolgot
 // ad a `gazdasag3d.js`-nek — TÍPUSONKÉNT EGY kész `BufferGeometry`-t —, és
-// vállalja, hogy a tábla teljes.
+// vállalja, hogy a tábla teljes. Az építőelemek (kőfal, sátortető, gerendaváz,
+// pártázat, hordó, zászló) a `epulet_reszek.js`-ben laknak; itt csak az van,
+// hogy melyik épület MIBŐL áll össze.
 //
-// ── MIÉRT KÜLÖN FÁJL, ÉS MIÉRT ADAT ───────────────────────────────────────
-// Eddig minden épület ugyanaz a doboz volt, mert a v0.3 fejlécében ez tudatos
-// döntés volt („egy ideiglenes szép modell csak félrevezetne"). A v0.5 óta
-// tizenegy épülettípus van, és a doboz már nem egyszerűsítés, hanem hiányzó
-// információ: a játékos a saját bázisán sem tudja megmondani, melyik ház a
-// laktanya és melyik az istálló. A formák viszont HOSSZÚ, statikus adatok — ha
-// a rajzoló réteg közé keverednének, az a réteg forró ciklusa lenne olvashatatlan.
+// ── HOL TARTOTTUNK, ÉS MIÉRT NEM VOLT ELÉG ────────────────────────────────
+// A v0.3-ban minden épület doboz volt. A v0.10 adott mind a tizenegynek egy
+// SZILUETTET — az már megmondta, melyik a laktanya és melyik az istálló, de
+// doboz+kúp szinten állt meg: nagy, tagolatlan lapok, nulla anyag-érzet. A
+// tulajdonos ezt látva NÉV SZERINT a központ látványát kérte.
+//
+// A mérce a TELEPESEK v1.3.1 épületei: kőfalú vártorony cseréptetővel, tornácos
+// faházak, csíkos piaci ponyva, kémények, kapuk, zászlók. A v0.16 ezt hozza be,
+// és három dolgon múlik:
+//
+//   1. ANYAG-NYELV. Minden kőfal lábazatot, minden tető ereszdeszkát és
+//      gerincgerendát kap. Árnyék nélküli világításban ez a tagolás az EGYETLEN,
+//      ami egy nagy lapot nem hagy üres foltnak.
+//   2. FELISMERHETŐSÉG FELÜLNÉZETBŐL. Az RTS-kamera meredek (34–58°), tehát a
+//      játékos a TETŐT és az udvart látja, nem a homlokzatot. Ezért minden típus
+//      TETŐFORMÁJA és UDVARI KELLÉKE más — nem a homlokzat-díszek.
+//   3. A KÖZPONT KIEMELKEDIK. Ez az egyetlen épület, amit a játékos a meccs
+//      minden percében néz. Kap tehát mindent, amit a többi nem: kövezett
+//      udvart, boltíves kaput lépcsővel, kiugró gerendavázas emeletet,
+//      törésvonalas cseréptetőt tetőablakkal, saroktornyot, füstölő kéményt és
+//      a pálya legmagasabb zászlaját.
 //
 // ── A RÖVID TÁBLA CSAPDÁJA — ITT NEM LEHET ELBÚJNI ────────────────────────
 // A projekt legdrágább hibafajtája az `EPULET`-tel indexelt tábla, ami rövidebb
 // az enumnál: a `tabla[10]` `undefined`-ot ad, abból `NaN` lesz, a `NaN` minden
 // összehasonlításban hamis — és a rendszer CSENDBEN rossz lesz, bitre
-// reprodukálhatóan (lásd a v0.9/2 `LATOTAV`-ját).
+// reprodukálhatóan (lásd a v0.9/2 `LATOTAV`-ját). A rajzolónál ez úgy néz ki,
+// hogy egy típus némán a régi dobozánál marad.
 //
 // Ezért a formák NEM tömbben, hanem az `EPULET` KULCSAIVAL nevesített
 // objektumban vannak, és a tömböt a modul betöltésekor az enumból építjük fel.
-// Egy kimaradt típus ilyenkor nem `undefined`, hanem DOBOTT HIBA az indulásnál —
-// a leghangosabb visszajelzés, amit adni tudunk. Ugyanígy hibás egy olyan
-// kulcs, ami nincs az enumban (elgépelt név, átnevezett típus).
-//
-// A `tools/kiadas_ellenorzo.mjs` tábla-listája a `src/sim/` alatti táblákat őrzi;
-// ez a fájl a render oldalon ugyanazt a fogadalmat SAJÁT MAGA tartja be.
+// Egy kimaradt típus ilyenkor nem `undefined`, hanem DOBOTT HIBA az indulásnál.
+// Ugyanígy hibás egy olyan kulcs, ami nincs az enumban (elgépelt, átnevezett).
 //
 // ── AMI SZERZŐDÉS, ÉS AMIT NEM SZABAD MEGSÉRTENI ──────────────────────────
 //   • `EP_MERET` — a sim ebből számol járhatóságot. A sziluett vízszintes
-//     kiterjedése ezért SEHOL nem lóghat túl az alapterületén; a `formaOsszefoglalo()`
-//     ezt meg is méri, hogy ne ígéret maradjon (az eresz is beleszámít).
+//     kiterjedése ezért SEHOL nem lóghat túl az alapterületén; a
+//     `formaOsszefoglalo()` ezt meg is méri, hogy ne ígéret maradjon (az eresz
+//     és a lobogó is beleszámít).
 //   • `EP_MAGASSAG` — a torony azért kap 2,4-es szorzót, hogy LÁTSZÓDJON, miért
 //     építették. A formák a `m · 0,8 · EP_MAGASSAG` keretbe épülnek; ami ezen
-//     túlér, az kizárólag zászló vagy zászlórúd (a központé a legmagasabb dísz,
-//     mert a bázis magja — de a torony teste így is fölé nő).
-//
-// ── HOGYAN OLCSÓ ──────────────────────────────────────────────────────────
-// Minden típus EGYETLEN, indexeletlen geometriává olvad össze (`osszefuz`),
-// tehát típusonként egy `InstancedMesh` és egy rajzhívás elég. A geometriák a
-// betöltéskor egyszer épülnek fel; futásidőben SOHA nem keletkezik új geometria
-// vagy anyag.
+//     túlér, az kizárólag ZÁSZLÓ vagy ZÁSZLÓRÚD. A központé a legmagasabb dísz
+//     (3,1 fölé nyúló zászlórúd) — a torony TESTE viszont így is fölé nő (3,8),
+//     tehát a magasság-sorrend megmarad.
 //
 // ── SZÍNEZÉS: MIÉRT NEM `instanceColor` ───────────────────────────────────
-// A csapatszín eddig az EGÉSZ dobozt festette. Egy tetőt, kőfalat és
-// gerendavázat viszont nem lehet egyetlen példány-színnel kifesteni — ha
+// A csapatszín a doboz-korszakban az EGÉSZ épületet festette. Egy tetőt, kőfalat
+// és gerendavázat viszont nem lehet egyetlen példány-színnel kifesteni — ha
 // mindent a csapatszínnel szorzunk, a barna tető kékesbarna sár lesz.
 //
 // Ezért két CSÚCS-attribútum van (`alapSzin`, `csapatArany`) és egy PÉLDÁNY-
@@ -53,421 +62,430 @@
 //
 //     szin = mix(alapSzin, csapatSzin, csapatArany) · fenyero
 //
-//   csapatArany = 0     — kő, gerenda, szalma: a saját anyaga marad
-//   csapatArany ≈ 0,45  — tetők: felismerhetően csapatszínbe hajlanak, de
-//                         tető-anyagúak maradnak (EZ adja a távoli olvashatóságot)
-//   csapatArany = 1     — zászló, ponyva, kapu: TISZTA csapatszín
+//   csapatArany = 0     — kő, gerenda, cserép, szalma: a saját anyaga marad
+//   csapatArany ≈ 0,3   — TOMPA tetők (zsindely, nád): felismerhetően a csapat
+//                         felé hajlanak, de tető-anyagúak maradnak
+//   csapatArany = 1     — zászló, ponyva, kapuszárny, pajzs: TISZTA csapatszín
+//
+// ⚠️ A telített cserépvörös 0,45-ös keverése a KÉK csapatszínnel LILÁT ad — se
+// nem tető, se nem csapatszín. Ez MÉRT eredmény (a v0.10 első változatában a
+// központ teteje pont így lett lila). Ezért a cserép keverése 0,1, és a
+// csapat-olvashatóságot NAGY, TISZTA csapatszínű felületek viszik: zászló,
+// kapuszárny, faliszőnyeg, pajzssor, ponyvacsík.
 //
 // A `fenyero` az építkezés visszajelzése (az épülő ház fakóbb) — ugyanaz a
 // jelzés, ami a doboz-korszakban is volt, csak most nem nyeli el a formát.
 
 import { THREE } from './core3d.js';
 import { EPULET, EP_MERET, EP_MAGASSAG } from '../sim/epuletek.js';
-
-/** Anyag-paletta (sRGB). Szándékosan KÖZÉPTÓNUSÚ: a `toneMapped:false` anyag
- *  mellett a világos pasztell a 2,15-ös napfényben fehérre égne ki. */
-const SZIN = {
-  KO: 0x8b9199,
-  KO_SOTET: 0x5e646c,
-  VAKOLAT: 0xb0a184,
-  FA: 0x6b4a30,
-  DESZKA: 0x93703f,
-  CSEREP: 0x8f3a28,
-  NAD: 0x94763f,
-  ZSINDELY: 0x574433,
-  SZALMA: 0xa98d45,
-  VAS: 0x4e545c,
-  FOLD: 0x6f6046,
-  /** Csapat-elem: az `alapSzin` ilyenkor közömbös, a `csapatArany` 1. */
-  CSAPAT: 0xffffff,
-};
-
-/** Tető-keverés: ennyire hajlik a tető a csapatszínbe. */
-const TETO_CS = 0.45;
-
-// ── FORMA-ÉPÍTŐ ────────────────────────────────────────────────────────────
-
-/**
- * Egy épület alkatrészeinek gyűjtője. A darabok VILÁG-MÉRETBEN épülnek (a
- * geometria már a végleges méretű), így a példány-mátrix tiszta eltolás marad,
- * és a vékony gerendák nem torzulnak el a nem egyenletes skálázástól.
- *
- * Koordináta: az origó az alapterület KÖZEPE a talajon, +y felfelé. A `doboz`
- * és társai `y` paramétere a darab TALPA, nem a közepe — így a méretek
- * egymásra rakhatók anélkül, hogy fejben feleznénk.
- */
-class Forma {
-  /** @param {number} m alapterület cellában @param {number} magas magasság-keret */
-  constructor(m, magas) {
-    this.m = m;
-    this.H = magas;
-    /** Fél-szélesség: az eresz eddig érhet (a cellahatár `m/2`). */
-    this.f = m * 0.46;
-    this.reszek = [];
-  }
-
-  /** Kész, már elhelyezett geometria hozzáadása. */
-  elem(geo, szin, cs = 0) {
-    this.reszek.push({ geo, szin, cs });
-    return this;
-  }
-
-  /** Doboz. `x,y,z` a TALP középpontja. */
-  doboz(sx, sy, sz, x, y, z, szin, cs = 0) {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
-    g.translate(x, y + sy * 0.5, z);
-    return this.elem(g, szin, cs);
-  }
-
-  /**
-   * Hasáb: 2D profil kihúzva a Z tengely mentén. Ez adja a nyeregtetőt és a
-   * rézsűs falat — dobozból egyik sem rakható ki.
-   * @param {number[]} profil `[x0,y0, x1,y1, …]` KONVEX, +Z felől nézve
-   *   óramutatóval ELLENTÉTES körüljárással
-   * @param {number} forgY forgatás az Y körül (π/2 → a gerinc X irányba fordul)
-   */
-  hasab(profil, melyseg, x, y, z, szin, cs = 0, forgY = 0) {
-    const g = hasabGeo(profil, melyseg);
-    if (forgY) g.rotateY(forgY);
-    g.translate(x, y, z);
-    return this.elem(g, szin, cs);
-  }
-
-  /** Henger / csonkakúp álló tengellyel. `y` a talp. */
-  henger(rAlso, rFelso, mag, oldal, x, y, z, szin, cs = 0, zart = true) {
-    const g = new THREE.CylinderGeometry(rFelso, rAlso, mag, oldal, 1, !zart);
-    g.translate(x, y + mag * 0.5, z);
-    return this.elem(g, szin, cs);
-  }
-
-  /** Gúla (n oldalú kúp). `forgY = π/4` + 4 oldal → tengely-igazított négyzet alap. */
-  gula(r, mag, oldal, x, y, z, szin, cs = 0, forgY = 0) {
-    const g = new THREE.ConeGeometry(r, mag, oldal, 1, true);
-    if (forgY) g.rotateY(forgY);
-    g.translate(x, y + mag * 0.5, z);
-    return this.elem(g, szin, cs);
-  }
-
-  /**
-   * Zászlórúd + lobogó. Öt épület használja, és pont ez a legfontosabb
-   * csapat-jelölő: kizoomolva a tetők árnyalata még összemosódhat, egy tiszta
-   * csapatszínű folt viszont nem.
-   */
-  zaszlo(x, y, z, rudMag, lobogo = 0.26) {
-    this.doboz(0.075, rudMag, 0.075, x, y, z, SZIN.FA, 0);
-    this.doboz(0.42, lobogo, 0.05, x + 0.24, y + rudMag - lobogo - 0.06, z, SZIN.CSAPAT, 1);
-    return this;
-  }
-}
-
-/**
- * Profil kihúzása Z mentén. Indexeletlen háromszögek, KÉZZEL helyes
- * körüljárással — a normálisokat úgyis az összefűzés számolja (laposan), de a
- * hátlap-eldobás a körüljáráson múlik: rossz sorrendnél a tető belülről
- * látszana, kívülről nem.
- */
-function hasabGeo(profil, melyseg) {
-  const db = profil.length / 2;
-  const h = melyseg * 0.5;
-  // oldalak: db darab négyszög (2 háromszög), lapok: 2 × (db-2) háromszög
-  const tri = db * 2 + (db - 2) * 2;
-  const poz = new Float32Array(tri * 9);
-  let o = 0;
-  const ki = (x, y, z) => { poz[o++] = x; poz[o++] = y; poz[o++] = z; };
-
-  for (let i = 0; i < db; i++) {
-    const ax = profil[i * 2], ay = profil[i * 2 + 1];
-    const j = (i + 1) % db;
-    const bx = profil[j * 2], by = profil[j * 2 + 1];
-    // A=(a,+h) D=(a,−h) C=(b,−h) B=(b,+h): (A,D,C) és (A,C,B) kifelé néz.
-    ki(ax, ay, h); ki(ax, ay, -h); ki(bx, by, -h);
-    ki(ax, ay, h); ki(bx, by, -h); ki(bx, by, h);
-  }
-  for (let i = 1; i < db - 1; i++) {
-    ki(profil[0], profil[1], h);
-    ki(profil[i * 2], profil[i * 2 + 1], h);
-    ki(profil[i * 2 + 2], profil[i * 2 + 3], h);
-    ki(profil[0], profil[1], -h);
-    ki(profil[i * 2 + 2], profil[i * 2 + 3], -h);
-    ki(profil[i * 2], profil[i * 2 + 1], -h);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(poz, 3));
-  return geo;
-}
-
-const _szinSegito = new THREE.Color();
-
-/**
- * Az alkatrészek EGY indexeletlen geometriává olvasztása, csúcs-attribútumokkal.
- *
- * Indexeletlen, mert a `computeVertexNormals()` így LAPOS árnyalást ad — pont
- * azt, amit a `props3d.js` fáin és a kristályokon látunk. Indexelt geometrián a
- * megosztott csúcsok normálisai átlagolódnának, és az élek elkenődnének.
- */
-function osszefuz(reszek) {
-  let n = 0;
-  for (const r of reszek) {
-    if (r.geo.index) r.geo = r.geo.toNonIndexed();
-    n += r.geo.attributes.position.count;
-  }
-  const poz = new Float32Array(n * 3);
-  const alap = new Float32Array(n * 3);
-  const arany = new Float32Array(n);
-  let v = 0;
-  for (const r of reszek) {
-    const p = r.geo.attributes.position.array;
-    const db = r.geo.attributes.position.count;
-    poz.set(p, v * 3);
-    _szinSegito.setHex(r.szin, THREE.SRGBColorSpace);
-    for (let i = 0; i < db; i++) {
-      alap[(v + i) * 3] = _szinSegito.r;
-      alap[(v + i) * 3 + 1] = _szinSegito.g;
-      alap[(v + i) * 3 + 2] = _szinSegito.b;
-      arany[v + i] = r.cs;
-    }
-    v += db;
-    r.geo.dispose();
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(poz, 3));
-  geo.setAttribute('alapSzin', new THREE.BufferAttribute(alap, 3));
-  geo.setAttribute('csapatArany', new THREE.BufferAttribute(arany, 1));
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-  return geo;
-}
+import { Forma, SZIN, TETO_CS, osszefuz } from './epulet_reszek.js';
 
 // ── A TIZENEGY SZILUETT ────────────────────────────────────────────────────
-// Az `EPULET` kulcsaival nevesítve. Minden építő ugyanazt kapja: `(f, m, H)`,
-// ahol `f` a fél-szélesség (eresz-határ), `m` az alapterület, `H` a
-// magasság-keret. A számok ezekből származnak, nem fixek — így egy `EP_MERET`
-// vagy `EP_MAGASSAG` változás magától átméretezi a formát.
-//
-// A FELISMERHETŐSÉG FELÜLNÉZETBŐL dől el: az RTS-kamera meredek, tehát a
-// játékos jellemzően a TETŐT és az udvart látja, nem a homlokzatot. Ezért
-// minden típus tetőformája vagy udvari kelléke más — nem a homlokzat-díszek.
+// Az `EPULET` kulcsaival nevesítve. Minden építő egy üres `Forma`-t kap, amiben
+// már benne van az alapterület (`e.m`), a fél-szélesség (`e.f`), az eresz-határ
+// (`e.eresz`) és a magasság-keret (`e.H`). A számok EZEKBŐL származnak, nem
+// fixek — így egy `EP_MERET` vagy `EP_MAGASSAG` változás magától átméretezi a
+// formát.
 
 const FORMAK = {
-  /** KÖZPONT — a bázis magja: gúla-tető + a legmagasabb csapatzászló. */
-  KOZPONT(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.22, 2 * f, 0, 0, 0, SZIN.KO);
-    e.doboz(2 * f - 0.34, 1.0, 2 * f - 0.34, 0, 0.22, 0, SZIN.VAKOLAT);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.24, 1.24, 0.24, sx * (f - 0.12), 0, sz * (f - 0.12), SZIN.FA);
+  /**
+   * KÖZPONT — a pálya büszkesége. Négy szint épül egymásra: kövezett udvar,
+   * boltíves kapuval nyíló kőföldszint, KIUGRÓ gerendavázas emelet, és fölötte
+   * a törésvonalas cseréptető tetőablakokkal. Mellette saroktorony és füstölő
+   * kémény, a gerincen a pálya legmagasabb zászlaja.
+   *
+   * A kiugró emelet (jetty) nem cifraság: ez adja a vízszintes ÁRNYÉKVONALAT a
+   * homlokzat közepén, ami nélkül a 2,4 magas tömeg egyetlen sima fal marad.
+   */
+  KOZPONT(e) {
+    const E = e.eresz;                      // 1,5 — az eresz-határ
+    const bz = -0.28;                       // a magház középvonala z-ben
+    const homlok = bz + 0.89;               // a homlokzat síkja (+z)
+
+    // A magház SZÁNDÉKOSAN kisebb az alapterületnél (2,06 × 1,78 a 3 × 3-ban).
+    // Egy 3 cellás alapra ültetett, keretig érő tömeg 2,4 magasan zömöknek
+    // látszik; a keskenyebb ház ugyanabban a keretben magasabbnak — a felszabaduló
+    // peremre pedig udvar, lépcső, saroktorony és rakomány kerül, ami többet
+    // mond az épületről, mint még egy méter fal.
+    e.doboz(2 * E - 0.1, 0.13, 2 * E - 0.1, 0, 0, 0, SZIN.KAVICS);
+    e.kofal(2.06, 0.98, 1.78, 0, 0.13, bz, { labazat: 0.17, parkany: 0.09 });
+    e.lepcso(1.0, 0, 0, homlok + 0.01, 2, 0.065, 0.13);
+    e.kapuzat(0, 0.13, homlok, 0.56, 0.76);
+    for (const ux of [-1, 1]) e.ablak(ux * 0.7, 0.54, homlok, 0.3, 0.38);
+    // Tornác: két oszlop és egy lejtő eresz a bejárat fölé. Ez adja a
+    // homlokzat egyetlen VETETT árnyékát — árnyéktérkép nélkül ez az egyetlen
+    // eszközünk arra, hogy a bejárat MÉLYEDÉSNEK látsszon, ne festett foltnak.
+    for (const ux of [-1, 1]) e.doboz(0.1, 0.86, 0.1, ux * 0.44, 0.13, homlok + 0.34, SZIN.FA);
+    e.dontDoboz(1.06, 0.07, 0.5, 0, 1.02, homlok + 0.2, -0.34, 'x', SZIN.CSEREP, 0.1);
+
+    // KIUGRÓ EMELET: 0,08-cal túlnyúlik a földszinten, konzolokra támaszkodva.
+    e.gerendafal(2.22, 0.66, 1.94, 0, 1.11, bz, { oszlop: 3 });
+    for (const ux of [-1, 1]) {
+      for (const uz of [-1, 1]) {
+        e.dontDoboz(0.26, 0.1, 0.1, ux * 0.99, 1.12, bz + uz * 0.86, ux * 0.7, 'z', SZIN.FA_SOTET);
       }
     }
-    // Négyoldalú gúla 45°-kal elfordítva: a sarkai a négyzet sarkaira esnek,
-    // tehát az eresz fél-oldala pont `f`.
-    //
-    // ⚠️ A csapat-keverés itt SZÁNDÉKOSAN majdnem nulla, és ez MÉRT eredmény:
-    // a telített cserépvörös 0,45-ös keverése a kék csapatszínnel LILÁT ad —
-    // se nem tető, se nem csapatszín. A sötét, tompa tetők (zsindely, nád)
-    // ezzel szemben szépen felveszik a csapat árnyalatát. A központ ezért az
-    // EGYETLEN vörös tető a roszterben (önmagában is felismerhető jel), a
-    // csapatot pedig a pálya legnagyobb zászlaja és a kapu viszi.
-    e.gula(f * 1.4142, 1.1, 4, 0, 1.24, 0, SZIN.CSEREP, 0.12, Math.PI / 4);
-    e.zaszlo(0, 2.19, 0, 0.66, 0.36);
-    e.doboz(0.55, 0.66, 0.09, 0, 0.22, f - 0.22, SZIN.CSAPAT, 1);
-    e.doboz(0.8, 0.12, 0.28, 0, 0, f - 0.06, SZIN.KO);
+    for (const ux of [-1, 1]) e.ablak(ux * 0.68, 1.3, bz + 0.98, 0.3, 0.34, 1, SZIN.FA_SOTET);
+    // Faliszőnyeg a kapu fölött: a legnagyobb egybefüggő csapatszín-folt a
+    // homlokzaton, pont ott, ahol a szem a bejáratot keresi.
+    e.doboz(0.5, 0.56, 0.05, 0, 1.16, bz + 0.99, SZIN.CSAPAT, 1);
+    e.doboz(0.58, 0.06, 0.09, 0, 1.72, bz + 0.99, SZIN.FA_SOTET);
+
+    e.satorteto(1.26, 1.12, 0.5, 0.5, 0, 1.77, bz, SZIN.CSEREP, 0.1,
+      { flare: 0.13, gerinc: SZIN.CSEREP_SOTET });
+    for (const ux of [-1, 1]) e.tetoablak(ux * 0.5, 1.9, 0.5, 0.32, 0.22);
+
+    // SAROKTORONY az ELÜLSŐ sarkon. A v0.16 első változatában a hátsó sarokban
+    // állt — és ott TELJES EGÉSZÉBEN a magház tömegébe temetődött: a kúpja
+    // úgy bújt ki a tetőn, mintha modellhiba volna. A saroktorony csak akkor
+    // saroktorony, ha a tömegen KÍVÜLRE lép.
+    e.henger(0.34, 0.3, 1.8, 8, -1.06, 0.13, 0.5, SZIN.KO, 0, false);
+    e.henger(0.38, 0.38, 0.09, 8, -1.06, 1.93, 0.5, SZIN.KO_VILAG);
+    e.gula(0.42, 0.34, 8, -1.06, 2.02, 0.5, SZIN.ZSINDELY, TETO_CS);
+    e.lores(-1.06, 1.2, 0.84, 0.3);
+    e.lores(-1.06, 0.6, 0.84, 0.28);
+
+    e.kemeny(0.78, 1.9, -0.86, 0.24, 0.46, 4, 0.31);
+    // A pálya legnagyobb lobogója. Nem dísz: kizoomolva a központ helye és a
+    // csapata EBBŐL olvasható le először.
+    e.zaszlo(0, 2.32, bz, 0.8, 0.42, 0.62, 3);
+
+    e.hordo(1.22, 0.13, 0.66);
+    e.hordo(1.22, 0.13, 0.28, 0.14, 0.3);
+    e.lada(1.2, 0.13, 1.06, 0.32);
+    e.lada(-1.2, 0.13, -0.62, 0.3);
+    e.kazal(-1.16, 0.13, -1.1, 0.26, 0.38);
     return e;
   },
 
-  /** RAKTÁR — félig fedett rakodóudvar: felülről a LÁDÁK látszanak, nem tető. */
-  RAKTAR(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.14, 2 * f, 0, 0, 0, SZIN.DESZKA);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.14, 0.8, 0.14, sx * (f - 0.09), 0.14, sz * (f - 0.09), SZIN.FA);
+  /**
+   * RAKTÁR — deszkacsarnok RAKODÓ-EMELVÉNNYEL és csigás emelőgerendával. A
+   * kiálló gerenda a horoggal az, ami felülnézetből azonnal elárulja, hogy ide
+   * rakodnak — semelyik másik épületen nincs ilyen.
+   */
+  RAKTAR(e) {
+    const E = e.eresz;                      // 1,0
+    const bz = -0.28;
+    const homlok = bz + 0.67;
+
+    e.doboz(2 * E - 0.08, 0.12, 2 * E - 0.08, 0, 0, 0, SZIN.DESZKA);
+    e.doboz(1.62, 0.78, 1.34, 0, 0.12, bz, SZIN.DESZKA);
+    for (const ux of [-1, 1]) {
+      for (const uz of [-1, 1]) {
+        e.doboz(0.15, 0.86, 0.15, ux * 0.78, 0.12, bz + uz * 0.62, SZIN.FA);
       }
     }
-    // A ponyva csak a bal felét fedi — a jobb oldali rakomány felülről látszik.
-    e.hasab([-0.66, 0, 0.66, 0, 0, 0.42], 2 * f + 0.1, -0.24, 0.94, 0, SZIN.NAD, TETO_CS);
-    e.doboz(0.44, 0.44, 0.44, 0.48, 0.14, -0.42, SZIN.DESZKA);
-    e.doboz(0.34, 0.34, 0.34, 0.5, 0.58, -0.44, SZIN.CSAPAT, 1);
-    e.doboz(0.4, 0.4, 0.4, 0.5, 0.14, 0.36, SZIN.FA);
-    e.henger(0.19, 0.19, 0.42, 6, 0.02, 0.14, 0.62, SZIN.DESZKA);
+    e.kapuzat(0, 0.12, homlok, 0.5, 0.6);
+    e.nyeregteto(0.86, 0.5, 1.44, 0, 0.9, -0.24, SZIN.ZSINDELY, TETO_CS, 0);
+    // Emelőgerenda + kötél + horog az oromfal csúcsán. Ez a raktár JELE: a
+    // kiálló gerenda felülnézetből is elárulja, hogy ide rakodnak.
+    e.doboz(0.11, 0.11, 0.5, 0, 1.16, 0.7, SZIN.FA);
+    e.doboz(0.04, 0.28, 0.04, 0, 0.88, 0.92, SZIN.FA_SOTET);
+    e.doboz(0.13, 0.09, 0.13, 0, 0.81, 0.92, SZIN.VAS);
+    e.doboz(0.34, 0.28, 0.05, 0, 0.9, 0.47, SZIN.NYILAS);
+
+    e.lada(0.62, 0.12, 0.72, 0.3);
+    e.lada(0.62, 0.375, 0.72, 0.24);
+    e.lada(-0.66, 0.12, 0.7, 0.3);
+    e.hordo(-0.16, 0.12, 0.78, 0.15, 0.32);
+    e.zaszlo(-0.82, 0.98, -0.86, 0.44, 0.24, 0.32, 2, 0.4);
     return e;
   },
 
-  /** FAL — rézsűs kőtömb, négy saroktoronnyal: sorba rakva szaggatott pártázat. */
-  FAL(f, m, H) {
-    const e = new Forma(m, H);
-    e.hasab([-f, 0, f, 0, f - 0.08, 0.4, -f + 0.08, 0.4], 2 * f, 0, 0, 0, SZIN.KO);
-    // A koszorú az EGYETLEN csapat-jelölő a falon: zászlót nem bír el, de a
-    // gazdátlan kőfal a pálya közepén használhatatlan információ.
-    e.doboz(2 * f - 0.04, 0.07, 2 * f - 0.04, 0, 0.4, 0, SZIN.KO_SOTET, 0.55);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.26, 0.15, 0.26, sx * 0.29, 0.47, sz * 0.29, SZIN.KO);
-      }
-    }
+  /**
+   * FAL — rézsűs kőtömb pártázattal és fa gyilokjáróval. Sorba rakva a
+   * szaggatott oromfogsor összefüggő várfallá áll össze, és pont ez a lényeg:
+   * a falat SOSEM egyedül nézzük.
+   */
+  FAL(e) {
+    const E = e.eresz;
+    e.doboz(2 * E, 0.07, 2 * E, 0, 0, 0, SZIN.KO_SOTET);
+    e.hasab([-E + 0.01, 0, E - 0.01, 0, E - 0.09, 0.27, -E + 0.09, 0.27], 2 * E - 0.02,
+      0, 0.07, 0, SZIN.KO);
+    // A csapat-öv a járószint ALATT fut, tehát csak egy VÉKONY SZEGÉLYVONAL
+    // látszik belőle körben. Az első változatban a teli csapatszín-lap volt a
+    // legfelső felület: felülnézetből egy nagy kék négyzet lett a kőfalból,
+    // amire a pártázat egy „+" jelet rajzolt. A falat a KŐ-nek kell uralnia.
+    e.doboz(2 * E - 0.04, 0.04, 2 * E - 0.04, 0, 0.34, 0, SZIN.CSAPAT, 1);
+    e.doboz(2 * E - 0.18, 0.05, 2 * E - 0.18, 0, 0.38, 0, SZIN.DESZKA);
+    e.oromzat(E - 0.03, 0.43, 0.13, 3);
     return e;
   },
 
-  /** KAPU — két pillér és egy áthidaló: a NYÍLÁS a jel, nem a tömeg. */
-  KAPU(f, m, H) {
-    const e = new Forma(m, H);
-    for (const sx of [-1, 1]) e.doboz(0.28, 0.47, 2 * f, sx * (f - 0.14), 0, 0, SZIN.KO);
-    e.doboz(2 * f, 0.12, 0.52, 0, 0.47, 0, SZIN.FA);
-    e.doboz(0.34, 0.16, 0.06, 0, 0.59, 0.14, SZIN.CSAPAT, 1);
+  /**
+   * KAPU — két pártázatos pillér és a CSAPATSZÍNŰ kapuszárnyak. A NYÍLÁS a jel,
+   * nem a tömeg — és a pillérek koronája SZÁNDÉKOSAN magasabb a szomszédos fal
+   * pártázatánál (0,60 vs 0,56): egy kapu, ami nem emelkedik ki a falból, a
+   * falsorban észrevehetetlen.
+   */
+  KAPU(e) {
+    const E = e.eresz;
+    const px = E - 0.18;
+    for (const ux of [-1, 1]) {
+      e.kofal(0.24, 0.48, 2 * E - 0.16, ux * px, 0, 0, { sarok: false, labazat: 0.1 });
+      for (const uz of [-1, 1]) {
+        e.doboz(0.24, 0.12, 0.22, ux * px, 0.48, uz * 0.27, SZIN.KO_VILAG);
+      }
+    }
+    e.doboz(2 * E - 0.06, 0.13, 0.5, 0, 0.44, 0, SZIN.FA);
+    e.doboz(2 * E - 0.2, 0.05, 0.42, 0, 0.57, 0, SZIN.FA_SOTET);
+    for (const ux of [-1, 1]) {
+      e.doboz(0.19, 0.42, 0.07, ux * 0.098, 0.02, 0.13, SZIN.CSAPAT, 1);
+    }
+    e.doboz(0.05, 0.42, 0.05, 0, 0.02, 0.17, SZIN.VAS);
+    e.doboz(0.28, 0.14, 0.05, 0, 0.44, 0.26, SZIN.CSAPAT, 1);
     return e;
   },
 
-  /** HÁZ — kicsi, meredek nyeregtető + KÉMÉNY. A kémény a fő megkülönböztető. */
-  HAZ(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.12, 2 * f, 0, 0, 0, SZIN.KO);
-    e.doboz(2 * f - 0.12, 0.62, 2 * f - 0.12, 0, 0.12, 0, SZIN.VAKOLAT);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.12, 0.68, 0.12, sx * (f - 0.08), 0.12, sz * (f - 0.08), SZIN.FA);
-      }
-    }
-    e.hasab([-f - 0.06, 0, f + 0.06, 0, 0, 0.66], 2 * f + 0.12, 0, 0.74, 0, SZIN.NAD, TETO_CS);
-    e.doboz(0.18, 0.44, 0.18, -0.42, 1.02, 0.3, SZIN.KO_SOTET);
-    e.doboz(0.28, 0.42, 0.07, 0, 0.12, f - 0.03, SZIN.CSAPAT, 1);
+  /**
+   * HÁZ — kőlábazat, gerendavázas fal, meredek NÁDTETŐ és FÜSTÖLŐ KÉMÉNY.
+   * A füst a ház jele: ez az egyetlen épület, amiből lakik valaki.
+   */
+  HAZ(e) {
+    const E = e.eresz;
+    const bz = -0.1, homlok = bz + 0.67;
+    e.doboz(2 * E - 0.14, 0.12, 2 * E - 0.14, 0, 0, 0, SZIN.KAVICS);
+    e.kofal(1.5, 0.34, 1.34, 0, 0.12, bz, { sarok: false, labazat: 0.1 });
+    e.gerendafal(1.54, 0.56, 1.36, 0, 0.46, bz, { oszlop: 2 });
+    e.doboz(0.32, 0.5, 0.06, -0.34, 0.12, homlok, SZIN.NYILAS);
+    e.doboz(0.27, 0.45, 0.05, -0.34, 0.14, homlok + 0.03, SZIN.CSAPAT, 1);
+    e.ablak(0.36, 0.62, homlok, 0.3, 0.26, 1, SZIN.FA_SOTET);
+    e.nyeregteto(0.94, 0.5, 1.6, 0, 1.02, bz, SZIN.NAD, TETO_CS, 0, SZIN.FA_SOTET);
+    e.kemeny(-0.55, 1.02, -0.42, 0.2, 0.42, 3);
+    // Farakás és kerítés: az udvar teszi lakottá, nem a homlokzat.
+    e.doboz(0.44, 0.2, 0.24, 0.54, 0.12, 0.76, SZIN.FA);
+    e.doboz(0.4, 0.16, 0.2, 0.54, 0.32, 0.76, SZIN.FA_SOTET);
+    e.kerites(-0.4, 0.12, 0.86, 0.7, 1, 0.4);
+    e.zaszlo(0.6, 1.24, bz + 0.3, 0.34, 0.2, 0.28, 2, 0.7);
     return e;
   },
 
-  /** LAKTANYA — zárt csarnok + GYAKORLÓUDVAR bábuval és lándzsaállvánnyal. */
-  LAKTANYA(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.18, 2 * f, 0, 0, 0, SZIN.KO);
-    const cz = -0.53;                      // a csarnok középvonala
-    e.doboz(2 * f - 0.18, 1.15, 1.5, 0, 0.18, cz, SZIN.VAKOLAT);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.2, 1.2, 0.2, sx * (f - 0.13), 0.18, cz + sz * 0.66, SZIN.FA);
-      }
+  /**
+   * LAKTANYA — kőcsarnok PAJZSSORRAL a homlokzatán, előtte GYAKORLÓUDVAR
+   * bábuval és lándzsaállvánnyal. A pajzssor a legolcsóbb és legerősebb
+   * csapat-jelölő a roszterben: hat tiszta csapatszínű korong egy sorban.
+   */
+  LAKTANYA(e) {
+    const E = e.eresz;
+    const cz = -0.62, homlok = cz + 0.7;
+    e.doboz(2 * E - 0.1, 0.12, 2 * E - 0.1, 0, 0, 0, SZIN.FOLD);
+    e.kofal(2.5, 0.9, 1.4, 0, 0.12, cz, { parkany: 0.08 });
+    e.gerendafal(2.56, 0.5, 1.44, 0, 1.02, cz, { oszlop: 4, oldalak: [1] });
+    e.nyeregteto(0.84, 0.52, 2.6, 0, 1.52, cz, SZIN.ZSINDELY, TETO_CS, Math.PI / 2);
+    e.kapuzat(0, 0.12, homlok, 0.66, 0.72);
+    for (let i = 0; i < 3; i++) {
+      for (const ux of [-1, 1]) e.pajzs(ux * (0.52 + i * 0.36), 1.22, homlok + 0.06, 0.15);
     }
-    // A gerinc X irányba fordul: a hosszú oldal a bejárat felé néz.
-    e.hasab([-0.84, 0, 0.84, 0, 0, 0.68], 2 * f - 0.06, 0, 1.33, cz, SZIN.ZSINDELY, TETO_CS, Math.PI / 2);
-    e.doboz(0.52, 0.78, 0.08, 0, 0.95, 0.26, SZIN.CSAPAT, 1);
     // Gyakorlóbábu: felülnézetből egy „T" az udvaron — csak a laktanyán van.
-    e.doboz(0.16, 0.82, 0.16, 0.58, 0.18, 0.88, SZIN.FA);
-    e.doboz(0.82, 0.13, 0.13, 0.58, 0.82, 0.88, SZIN.FA);
-    e.doboz(0.22, 0.22, 0.22, 0.58, 0.94, 0.88, SZIN.SZALMA);
+    e.doboz(0.16, 0.8, 0.16, 0.66, 0.12, 0.96, SZIN.FA);
+    e.doboz(0.8, 0.13, 0.13, 0.66, 0.8, 0.96, SZIN.FA);
+    e.kazal(0.66, 0.9, 0.96, 0.16, 0.26);
+    e.pajzs(0.66, 0.6, 1.04, 0.17);
     // Lándzsaállvány.
-    e.doboz(0.66, 0.09, 0.12, -0.62, 0.62, 0.92, SZIN.FA);
-    for (const dx of [-0.18, 0.18]) e.doboz(0.06, 0.95, 0.06, -0.62 + dx, 0.18, 0.92, SZIN.VAS);
+    e.doboz(0.72, 0.1, 0.14, -0.66, 0.62, 1.0, SZIN.FA);
+    for (const dx of [-0.24, 0, 0.24]) {
+      e.doboz(0.05, 1.02, 0.05, -0.66 + dx, 0.12, 1.0, SZIN.VAS);
+      e.gula(0.06, 0.14, 4, -0.66 + dx, 1.14, 1.0, SZIN.VAS);
+    }
+    e.hordo(1.24, 0.12, 0.3, 0.15, 0.32);
+    e.zaszlo(-1.24, 1.6, cz - 0.5, 0.68, 0.34, 0.5, 3);
     return e;
   },
 
-  /** ÍJÁSZDA — féltetős lőállás + HÁROM szalma céltábla sorban. */
-  IJASZDA(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.14, 2 * f, 0, 0, 0, SZIN.FOLD);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.16, 1.28, 0.16, sx * (f - 0.16), 0.14, -0.78 + sz * 0.44, SZIN.FA);
-      }
-    }
-    // Ferde deszkatető: dobozból, X körül megdöntve. A lejtés önmagában is
-    // elkülöníti a nyeregtetős épületektől.
-    const teto = new THREE.BoxGeometry(2 * f - 0.14, 0.1, 1.34);
-    teto.rotateX(0.32);
-    teto.translate(0, 1.5, -0.78);
-    e.elem(teto, SZIN.NAD, TETO_CS);
-    e.doboz(2 * f - 0.5, 0.5, 0.14, 0, 0.14, -0.3, SZIN.DESZKA);
-    for (const dx of [-0.86, 0, 0.86]) {
-      e.gula(0.36, 0.56, 6, dx, 0.14, 0.86, SZIN.SZALMA);
-      e.doboz(0.2, 0.06, 0.2, dx, 0.6, 0.86, SZIN.CSAPAT, 1);
-    }
-    e.zaszlo(-f + 0.2, 1.42, -1.12, 0.55, 0.24);
-    return e;
-  },
-
-  /** ISTÁLLÓ — hosszú boksz-sor + KARÁM és szénakazal. A kerítés a jel. */
-  ISTALLO(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.12, 2 * f, 0, 0, 0, SZIN.FOLD);
+  /**
+   * ÍJÁSZDA — féltetős LŐÁLLÁS és vele szemben HÁROM szalma céltábla, csapatszínű
+   * középpel. A ferde féltető és a célsor együtt semmi máshoz nem hasonlít.
+   */
+  IJASZDA(e) {
+    const E = e.eresz;
     const cz = -0.8;
-    e.doboz(2 * f - 0.2, 1.0, 1.1, 0, 0.12, cz, SZIN.DESZKA);
-    e.hasab([-0.64, 0, 0.64, 0, 0, 0.52], 2 * f - 0.1, 0, 1.12, cz, SZIN.ZSINDELY, TETO_CS, Math.PI / 2);
-    for (const dx of [-0.62, 0.62]) e.doboz(0.42, 0.62, 0.07, dx, 0.12, cz + 0.58, SZIN.FA);
-    // Karám: két oldalrúd + egy elülső rúd, négy oszloppal. Felülnézetből ez
-    // egy körbekerített udvar — semelyik másik épületnél nincs ilyen.
-    e.doboz(2 * f - 0.2, 0.08, 0.08, 0, 0.56, 1.2, SZIN.FA);
-    for (const sx of [-1, 1]) {
-      e.doboz(0.08, 0.08, 1.3, sx * (f - 0.1), 0.56, 0.58, SZIN.FA);
-      e.doboz(0.12, 0.68, 0.12, sx * (f - 0.1), 0.12, 1.2, SZIN.FA);
-      e.doboz(0.12, 0.68, 0.12, sx * (f - 0.1), 0.12, -0.04, SZIN.FA);
-    }
-    e.gula(0.44, 0.6, 6, 0.62, 0.12, 0.55, SZIN.SZALMA);
-    e.doboz(0.52, 0.18, 0.3, -0.66, 0.12, 0.72, SZIN.FA);
-    e.zaszlo(-f + 0.22, 1.12, cz - 0.5, 0.6, 0.26);
-    return e;
-  },
-
-  /** OSTROMMŰHELY — nyitott ácsváz, két NAGY KERÉK és egy faltörő gerenda. */
-  OSTROMMUHELY(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.12, 2 * f, 0, 0, 0, SZIN.FOLD);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        e.doboz(0.26, 1.62, 0.26, sx * (f - 0.15), 0.12, sz * (f - 0.15), SZIN.FA);
+    e.doboz(2 * E - 0.1, 0.12, 2 * E - 0.1, 0, 0, 0, SZIN.FOLD);
+    e.doboz(2 * E - 0.34, 0.06, 1.5, 0, 0.12, cz + 0.1, SZIN.KAVICS);
+    // Hátfal deszkából, elöl nyitott állás négy oszlopon.
+    e.doboz(2 * E - 0.3, 1.15, 0.16, 0, 0.12, cz - 0.6, SZIN.DESZKA);
+    for (const ux of [-1, 1]) {
+      for (const uz of [-1, 1]) {
+        e.doboz(0.15, 1.3, 0.15, ux * (E - 0.2), 0.12, cz + uz * 0.6, SZIN.FA);
       }
     }
-    for (const sz of [-1, 1]) e.doboz(2 * f, 0.18, 0.22, 0, 1.74, sz * (f - 0.13), SZIN.FA);
-    e.doboz(2 * f - 0.2, 0.1, 1.3, 0, 1.92, -0.6, SZIN.DESZKA, TETO_CS);
-    // A műhelyben egy FÉLKÉSZ FALTÖRŐ KOS áll: két kerék, köztük a gerenda,
-    // a végén a vasalt fej. A kerék az egyetlen KÖR alakú tömeg a roszterben —
-    // ez az, ami messziről is elüt minden más épülettől. A két kerék ezért
-    // SZÉTHÚZVA áll és világosabb a gerendánál: egymásba olvadva csak barna
-    // folt lenne (az első változat pont ezen bukott el).
-    for (const dx of [-0.78, 0.78]) {
-      const k = new THREE.CylinderGeometry(0.44, 0.44, 0.15, 8);
-      k.rotateZ(Math.PI / 2);
-      k.translate(dx, 0.56, 0.74);
-      e.elem(k, SZIN.DESZKA);
+    e.doboz(2 * E - 0.16, 0.09, 1.34, 0, 1.42, cz, SZIN.FA_SOTET);
+    e.dontDoboz(2 * E - 0.2, 0.1, 1.38, 0, 1.55, cz + 0.02, 0.3, 'x', SZIN.NAD, TETO_CS);
+    // Íjállvány a fedett állásban.
+    e.doboz(1.9, 0.09, 0.14, 0, 0.72, cz + 0.42, SZIN.FA);
+    for (const dx of [-0.7, -0.24, 0.24, 0.7]) {
+      e.dontDoboz(0.06, 0.72, 0.06, dx, 0.5, cz + 0.44, 0.12, 'z', SZIN.FA_SOTET);
     }
-    const tengely = new THREE.CylinderGeometry(0.07, 0.07, 1.6, 6);
-    tengely.rotateZ(Math.PI / 2);
-    tengely.translate(0, 0.56, 0.74);
-    e.elem(tengely, SZIN.VAS);
-    const gerenda = new THREE.CylinderGeometry(0.16, 0.16, 1.42, 6);
-    gerenda.rotateZ(Math.PI / 2);
-    gerenda.translate(0.06, 0.82, 0.74);
-    e.elem(gerenda, SZIN.FA);
-    e.doboz(0.22, 0.34, 0.34, 0.92, 0.65, 0.74, SZIN.VAS);
-    e.zaszlo(-f + 0.2, 1.74, -f + 0.2, 0.6, 0.26);
+    // Céltáblák: szalmakéve, csapatszínű középpel.
+    for (const dx of [-0.9, 0, 0.9]) {
+      e.kazal(dx, 0.12, 0.94, 0.32, 0.5);
+      e.doboz(0.34, 0.34, 0.08, dx, 0.28, 1.02, SZIN.CSAPAT, 1);
+      e.doboz(0.12, 0.12, 0.06, dx, 0.39, 1.08, SZIN.VASZON);
+    }
+    e.hordo(1.26, 0.12, 0.1, 0.16, 0.34);
+    for (const dx of [-0.05, 0.05]) {
+      e.dontDoboz(0.03, 0.44, 0.03, 1.26 + dx, 0.6, 0.1, dx * 4, 'z', SZIN.VASZON);
+    }
+    e.zaszlo(-1.24, 1.34, cz - 0.5, 0.6, 0.3, 0.44, 3, 0.2);
     return e;
   },
 
-  /** TORONY — nyolcszögű, karcsúsodó kőtest, pártázattal. A MAGASSÁG a lényeg. */
-  TORONY(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.28, 2 * f, 0, 0, 0, SZIN.KO);
-    e.henger(f * 0.94, f * 0.78, 2.5, 8, 0, 0.28, 0, SZIN.KO, 0, false);
+  /**
+   * ISTÁLLÓ — hosszú boksz-sor OSZTOTT AJTÓKKAL, széna-padlással, előtte KARÁM.
+   * A körbekerített udvar felülnézetből egyedi: semelyik másik épület nem
+   * foglal el üres területet a saját alapterületén belül.
+   */
+  ISTALLO(e) {
+    const E = e.eresz;
+    const cz = -0.78, homlok = cz + 0.57;
+    e.doboz(2 * E - 0.1, 0.12, 2 * E - 0.1, 0, 0, 0, SZIN.FOLD);
+    e.kofal(2.5, 0.36, 1.2, 0, 0.12, cz, { sarok: false, labazat: 0.1 });
+    e.doboz(2.44, 0.66, 1.14, 0, 0.48, cz, SZIN.DESZKA);
+    for (const dx of [-1.18, -0.4, 0.4, 1.18]) {
+      e.doboz(0.1, 1.02, 0.1, dx, 0.12, homlok - 0.02, SZIN.FA);
+    }
+    e.nyeregteto(0.68, 0.52, 2.6, 0, 1.14, cz, SZIN.ZSINDELY, TETO_CS, Math.PI / 2);
+    // Osztott bokszajtók: az alsó fele csapatszín, a felső nyitva (sötét).
+    for (const dx of [-0.79, 0, 0.79]) {
+      e.doboz(0.46, 0.3, 0.06, dx, 0.62, homlok, SZIN.NYILAS);
+      e.doboz(0.44, 0.34, 0.07, dx, 0.24, homlok + 0.01, SZIN.CSAPAT, 1);
+    }
+    // Széna-padlás nyílása és a kilógó szénacsomó.
+    e.doboz(0.4, 0.3, 0.06, 0, 1.16, cz + 0.6, SZIN.NYILAS);
+    e.doboz(0.3, 0.16, 0.2, 0, 1.16, cz + 0.68, SZIN.SZALMA);
+    // Karám: elülső rúdsor + két oldalsó. Felülnézetből ez egy körbekerített
+    // udvar — semelyik másik épület nem hagy üresen területet a saját
+    // alapterületén belül.
+    e.kerites(0, 0.12, E - 0.12, 2 * E - 0.3, 1, 0.56);
+    for (const ux of [-1, 1]) e.kerites(ux * (E - 0.12), 0.12, homlok + 0.5, 1.1, 0, 0.56);
+    e.kazal(1.0, 0.12, 0.62, 0.3, 0.46);
+    e.doboz(0.56, 0.2, 0.3, -0.9, 0.12, 0.72, SZIN.FA);
+    e.doboz(0.48, 0.06, 0.22, -0.9, 0.26, 0.72, SZIN.VAS);
+    e.zaszlo(-1.26, 1.16, cz - 0.44, 0.58, 0.3, 0.44, 3, 0.55);
+    return e;
+  },
+
+  /**
+   * OSTROMMŰHELY — nyitott ácsváz, alatta FÉLKÉSZ FALTÖRŐ KOS, mellette FORGÓ
+   * KÖSZÖRŰKŐ. A kerék az egyetlen KÖR alakú tömeg a roszterben — ez az, ami
+   * messziről is elüt minden más épülettől. A két kerék ezért SZÉTHÚZVA áll és
+   * világosabb a gerendánál: egymásba olvadva csak barna folt lenne (a v0.10
+   * első változata pont ezen bukott el).
+   */
+  OSTROMMUHELY(e) {
+    const E = e.eresz;
+    e.doboz(2 * E - 0.1, 0.12, 2 * E - 0.1, 0, 0, 0, SZIN.FOLD);
+    e.doboz(2.3, 0.05, 1.5, 0.1, 0.12, 0.3, SZIN.KAVICS);
+    for (const ux of [-1, 1]) {
+      for (const uz of [-1, 1]) {
+        e.doboz(0.26, 1.58, 0.26, ux * (E - 0.18), 0.12, uz * (E - 0.18), SZIN.FA);
+        e.dontDoboz(0.42, 0.11, 0.11, ux * (E - 0.42), 1.5, uz * (E - 0.18), ux * -0.7, 'z', SZIN.FA);
+      }
+    }
+    for (const uz of [-1, 1]) {
+      e.doboz(2 * E - 0.1, 0.19, 0.22, 0, 1.7, uz * (E - 0.18), SZIN.FA);
+    }
+    e.doboz(0.22, 0.19, 2 * E - 0.5, 0, 1.7, 0, SZIN.FA);
+    e.doboz(2 * E - 0.24, 0.09, 1.2, 0, 1.89, -0.68, SZIN.DESZKA, TETO_CS);
+    for (const dz of [-1.05, -0.65, -0.25]) {
+      e.doboz(2 * E - 0.2, 0.06, 0.08, 0, 1.98, dz, SZIN.FA_SOTET);
+    }
+    // A FÉLKÉSZ KOS: két nagy kerék, köztük a gerenda, a végén a vasalt fej.
+    for (const dx of [-0.78, 0.78]) {
+      const k = new THREE.CylinderGeometry(0.44, 0.44, 0.16, 8);
+      k.rotateZ(Math.PI / 2);
+      k.translate(dx, 0.56, 0.72);
+      e.elem(k, SZIN.DESZKA);
+      const ag = new THREE.BoxGeometry(0.2, 0.74, 0.1);
+      ag.rotateX(Math.PI / 4);
+      ag.translate(dx, 0.56, 0.72);
+      e.elem(ag, SZIN.FA_SOTET);
+    }
+    e.rud(0.07, 1.62, 6, 0, 0.56, 0.72, SZIN.VAS);
+    e.rud(0.17, 1.4, 6, 0.06, 0.86, 0.72, SZIN.FA);
+    e.doboz(0.24, 0.36, 0.36, 0.9, 0.68, 0.72, SZIN.VAS);
+    e.doboz(0.36, 0.05, 0.4, 0.86, 0.86, 0.72, SZIN.CSAPAT, 1);
+    // FORGÓ KÖSZÖRŰKŐ állványon — a műhely „életjele".
+    e.doboz(0.5, 0.4, 0.36, -0.92, 0.12, -0.62, SZIN.FA);
+    e.forgoKerek(-0.92, 0.66, -0.62, 0.24, 0.1, 4, 0, SZIN.KO_VILAG);
+    // Faanyag-rakás és bak.
+    for (let i = 0; i < 3; i++) e.rud(0.09, 1.0, 6, 0.9, 0.21 + i * 0.17, -1.14 + (i % 2) * 0.2, SZIN.FA);
+    e.zaszlo(-E + 0.22, 1.7, -E + 0.22, 0.62, 0.3, 0.44, 3, 0.85);
+    return e;
+  },
+
+  /**
+   * TORONY — rézsűs, nyolcszögű kőtest LŐRÉSEKKEL, kiugró gyilokjáró-koszorúval,
+   * pártázattal és zsindelyes sisakkal. A MAGASSÁG a lényeg: ez az egyetlen
+   * épület, aminek a teste a központ zászlaja fölé nő.
+   */
+  TORONY(e) {
+    const E = e.eresz;
+    e.doboz(2 * E - 0.1, 0.2, 2 * E - 0.1, 0, 0, 0, SZIN.KO_SOTET);
+    e.doboz(2 * E - 0.34, 0.13, 2 * E - 0.34, 0, 0.2, 0, SZIN.KO);
+    e.henger(0.84, 0.68, 2.52, 8, 0, 0.33, 0, SZIN.KO, 0, false);
+    e.henger(0.8, 0.8, 0.11, 8, 0, 1.28, 0, SZIN.KO_VILAG, 0, false);
     // Csapat-öv derékmagasságban: a torony teteje messziről egy pont, az öv
     // viszont a sziluett közepén ül, ahol a szem megtalálja.
-    e.henger(f * 0.9, f * 0.87, 0.16, 8, 0, 1.5, 0, SZIN.CSAPAT, 1, false);
-    e.henger(f * 0.98, f * 0.98, 0.3, 8, 0, 2.78, 0, SZIN.KO_SOTET, 0.3);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) e.doboz(0.28, 0.3, 0.28, sx * 0.54, 3.08, sz * 0.54, SZIN.KO);
+    e.henger(0.77, 0.75, 0.17, 8, 0, 1.72, 0, SZIN.CSAPAT, 1, false);
+    e.doboz(0.36, 0.5, 0.08, 0, 0.33, 0.79, SZIN.NYILAS);
+    e.doboz(0.3, 0.44, 0.06, 0, 0.35, 0.82, SZIN.FA_SOTET);
+    // A lőréseknek a fal SÍKJÁBAN kell ülniük. A rézsűs test sugara 0,72-nél
+    // már ~0,80 — a 0,72-re tett nyílás az első változatban BENT maradt a
+    // kőben, tehát láthatatlan volt.
+    for (const [ux, uz] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+      e.lores(ux * 0.79, 0.98, uz * 0.79, 0.34, ux || uz);
+      e.lores(ux * 0.74, 2.1, uz * 0.74, 0.3, ux || uz);
     }
-    e.zaszlo(0, 3.08, 0, 0.5, 0.24);
+    // Kiugró koszorú (machicolatio): a rézsűs testet ez zárja le, és ez adja a
+    // torony jellegzetes „gombás" sziluettjét.
+    e.henger(0.68, 0.93, 0.26, 8, 0, 2.85, 0, SZIN.KO_VILAG, 0.15, false);
+    e.henger(0.93, 0.9, 0.16, 8, 0, 3.11, 0, SZIN.KO, 0, false);
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      e.doboz(0.24, 0.22, 0.24, Math.cos(a) * 0.72, 3.27, Math.sin(a) * 0.72, SZIN.KO_VILAG);
+    }
+    e.gula(0.66, 0.44, 8, 0, 3.27, 0, SZIN.ZSINDELY, TETO_CS);
+    e.zaszlo(0, 3.66, 0, 0.5, 0.26, 0.4, 2);
     return e;
   },
 
-  /** PIAC — három csapatszínű PONYVA: a legszínesebb tető az egész roszterben. */
-  PIAC(f, m, H) {
-    const e = new Forma(m, H);
-    e.doboz(2 * f, 0.1, 2 * f, 0, 0, 0, SZIN.FOLD);
-    const stand = (x, z) => {
-      e.doboz(1.0, 0.44, 0.5, x, 0.1, z, SZIN.DESZKA);
-      for (const sx of [-1, 1]) e.doboz(0.09, 1.02, 0.09, x + sx * 0.46, 0.1, z, SZIN.FA);
-      e.hasab([-0.58, 0, 0.58, 0, 0, 0.34], 0.92, x, 1.12, z, SZIN.CSAPAT, 1);
+  /**
+   * PIAC — három CSÍKOS PONYVA: a legszínesebb tető az egész roszterben. A
+   * csíkozás (vászon + csapatszín váltakozva) azért éri meg a néhány extra
+   * hasábot, mert a tiszta csapatszínű ponyva nagy foltban már nem ponyvának
+   * látszik, hanem festett doboznak — a csík viszont azonnal vászonná teszi.
+   */
+  PIAC(e) {
+    const E = e.eresz;
+    e.doboz(2 * E - 0.1, 0.12, 2 * E - 0.1, 0, 0, 0, SZIN.KAVICS);
+    const stand = (x, z, szeles) => {
+      e.doboz(szeles, 0.46, 0.56, x, 0.12, z, SZIN.DESZKA);
+      e.doboz(szeles + 0.08, 0.06, 0.64, x, 0.58, z, SZIN.FA_SOTET);
+      for (const ux of [-1, 1]) {
+        e.doboz(0.09, 1.0, 0.09, x + ux * (szeles * 0.5 - 0.04), 0.12, z, SZIN.FA);
+      }
+      // A ponyva CSÍKOKBÓL áll: minden második szelet csapatszín.
+      const db = 5, sz = (szeles + 0.24) / db;
+      for (let i = 0; i < db; i++) {
+        const px = x - (szeles + 0.24) * 0.5 + sz * (i + 0.5);
+        const csik = i % 2 === 1;
+        e.hasab([-sz * 0.52, 0, sz * 0.52, 0, 0, 0.3], 0.86, px, 1.12, z,
+          csik ? SZIN.CSAPAT : SZIN.VASZON, csik ? 1 : 0);
+      }
+      e.doboz(szeles + 0.3, 0.07, 0.1, x, 1.09, z + 0.44, SZIN.FA_SOTET);
     };
-    stand(-0.75, -0.62);
-    stand(0.75, -0.62);
-    stand(0, 0.76);
-    e.henger(0.2, 0.2, 0.44, 6, -0.72, 0.1, 0.62, SZIN.DESZKA);
-    e.doboz(0.4, 0.4, 0.4, 0.78, 0.1, 0.7, SZIN.FA);
+    stand(-0.72, -0.66, 1.1);
+    stand(0.76, -0.66, 1.1);
+    stand(-0.1, 0.76, 1.2);
+    // Áru a pultokon és az udvaron.
+    for (const [gx, gz] of [[-0.95, -0.66], [-0.5, -0.62], [0.55, -0.68], [0.98, -0.62]]) {
+      e.doboz(0.22, 0.14, 0.22, gx, 0.58, gz, SZIN.CSEREP);
+    }
+    e.hordo(1.24, 0.12, 0.5, 0.16, 0.36);
+    e.hordo(1.24, 0.12, 0.14, 0.14, 0.3);
+    e.lada(-1.2, 0.12, 0.3, 0.32);
+    e.kazal(1.1, 0.12, 1.06, 0.24, 0.34);
+    e.zaszlo(-1.26, 0.12, 1.06, 1.15, 0.32, 0.46, 3, 0.6);
     return e;
   },
 };
@@ -481,18 +499,28 @@ const FORMAK = {
  * önmagában nem olvasható („eltört a modell?"), a fakóság pedig kevés. Az
  * állvány TELJES magasságban áll, miközben az épület belül nő — így egyszerre
  * látszik, MI épül és MENNYIRE van kész.
+ *
+ * ⚠️ Egység-térben épül, tehát a példány-mátrix NEM EGYENLETESEN nyújtja
+ * (m × H × m). Ezért nincs benne henger és ferde palló arányfüggő méretben: a
+ * ferde darab a nyújtástól elcsúszna a végpontjairól. Doboz és létrafok van —
+ * azok bármilyen nyújtás mellett a helyükön maradnak.
  */
 function allvanyForma() {
   const e = new Forma(1, 1);
-  e.doboz(1, 0.05, 1, 0, 0, 0, SZIN.FOLD);
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) e.doboz(0.07, 1.0, 0.07, sx * 0.46, 0, sz * 0.46, SZIN.FA);
+  e.doboz(1, 0.04, 1, 0, 0, 0, SZIN.FOLD);
+  for (const ux of [-1, 1]) {
+    for (const uz of [-1, 1]) e.doboz(0.07, 1.0, 0.07, ux * 0.46, 0, uz * 0.46, SZIN.FA);
   }
-  for (const sz of [-1, 1]) e.doboz(1, 0.05, 0.05, 0, 0.62, sz * 0.46, SZIN.FA);
-  const pallo = new THREE.BoxGeometry(0.16, 0.05, 1.16);
-  pallo.rotateX(0.52);
-  pallo.translate(0.3, 0.34, 0);
-  e.elem(pallo, SZIN.DESZKA);
+  for (const h of [0.34, 0.68]) {
+    for (const uz of [-1, 1]) e.doboz(0.98, 0.035, 0.16, 0, h, uz * 0.46, SZIN.DESZKA);
+    for (const ux of [-1, 1]) e.doboz(0.05, 0.03, 0.98, ux * 0.46, h, 0, SZIN.FA);
+  }
+  // Létra a homlokzat elé: két szár és négy fok.
+  for (const ux of [-1, 1]) e.doboz(0.045, 0.92, 0.045, 0.22 + ux * 0.09, 0.02, 0.5, SZIN.FA);
+  for (let i = 0; i < 4; i++) e.doboz(0.22, 0.028, 0.045, 0.22, 0.14 + i * 0.22, 0.5, SZIN.FA);
+  // Kőrakás és vödör: az építkezés a földön is látszik.
+  e.doboz(0.2, 0.11, 0.2, -0.24, 0.04, 0.42, SZIN.KO);
+  e.doboz(0.13, 0.09, 0.13, -0.22, 0.15, 0.4, SZIN.KO_VILAG);
   return e;
 }
 
@@ -528,6 +556,13 @@ export function epuletMagassag(tipus) {
   return EP_MERET[tipus] * 0.8 * EP_MAGASSAG[tipus];
 }
 
+/** Egy típus nyers alkatrész-gyűjtője. Csak innen és a diagnosztikából hívjuk. */
+function epitForma(tipus) {
+  const e = new Forma(EP_MERET[tipus], epuletMagassag(tipus));
+  FORMA_TABLA[tipus](e);
+  return e;
+}
+
 /**
  * A tizenegy geometria + az állvány felépítése. EGYSZER hívandó, a réteg
  * konstruktorából — futásidőben soha.
@@ -538,8 +573,7 @@ export function epitEpuletGeometriak() {
   const tipus = [];
   const haromszog = [];
   for (let t = 0; t < FORMA_TABLA.length; t++) {
-    const e = FORMA_TABLA[t](EP_MERET[t] * 0.46, EP_MERET[t], epuletMagassag(t));
-    const geo = osszefuz(e.reszek);
+    const geo = osszefuz(epitForma(t).reszek);
     tipus[t] = geo;
     haromszog[t] = geo.attributes.position.count / 3;
   }
@@ -557,19 +591,73 @@ export function epitEpuletGeometriak() {
  *
  * `toneMapped: false` — ez a doboz-korszak öröksége, és tudatos: a
  * csapatszínnek az ACES-görbe alatt is telítettnek kell maradnia.
+ *
+ * ── AZ ÉLET A VERTEX SHADERBEN VAN, ÉS EZ SZÁNDÉKOS ──────────────────────
+ * A lengő zászló, a szálló füst és a forgó köszörűkő megoldható volna külön
+ * hálóval és képkockánkénti mátrix-írással is — az viszont rajzhívást, példány-
+ * puffert és CPU-munkát kérne minden képkockán. Itt ehelyett két statikus
+ * csúcs-attribútum (`eletAdat`, `eletKozep`) hordozza a mozgás leírását, és a
+ * shader számolja ki. A költség: egy `float` uniform frissítése képkockánként,
+ * és néhány utasítás azon a pár ezer csúcson, ami az épületeké. NULLA extra
+ * rajzhívás, NULLA allokáció.
+ *
+ * A fázist a PÉLDÁNY-MÁTRIX eltolás-oszlopából is hasheljük (ugyanaz a fogás,
+ * mint a `props3d.js` fáin), különben egy típus minden példánya vezényszóra
+ * lengene — nyolc ház nyolc külön ütemben füstöl, extra adat nélkül.
+ *
+ * A füst NEM átlágszó: a pamacs a saját középpontja körül zsugorodik NULLÁRA.
+ * Egy átlátszó anyag külön, rendezett rajzhívást és `depthWrite:false`-t kérne.
+ *
+ * @returns {THREE.MeshLambertMaterial} az `userData.ido` a képkockánként
+ *   frissítendő idő-uniform (`{ value: masodperc }`).
  */
 export function epuletAnyag() {
   const anyag = new THREE.MeshLambertMaterial({ toneMapped: false });
+  const ido = { value: 0 };
+  anyag.userData.ido = ido;
   anyag.onBeforeCompile = (sh) => {
+    sh.uniforms.aocIdo = ido;
     sh.vertexShader = `
       attribute vec3 alapSzin;
       attribute float csapatArany;
+      attribute vec2 eletAdat;     // x = mozgásfajta, y = fázis
+      attribute vec3 eletKozep;    // a mozgás origója
       attribute vec4 csapatAdat;   // rgb = csapatszín, a = fényerő
+      uniform float aocIdo;
       varying vec3 vEpSzin;
     ` + sh.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
-       vEpSzin = mix(alapSzin, csapatAdat.rgb, csapatArany) * csapatAdat.a;`,
+       vEpSzin = mix(alapSzin, csapatAdat.rgb, csapatArany) * csapatAdat.a;
+       float aocFajta = eletAdat.x;
+       if (aocFajta > 0.5) {
+         // Példányonkénti fázis a világpozícióból — így nem vezényszóra leng minden.
+         float aocF = eletAdat.y * 6.2831853
+           + fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+         if (aocFajta < 1.5) {
+           // ZÁSZLÓ: a rúdtól távolodva nő a lengés (a lobogó +x felé nyúlik).
+           float d = transformed.x - eletKozep.x;
+           float w = clamp(abs(d) * 2.2, 0.0, 1.0);
+           transformed.z += sin(aocIdo * 3.1 + d * 7.5 + aocF) * 0.075 * w;
+           transformed.y += cos(aocIdo * 3.1 + d * 7.5 + aocF) * 0.03 * w;
+         } else if (aocFajta < 2.5) {
+           // FÜST: emelkedik és a saját közepe körül nullára zsugorodik.
+           // Épülő házon nincs füst (a fényerő ilyenkor 1 alatt van).
+           float ph = fract(aocIdo * 0.2 + eletAdat.y + aocF * 0.16);
+           float s = (1.0 - ph) * (0.5 + ph * 1.9) * step(0.99, csapatAdat.a);
+           transformed = eletKozep + vec3(
+             sin(aocIdo * 0.7 + aocF) * 0.26 * ph,
+             ph * 1.15,
+             cos(aocIdo * 0.55 + aocF) * 0.18 * ph) + transformed * s;
+         } else {
+           // FORGÁS az X tengely körül, a saját középpontja körül.
+           float a = aocIdo * 1.15 + aocF;
+           float ca = cos(a), sa = sin(a);
+           transformed = eletKozep + vec3(transformed.x,
+             transformed.y * ca - transformed.z * sa,
+             transformed.y * sa + transformed.z * ca);
+         }
+       }`,
     );
     sh.fragmentShader = 'varying vec3 vEpSzin;\n' + sh.fragmentShader.replace(
       '#include <color_fragment>',
@@ -586,17 +674,27 @@ export function epuletAnyag() {
  * sziluettet (a `haromszog` és a `jegy` külön-külön más), és hogy egyik sem lóg
  * túl az alapterületén (`tullogas <= 0`). A `qa/` szondák és a kézi ellenőrzés
  * ugyanezt olvassa.
+ *
+ * ⚠️ A FÜST- és FORGÓ darabok az origó körül épülnek (a helyüket az `eletKozep`
+ * adja), tehát a `tullogas`-ba nem számítanak bele. Ez helyes: a füst nem
+ * foglal területet, és a köszörűkő a saját közepe körül pörög — de tudni kell
+ * róla, mielőtt valaki a mérésre hivatkozva tesz oda egy nagy forgó elemet.
  */
 export function formaOsszefoglalo() {
   const nevek = Object.keys(EPULET);
   const ki = [];
   for (let t = 0; t < FORMA_TABLA.length; t++) {
-    const m = EP_MERET[t], H = epuletMagassag(t);
-    const e = FORMA_TABLA[t](m * 0.46, m, H);
-    const geo = osszefuz(e.reszek);
+    const geo = osszefuz(epitForma(t).reszek);
     const p = geo.attributes.position.array;
-    let maxXZ = 0, maxY = 0, jegy = 0;
+    const el = geo.attributes.eletAdat.array;
+    let maxXZ = 0, maxY = 0, jegy = 0, eloDb = 0;
     for (let i = 0; i < p.length; i += 3) {
+      const fajta = el[(i / 3) * 2];
+      if (fajta > 0.5) eloDb++;
+      // A ZÁSZLÓ a helyén épül, tehát MÉRENDŐ (egy hosszú lobogó könnyen
+      // kilóg a cellából). A füst és a forgó darab az origóban épül — azokat a
+      // mérés nem látná értelmesen, és területet sem foglalnak.
+      if (fajta > 1.5) continue;
       const ax = Math.abs(p[i]), az = Math.abs(p[i + 2]);
       if (ax > maxXZ) maxXZ = ax;
       if (az > maxXZ) maxXZ = az;
@@ -607,11 +705,12 @@ export function formaOsszefoglalo() {
     ki.push({
       tipus: t,
       nev: nevek[t],
-      meret: m,
-      keret: H,
+      meret: EP_MERET[t],
+      keret: epuletMagassag(t),
       haromszog: geo.attributes.position.count / 3,
+      eloCsucs: eloDb,
       szelesFel: maxXZ,
-      tullogas: maxXZ - m * 0.5,
+      tullogas: maxXZ - EP_MERET[t] * 0.5,
       magassag: maxY,
       jegy,
     });

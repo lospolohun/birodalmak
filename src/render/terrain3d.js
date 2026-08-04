@@ -41,9 +41,24 @@
 // Két háromszög, a pályánál jóval nagyobb, hogy a horizontig tartson. Hullám
 // helyett a fragment-shaderben két eltolt szinusz világosítja/sötétíti a
 // vizet — geometria nélkül, néhány ALU-műveletért.
+//
+// ── AMI A v0.16-BAN VÁLTOZOTT: A SZÍN NEM EBBEN A FÁJLBAN LAKIK ───────────
+// Eddig öt hexa-szám volt itt (típusonként egy), és MIND A HAT térkép-preset
+// ugyanazt kapta: a pálya egyetlen, egyenletes zöld szőnyeg volt. A szín-
+// döntés átkerült a `terep_paletta.js`-be, ami a cella-típus MELLETT a
+// magasságot, a lejtést és egy levezetett nedvességet is beleszámol,
+// presetenként más palettával; a cellánál kisebb léptékű részletet pedig a
+// `terep_shader.js` folt adja hozzá a fragment-shaderben.
+//
+// Ez a fájl attól maradt a régi: a GEOMETRIA statikus, a `frissit()` továbbra
+// is csak LOD-ot választ és háromszöget számol, és a rács-adatot (magasság,
+// cella-típus) csak OLVASSA. Amit a paletta ad, az kizárólag szín — a
+// járhatóságot változatlanul a `sim/grid.js` dönti el.
 
 import { THREE, feloldJelenet, feloldKamera, aktivKamera } from './core3d.js';
-import { TEREP, VIZSZINT } from '../sim/grid.js';
+import { VIZSZINT } from '../sim/grid.js';
+import { arculat, talajSzinek, melysegTerkep } from './terep_paletta.js';
+import { terepShaderFolt, vizShaderFolt } from './terep_shader.js';
 
 /** Chunk oldalhossza cellában. */
 const CH = 32;
@@ -59,13 +74,8 @@ const REJT_TAV = 350;
 /** A durva chunkok szoknyájának mélysége. */
 const SZOKNYA = 3.0;
 
-/** Terep-típusonkénti alapszín (sRGB; a THREE.Color lineárisra váltja). */
-const SZINEK = [];
-SZINEK[TEREP.VIZ] = 0x35596b;      // a víz alatti meder — hidegebb és sötétebb
-SZINEK[TEREP.FU] = 0x5f9143;
-SZINEK[TEREP.FOVENY] = 0xd9c58f;
-SZINEK[TEREP.SZIKLA] = 0x8d8880;
-SZINEK[TEREP.HAVAS] = 0xf0f3f6;
+/** Ha a rács nem hozna preset-paramétert, a nyílt mező szikla-küszöbe. */
+const SZIKLA_LEJTO_ALAP = 0.55;
 
 const _m4 = new THREE.Matrix4();
 const _frusztum = new THREE.Frustum();
@@ -91,6 +101,10 @@ export class Terep3D {
     this.gyoker.matrixAutoUpdate = false;   // sosem mozdul
     this.jelenet.add(this.gyoker);
 
+    /** A pálya arculata — a `terep_paletta.js` presetenkénti szín-készlete. */
+    this._arc = arculat(this.racs.terkep | 0);
+    const sziklaLejto = (this.racs.p && this.racs.p.sziklaLejto) || SZIKLA_LEJTO_ALAP;
+
     this.anyag = new THREE.MeshLambertMaterial({
       vertexColors: true,
       // A Lambert fragment-shaderében nincs PBR-BRDF (se Fresnel, se GGX) —
@@ -98,6 +112,9 @@ export class Terep3D {
       // fényelnyelés úgyis elég.
       fog: true,
     });
+    // EGY anyag van, tehát a folt egyszer fordul le. Az arculat-konstansok a
+    // shader szövegébe égnek — lásd a `terep_shader.js` indoklását.
+    this.anyag.onBeforeCompile = (sh) => terepShaderFolt(sh, this._arc, sziklaLejto);
 
     /** Chunkonként: {kozel, tavol, gomb, triKozel, triTavol} */
     this._chunkok = [];
@@ -204,17 +221,20 @@ export class Terep3D {
 
   /**
    * Globális csúcsszínek: egy csúcs a körülötte lévő (legfeljebb négy) cella
-   * színének átlaga. A hash-alapú apró sötétítés töri meg a tömör felületet —
-   * textúra nélkül ez adja a talajnak a „szemcsét".
+   * színének átlaga.
+   *
+   * A cella-színt a `terep_paletta.js` adja (lineáris RGB), tehát ITT már
+   * csak az átlagolás és egy hajszálnyi zaj marad. Az átlagolás az, ami a
+   * parton és a hóhatáron a lágy átmenetet adja — cellánként tömör színnel a
+   * pálya kockás terítőnek látszana.
+   *
+   * A zaj ±3 %: kevesebb, mint a v0.10-ben volt (±4 %), mert a cellánál
+   * finomabb szemcsét már a fragment-folt adja. A kettő ÖSSZEADÓDIK, és
+   * együtt már túl sok volt — a fű szemcsés-zajosnak látszott, nem füvesnek.
    */
   _csucsSzinek() {
-    const n = this._n, s = n + 1, ter = this.racs.terep;
-    const paletta = new Float32Array(SZINEK.length * 3);
-    const c = new THREE.Color();
-    for (let t = 0; t < SZINEK.length; t++) {
-      c.setHex(SZINEK[t], THREE.SRGBColorSpace);   // sRGB → lineáris munkatér
-      paletta[t * 3] = c.r; paletta[t * 3 + 1] = c.g; paletta[t * 3 + 2] = c.b;
-    }
+    const n = this._n, s = n + 1;
+    const cella = talajSzinek(this.racs);
     const ki = new Float32Array(s * s * 3);
     for (let j = 0; j <= n; j++) {
       for (let i = 0; i <= n; i++) {
@@ -225,14 +245,14 @@ export class Terep3D {
           for (let dx = -1; dx <= 0; dx++) {
             const cx = i + dx;
             if (cx < 0 || cx >= n) continue;
-            const p = ter[cy * n + cx] * 3;
-            r += paletta[p]; g += paletta[p + 1]; b += paletta[p + 2]; db++;
+            const p = (cy * n + cx) * 3;
+            r += cella[p]; g += cella[p + 1]; b += cella[p + 2]; db++;
           }
         }
-        if (!db) { r = paletta[0]; g = paletta[1]; b = paletta[2]; db = 1; }
-        // ±4% zaj — determinisztikus, tehát két gépen ugyanaz a kép.
+        if (!db) { r = cella[0]; g = cella[1]; b = cella[2]; db = 1; }
+        // ±3% zaj — determinisztikus, tehát két gépen ugyanaz a kép.
         const h = keverd(j * s + i, 0x1b873f);
-        const f = (0.96 + (h & 1023) / 1023 * 0.08) / db;
+        const f = (0.97 + (h & 1023) / 1023 * 0.06) / db;
         const q = (j * s + i) * 3;
         ki[q] = r * f; ki[q + 1] = g * f; ki[q + 2] = b * f;
       }
@@ -432,6 +452,28 @@ export class Viz3D {
     /** A shader ideje — EGY objektum, amit a `frissit` írogat (nulla allokáció). */
     this._ido = { value: 0 };
     this._kezdet = performance.now();
+    const arc = arculat(sim.racs.terkep | 0);
+
+    // ── MÉLYSÉG-TEXTÚRA ────────────────────────────────────────────────────
+    // Cellánként EGY bájt: hány egység víz van a felszín alatt. Ez az egyetlen
+    // adat, ami a vízsíkból partvonalat csinál a vágás helyett — a shader
+    // ebből számol átlátszóságot, színt és habot.
+    //
+    // A textúra a CELLA-középpontokra illeszkedik: a `j`-edik texel közepe
+    // `(j+0.5)/n`, ami világkoordinátában pontosan `j+0.5`, vagyis a cella
+    // közepe. Ezért elég a `vVilag / n` UV, nincs fél-texeles korrekció.
+    const melyseg = new THREE.DataTexture(
+      melysegTerkep(sim.racs), n, n, THREE.RedFormat, THREE.UnsignedByteType,
+    );
+    melyseg.minFilter = THREE.LinearFilter;
+    melyseg.magFilter = THREE.LinearFilter;
+    melyseg.wrapS = THREE.ClampToEdgeWrapping;
+    melyseg.wrapT = THREE.ClampToEdgeWrapping;
+    melyseg.generateMipmaps = false;
+    melyseg.unpackAlignment = 1;   // egy bájt/texel, a sorok nem 4-re igazodnak
+    melyseg.needsUpdate = true;
+    this._melysegTex = melyseg;
+    this._melyseg = { value: melyseg };
 
     // Négyszer akkora, mint a pálya: a peremen túl is víz van, így a világ
     // nem „levágva" ér véget, hanem a ködbe fut. Két háromszög az egész.
@@ -440,49 +482,20 @@ export class Viz3D {
     geo.rotateX(-Math.PI / 2);
 
     const anyag = new THREE.MeshLambertMaterial({
-      color: 0x2c6d99,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.82,
+      // Az átlátszóságot a MÉLYSÉG szabja meg fragmentenként, tehát az anyag
+      // egységnyi `opacity`-vel indul, és a shader írja felül. Egy fix 0,82-es
+      // érték volt az, ami a bokáig érő vizet ugyanolyan tömör kékre festette,
+      // mint a nyílt tengert — abból lett az éles partvonal.
+      opacity: 1.0,
       // A mélységírás MARAD bekapcsolva: a víz az átlátszó menetben, tehát az
       // egységek UTÁN rajzolódik, és a mélységteszt gondoskodik róla, hogy a
       // vízben álló figurák ne tűnjenek el a felszín alatt.
       depthWrite: true,
       fog: true,
     });
-    anyag.onBeforeCompile = (sh) => {
-      sh.uniforms.uIdo = this._ido;
-      sh.vertexShader = 'varying vec2 vVilag;\n' + sh.vertexShader.replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\n\tvVilag = (modelMatrix * vec4(transformed, 1.0)).xz;',
-      );
-      // Hullám GEOMETRIA nélkül: eltolt, eltérő irányú szinuszok világosítják
-      // és sötétítik a felszínt. Egy felosztott hálónál ez nagyságrendekkel
-      // olcsóbb, és kizoomolva (ahol a víz a képernyő nagy részét adja)
-      // ugyanúgy „él" a felület.
-      //
-      // ⚠️ KÉT OKTÁV KELL. Egyetlen, alacsony frekvenciájú hullámmal (az első
-      // változat 0,21-gyel ment) a mintázat hulláma ~30 világegység — a
-      // bezoomolt kép ettől nem víznek, hanem elmosott felhőfotónak látszott.
-      // A finom oktáv adja a „vízfelszín" olvasatot, a durva a lassú hullámzást.
-      //
-      // A finom oktávot a KÉPERNYŐ-DERIVÁLTTAL halványítjuk el: kizoomolva egy
-      // hullámhossz pár képpont lenne, és mintavételi zaj (villogás) lenne
-      // belőle. A `fwidth` pont azt mondja meg, hány világegység esik egy
-      // képpontra — ahol ez nagy, ott a finom réteg elhalkul. Három utasítás,
-      // és nincs se villogás, se textúra, se mipmap-lánc.
-      sh.fragmentShader = 'uniform float uIdo;\nvarying vec2 vVilag;\n' + sh.fragmentShader.replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        float durva = sin(vVilag.x * 0.42 + uIdo * 0.85) * 0.5 + sin(vVilag.y * 0.55 - uIdo * 0.65) * 0.5;
-        float finom = sin(vVilag.x * 1.85 - vVilag.y * 1.30 + uIdo * 2.1) * 0.5
-                    + sin(vVilag.x * 1.10 + vVilag.y * 2.05 - uIdo * 1.6) * 0.5;
-        float suly = 1.0 - smoothstep(0.35, 1.6, length(fwidth(vVilag)));
-        float hu = durva * 0.55 + finom * 0.45 * suly;
-        float csillam = pow(max(0.0, hu), 14.0);
-        diffuseColor.rgb *= 1.0 + hu * 0.11;
-        diffuseColor.rgb += vec3(0.13, 0.19, 0.22) * csillam;`,
-      );
-    };
+    anyag.onBeforeCompile = (sh) => vizShaderFolt(sh, arc, n, this._ido, this._melyseg);
 
     this.halo = new THREE.Mesh(geo, anyag);
     this.halo.name = 'viz';
@@ -509,6 +522,7 @@ export class Viz3D {
   bont() {
     this.halo.geometry.dispose();
     this.halo.material.dispose();
+    if (this._melysegTex) { this._melysegTex.dispose(); this._melysegTex = null; }
     this.jelenet.remove(this.halo);
   }
 }

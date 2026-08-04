@@ -1,0 +1,257 @@
+/* AGE OF THE CRYSTALS — KÉPZÉS-PANEL STÍLUS (v0.16).
+ *
+ * MINDEN osztálynév `aoc-kepzes-` előtagú. Ez nem ízlés kérdése: a v0.16-ot sok
+ * agent írja párhuzamosan, és egy `.gomb` vagy `.sor` nevű szabály innen
+ * átfolyna a szomszéd panelre. A panel a saját gyökerén kívülre SEMMIT nem
+ * stílusoz — nincs benne `body`, `:root` és elem-szelektor a gyökér nélkül.
+ *
+ * A tiltott gomb SÖTÉT ÉS OLVASHATÓ MARAD. A megszokott „opacity: .4" itt
+ * rossz volna: pont a tiltott gombon van a legfontosabb szöveg (miért nem
+ * megy), és azt elhalványítani annyi, mintha el se mondtuk volna.
+ */
+
+.aoc-kepzes {
+  --aoc-kepzes-hatter: rgba(14, 18, 26, 0.86);
+  --aoc-kepzes-keret: rgba(120, 148, 190, 0.30);
+  --aoc-kepzes-szoveg: #dfe6f2;
+  --aoc-kepzes-halk: #93a1b8;
+  --aoc-kepzes-kiemel: #6fd0e8;
+  --aoc-kepzes-tilt: #d08a6a;
+
+  min-width: 320px;
+  max-width: 460px;
+  padding: 8px 9px 7px;
+  background: var(--aoc-kepzes-hatter);
+  border: 1px solid var(--aoc-kepzes-keret);
+  border-radius: 7px;
+  color: var(--aoc-kepzes-szoveg);
+  font: 12px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+/* ── fejléc ───────────────────────────────────────────────────────────── */
+
+.aoc-kepzes-fej {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.aoc-kepzes-cim {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+}
+
+.aoc-kepzes-nep {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A tele népesség NEM diszkrét: ez az az állapot, amitől a képzés leáll. */
+.aoc-kepzes-nep-tele {
+  color: var(--aoc-kepzes-tilt);
+  font-weight: 600;
+}
+
+/* ── a hat gomb ───────────────────────────────────────────────────────── */
+
+.aoc-kepzes-racs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.aoc-kepzes-gomb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  background: rgba(38, 50, 70, 0.72);
+  border: 1px solid rgba(130, 160, 200, 0.24);
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 90ms linear, border-color 90ms linear;
+}
+
+.aoc-kepzes-gomb:hover:not(:disabled) {
+  background: rgba(58, 78, 108, 0.9);
+  border-color: var(--aoc-kepzes-kiemel);
+}
+
+.aoc-kepzes-gomb:active:not(:disabled) { transform: translateY(1px); }
+
+.aoc-kepzes-gomb:disabled { cursor: not-allowed; }
+
+.aoc-kepzes-tiltott {
+  background: rgba(30, 34, 44, 0.72);
+  border-color: rgba(150, 110, 90, 0.35);
+}
+
+.aoc-kepzes-ikon {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--aoc-kepzes-szoveg);
+}
+
+.aoc-kepzes-tiltott .aoc-kepzes-ikon { color: #7d8698; }
+
+.aoc-kepzes-torzs { min-width: 0; flex: 1 1 auto; }
+
+.aoc-kepzes-nev {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aoc-kepzes-ar {
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+  font-variant-numeric: tabular-nums;
+}
+
+.aoc-kepzes-also {
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A tiltás oka a gomb legfontosabb szövege — ezért ez SZÍNES, nem halvány. */
+.aoc-kepzes-tiltott .aoc-kepzes-also { color: var(--aoc-kepzes-tilt); }
+
+.aoc-kepzes-jelvenyek {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+}
+
+.aoc-kepzes-sorban:not(:empty) {
+  display: inline-block;
+  min-width: 15px;
+  padding: 0 3px;
+  background: var(--aoc-kepzes-kiemel);
+  border-radius: 8px;
+  color: #0d1520;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 15px;
+}
+
+/* ── a képzési sor ────────────────────────────────────────────────────── */
+
+.aoc-kepzes-sorlista {
+  margin-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.aoc-kepzes-sor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 66px 46px 18px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  background: rgba(28, 38, 54, 0.6);
+  border-radius: 4px;
+}
+
+.aoc-kepzes-sorfej {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aoc-kepzes-sav {
+  height: 7px;
+  background: rgba(10, 14, 20, 0.8);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.aoc-kepzes-csik {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #3f7fd0, var(--aoc-kepzes-kiemel));
+  transition: width 120ms linear;
+}
+
+.aoc-kepzes-hatra {
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.aoc-kepzes-torles {
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  background: rgba(70, 40, 40, 0.7);
+  border: 1px solid rgba(190, 120, 110, 0.4);
+  border-radius: 4px;
+  color: #e6b6ac;
+  font: 11px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.aoc-kepzes-torles:hover { background: rgba(120, 50, 46, 0.85); }
+
+/* A „nem törölhető" jelzés nem gomb: nincs kurzor-ígéret és nincs kattintása. */
+.aoc-kepzes-zar {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6f7a8c;
+  font-size: 11px;
+  cursor: help;
+}
+
+.aoc-kepzes-ures {
+  padding: 4px 2px;
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+  font-style: italic;
+}
+
+/* ── lábléc ───────────────────────────────────────────────────────────── */
+
+.aoc-kepzes-lab {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(120, 148, 190, 0.18);
+  min-height: 15px;
+  font-size: 11px;
+  color: var(--aoc-kepzes-halk);
+}
+
+.aoc-kepzes-rejtett { display: none !important; }
+
+/* Keskeny képernyőn egy oszlop: a hat gomb ott is elfér egymás alatt, és a
+ * szöveg olvasható marad — a lerövidített ár-sor semmit nem érne. */
+@media (max-width: 720px) {
+  .aoc-kepzes { min-width: 0; max-width: 100%; }
+  .aoc-kepzes-racs { grid-template-columns: minmax(0, 1fr); }
+}

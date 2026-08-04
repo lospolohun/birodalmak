@@ -1,0 +1,251 @@
+/* AGE OF THE CRYSTALS — KIJELÖLÉS-PANEL STÍLUSA (v0.16).
+
+   ── MIÉRT SAJÁT FÁJL ────────────────────────────────────────────────────
+   A panel-szerződés 2. kikötése: a panel a gyökerén kívülre nem nyúl, és a
+   CSS-e a saját fájljában van. Minden osztálynév `aoc-kijeloles-` előtaggal
+   kezdődik, tehát tizenhat párhuzamosan írt panel mellett sem tud
+   összeakadni két szabály.
+
+   ── MIÉRT ILYEN A TÖRDELÉS ──────────────────────────────────────────────
+   A mérce a klasszikus AoE kijelölés-panelje: BALRA a „ki ez" (nagy ikon,
+   név, életerő), JOBBRA a „mit tehetek vele" (parancs-gombok rácsban). Ez
+   nem esztétika: a szem a bal oldalt olvassa, a kéz a jobb oldalra kattint,
+   és a kettő nem keveredik. Középen a több-egységes csoport-csempék.
+
+   ── A SZÁMOK NEM UGRÁLHATNAK ────────────────────────────────────────────
+   `tabular-nums` mindenhol, ahol szám van. Enélkül a 99 → 100 váltásnál az
+   egész sor elcsúszik, és a szem ezt mozgásként érzékeli — pont azt a
+   nyugalmat rombolja, amiért a HUD rögzített helyekre került.
+
+   ── AZ ÉLETERŐ-CSÍK SZÍNE INFORMÁCIÓ ────────────────────────────────────
+   Zöld / sárga / piros, a `data-allapot` attribútum váltja. Azért attribútum
+   és nem beégetett `style.background`, hogy a képkockánkénti frissítés
+   egyetlen rövid stringet írjon, ne színkódot — és hogy a színek EGY helyen,
+   itt legyenek hangolhatók. */
+
+.aoc-kijeloles {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 340px;
+  max-width: 640px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(6, 10, 18, 0.82);
+  border: 1px solid rgba(120, 190, 255, 0.22);
+  color: #dfe7f5;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  /* A panel KATTINTHATÓ (a HUD-dal ellentétben): a gombok a lényege. */
+  pointer-events: auto;
+  user-select: none;
+}
+
+/* Üres kijelölésnél a panel nem tűnik el, hanem MEGTANÍTJA magát. A v0.16
+   előtt itt semmi nem volt, és a tulajdonos pont ezért nem tudott elindulni:
+   nem az hiányzott, hogy mit csinál a panel, hanem hogy VAN. */
+.aoc-kijeloles[data-fajta='ures'] { min-width: 0; opacity: 0.75; }
+
+.aoc-kijeloles-suly { display: none; }
+.aoc-kijeloles[data-fajta='ures'] .aoc-kijeloles-suly { display: block; }
+.aoc-kijeloles[data-fajta='ures'] .aoc-kijeloles-bal,
+.aoc-kijeloles[data-fajta='ures'] .aoc-kijeloles-kozep { display: none; }
+
+/* ── BAL OSZLOP: KI EZ ─────────────────────────────────────────────────── */
+
+.aoc-kijeloles-bal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 132px;
+  max-width: 190px;
+}
+
+.aoc-kijeloles-fej { display: flex; align-items: center; gap: 8px; }
+
+.aoc-kijeloles-portre {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 4px;
+  background: rgba(120, 190, 255, 0.10);
+  border: 1px solid rgba(120, 190, 255, 0.28);
+  color: #cfe2ff;
+}
+
+.aoc-kijeloles-nev { font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+.aoc-kijeloles-alcim { font-size: 11px; opacity: 0.65; }
+
+/* ── ÉLETERŐ-CSÍK ──────────────────────────────────────────────────────── */
+
+.aoc-kijeloles-csik {
+  position: relative;
+  height: 9px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+.aoc-kijeloles-csik > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #58c96a;
+  /* Nincs átmenet: a sebzés PILLANATNYI információ. Egy 200 ms-os animáció
+     azt mutatná, hogy az egység még él, amikor már meghalt. */
+}
+.aoc-kijeloles-csik[data-allapot='kozepes'] > i { background: #e3c452; }
+.aoc-kijeloles-csik[data-allapot='rossz'] > i { background: #e2624f; }
+/* Az építés/képzés csík MÁS szín: nem életerő, nem is szabad annak látszania. */
+.aoc-kijeloles-csik[data-allapot='folyamat'] > i { background: #6fb6e8; }
+
+.aoc-kijeloles-hpsor {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* ── ADATSOR (páncél, sebzés, hatótáv) ─────────────────────────────────── */
+
+.aoc-kijeloles-adatok {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 10px;
+  font-size: 11px;
+}
+.aoc-kijeloles-adatok span:nth-child(odd) { opacity: 0.55; }
+.aoc-kijeloles-adatok span:nth-child(even) { text-align: right; font-weight: 600; }
+
+/* ── KÖZÉPSŐ OSZLOP: CSOPORTOK / ÉPÜLET-SOR ────────────────────────────── */
+
+.aoc-kijeloles-kozep {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.aoc-kijeloles-csoportok {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: flex-start;
+}
+
+/* Egy típus-csempe. KATTINTHATÓ: al-kijelölés csak arra a fegyvernemre —
+   ez az a mozdulat, amivel egy vegyes seregből ki lehet emelni az íjászokat
+   anélkül, hogy újra keretet kellene húzni. */
+.aoc-kijeloles-csempe {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 4px;
+  border-radius: 3px;
+  background: rgba(120, 190, 255, 0.10);
+  border: 1px solid rgba(120, 190, 255, 0.24);
+  color: #dfe7f5;
+  font: inherit;
+  cursor: pointer;
+}
+.aoc-kijeloles-csempe:hover { background: rgba(120, 190, 255, 0.22); }
+.aoc-kijeloles-csempe b { font-size: 13px; }
+.aoc-kijeloles-csempe .aoc-kijeloles-csik { width: 30px; height: 4px; }
+
+.aoc-kijeloles-sor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+}
+.aoc-kijeloles-sorelem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+}
+/* A sor ELSŐ eleme készül éppen — ezt látni kell, különben a nyolc egyforma
+   csempe semmit nem mond arról, mikor jön ki az első. */
+.aoc-kijeloles-sorelem[data-most='1'] {
+  background: rgba(111, 182, 232, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(111, 182, 232, 0.55);
+}
+
+.aoc-kijeloles-folyik { font-size: 11px; opacity: 0.85; }
+
+/* ── JOBB OSZLOP: PARANCS-GOMBOK ───────────────────────────────────────── */
+
+.aoc-kijeloles-gombok {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  grid-auto-rows: 46px;
+  gap: 4px;
+  align-content: flex-start;
+  flex: 0 0 auto;
+}
+
+.aoc-kijeloles-gomb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(120, 190, 255, 0.10);
+  border: 1px solid rgba(120, 190, 255, 0.28);
+  color: #dfe7f5;
+  cursor: pointer;
+  padding: 0;
+}
+.aoc-kijeloles-gomb:hover:not(:disabled) { background: rgba(120, 190, 255, 0.24); }
+/* A LETILTOTT gomb LÁTSZIK, csak halvány. Elrejteni azért nem szabad, mert
+   akkor a rács átrendeződne, és a játékos izommemóriája elveszne — ráadásul
+   így derül ki, hogy egyáltalán LÉTEZIK az a parancs. */
+.aoc-kijeloles-gomb:disabled { opacity: 0.32; cursor: default; }
+/* Bekapcsolt állapot (pl. a T-vel felvett támadó menet): a gomb VILÁGÍT.
+   Enélkül a `tamadoMod` továbbra is láthatatlan mód maradna, ami a v0.16
+   előtti állapot legrosszabb tulajdonsága volt. */
+.aoc-kijeloles-gomb[data-jelolt='1'] {
+  background: rgba(255, 212, 121, 0.24);
+  border-color: rgba(255, 212, 121, 0.8);
+  color: #ffd479;
+}
+
+/* A billentyű a gomb SARKÁN. Ez tanítja meg a gyorsbillentyűt: a játékos
+   kattint, látja a betűt, és harmadszorra már a billentyűt nyomja. */
+.aoc-kijeloles-gomb i {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.75;
+  letter-spacing: 0.4px;
+}
+/* Az érték (állás/alakzat neve, tétlen-szám) a gomb TETEJÉN, apró betűvel. */
+.aoc-kijeloles-gomb u {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1px;
+  text-decoration: none;
+  font-size: 8.5px;
+  line-height: 1;
+  text-align: center;
+  opacity: 0.8;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* A tétlen-paraszt gomb figyelmeztet, ha VAN tétlen paraszt: ez a panel
+   egyetlen olyan eleme, ami magától kér szót. */
+.aoc-kijeloles-gomb[data-surgos='1'] {
+  border-color: rgba(226, 98, 79, 0.85);
+  color: #ffb9a8;
+}
