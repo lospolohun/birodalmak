@@ -88,6 +88,8 @@ export class Epuletek {
      * el nála. `null`, amíg nincs bekötve; a falazás-szorzó ilyenkor 100 %.
      */
     this.tech = null;
+    /** A civilizáció-réteg (v0.9) — szintén a `Sim` köti be. */
+    this.civ = null;
 
     /** A bal-felső cella koordinátái (egész). */
     this.cx = new Int32Array(maxDb);
@@ -171,7 +173,10 @@ export class Epuletek {
     // alatt álló épület a kutatás befejeztével hirtelen felgyógyul — az a
     // játékosnak megmagyarázhatatlan, és a támadó szempontjából igazságtalan.
     const szaz = this.tech ? this.tech.epuletHpSzazalek(csapat) : 100;
-    const hp = ((EP_HP[tipus] * szaz) / 100) | 0;
+    const civSzaz = this.civ ? this.civ.epuletHpSzazalek(csapat) : 100;
+    // Egymás után, nem összeszorozva — ugyanaz a szabály, mint a munkás
+    // gyűjtés-üteménél: a levágás helye is a képlet része.
+    const hp = ((((EP_HP[tipus] * szaz) / 100) | 0) * civSzaz / 100) | 0;
     this.maxHp[i] = hp;
     this.hp[i] = hp;
     this.elo[i] = 1;

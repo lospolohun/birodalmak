@@ -11,13 +11,16 @@
 // ez a lényege: ha a `src/sim/` node-ban fejen állva is lefut, akkor tényleg
 // nem szivárgott bele render-függőség.
 //
-// ── KILENC VIZSGÁLAT ──────────────────────────────────────────────────────
+// ── TIZENKÉT VIZSGÁLAT ────────────────────────────────────────────────────
 //   1. STATIKUS  — tiltott hívások keresése a `src/sim/` forrásában
 //   2. FUTÁSI    — két friss `Sim`, azonos seed, 10 000 tick, hash-egyezés
 //   3. KEVERT    — ugyanaz, de a tickek közé IDEGEN munkát ékelünk
 //   4. KÖLTSÉG   — a sim tiszta tick-ideje 1600 egységnél (ms/tick)
 //   5–9. VERZIÓ-KÖRÖK — v0.2 irányítás, v0.3 gazdaság, v0.4 harc,
-//        v0.5 építkezés+technológia, v0.6 gépi ellenfél
+//        v0.5 építkezés+technológia, v0.6 gépi ellenfél + v0.7 hadi köd
+//   10. MENTÉS   — mentés/betöltés, majd FOLYTATÁS: a hash a formátum leírása
+//   11. LOCKSTEP — két gép közös parancs-soron, késleltetéssel és desynccel
+//   12. CIVEK    — nyolc nép; a záró gát az, hogy civ NÉLKÜL más világ jön ki
 //
 // ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
 // reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
@@ -293,6 +296,17 @@ const FORGATOKONYVEK = {
     nev: 'v0.6 gépi ellenfél (könnyű vs nehéz)', tickek: ervSzam('v06tick', 16000),
     egysegSzam: 24,
     felallit: (sim, db) => sim.szondaFelallasV06(db),
+    fut: () => {},
+  },
+  // A v0.9 köre a v0.6-é, KÉT KÜLÖNBÖZŐ CIVVEL és azonos nehézséggel. Külön
+  // kör, nem a v0.6 kibővítése: a v0.6-os számok a gépi ellenfél viszonyítási
+  // alapjai, és ha a civ-bónuszok ráülnének, a nehézség-gátak (ki épít többet,
+  // ki kutat) egy csapásra mást mérnének, mint amire íródtak.
+  v09: {
+    nev: 'v0.9 civilizációk (hegyi bányász vs folyami kereskedő)',
+    tickek: ervSzam('v09tick', 16000),
+    egysegSzam: 24,
+    felallit: (sim, db) => sim.szondaFelallasV09(db),
     fut: () => {},
   },
   v04: {
@@ -1275,8 +1289,13 @@ let mentesBukas = bukas;
   const FOLYTATAS = ervSzam('folytatas', 3000);
 
   // EREDETI futás: elmegy a mentés pontjáig, ott mentünk, majd fut tovább.
+  // ⚠️ A v0.9 FELÁLLÁSÁVAL, NEM A v0.6-ÉVAL. A mentés-vizsgálat ereje abból
+  // jön, hogy a mentett állapot NEM az alapértelmezés: civ nélkül a nyolc
+  // civ-tömb mind a gyári értéken állna, és egy KIMARADÓ `civ` blokk a
+  // betöltés után PONTOSAN ugyanazt a világot adná vissza — a vizsgálat zöld
+  // maradna egy olyan mentésre, ami a civ-választást elveszti.
   const A = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
-  A.szondaFelallasV06(FORGATOKONYVEK.v06.egysegSzam);
+  A.szondaFelallasV09(FORGATOKONYVEK.v09.egysegSzam);
   for (let t = 1; t <= MENTES_TICK; t++) A.lep();
   const szoveg = mentesSzoveg(A);
   const mentesHash = A.allapotHash();
@@ -1295,6 +1314,22 @@ let mentesBukas = bukas;
       '0x' + (mentesHash >>> 0).toString(16).padStart(8, '0')
       + (betoltottHash === mentesHash ? '  =  ' : '  ≠  ')
       + '0x' + (betoltottHash >>> 0).toString(16).padStart(8, '0'));
+    // A CIV-VÁLASZTÁS ÁTJÖTT-E? A hash-egyezés ezt már magában foglalja (a
+    // civ-index benne van), de a SZÁRMAZTATOTT tömbök nincsenek — azok a
+    // hashen kívül élnek, és egy hiányos visszatöltés csak akkor bukna ki,
+    // amikor a folytatás egy másik áron épít. Ez a sor kimondja.
+    const cA = [A.civ.osszesites(0), A.civ.osszesites(1)];
+    const cB = [B.civ.osszesites(0), B.civ.osszesites(1)];
+    sor('civ a betöltés után', cB[0].nev + ' / ' + cB[1].nev,
+      'alaptól eltérő érték: ' + cB[0].elter + ' / ' + cB[1].elter);
+    if (cA[0].civ !== cB[0].civ || cA[1].civ !== cB[1].civ
+      || cA[0].elter !== cB[0].elter || cA[1].elter !== cB[1].elter) {
+      console.log('\n  ⛔ A CIV-RÉTEG NEM JÖTT ÁT A MENTÉSEN: a betöltött meccs más');
+      console.log('     néppel (vagy alapértékekkel) folytatódna. Nézd meg a `mentes.js`');
+      console.log('     `civ` blokkját — a származtatott tömböket is menteni kell.');
+      bukas++;
+    }
+
     if (betoltottHash !== mentesHash) {
       console.log('\n  \u26d4 A BETÖLTÖTT ÁLLAPOT AZONNAL ELTÉR. Valami olyan hiányzik a');
       console.log('     mentésből, ami BENNE VAN az `allapotHash()`-ben. A két lista');
@@ -1535,6 +1570,221 @@ let lockstepBukas = bukas;
 sor('lefutott', ((Date.now() - t11) / 1000).toFixed(1) + ' mp');
 lockstepBukas = bukas - lockstepBukas;
 
+// ════════════════════════════════════════════════════════════════════════════
+// 12) v0.9/1 — CIVILIZÁCIÓK
+// ════════════════════════════════════════════════════════════════════════════
+//
+// A civ-réteg CSAK ADAT: nyolc nép, ugyanaz az öt egység, más számokkal. Épp
+// ezért ez a projekt legkönnyebben elnémuló alrendszere. Egy elmaradó
+// `beallit()`, egy rossz csapat-index, egy elfelejtett beakasztási pont — és a
+// nyolc nép mind a semleges alapon játszik. A determinizmus-kapu ebből SEMMIT
+// nem venne észre: a semmittevés bitre reprodukálható.
+//
+// Ezért három, egymást fedő gát van itt:
+//
+//   A) DETERMINIZMUS — két friss futás és egy kevert futás, mint mindenhol.
+//   B) MŰKÖDÉS — az `osszesites().elter` megmondja, hány lekérdező érték tér
+//      el az alaptól. Ha ez nulla egy civet játszó csapatnál, a réteg néma.
+//   C) HATÁS — ugyanaz a meccs, CIV NÉLKÜL is lefuttatva. Ha a két világ
+//      záró hashe MEGEGYEZIK, akkor a bónuszok bejegyződtek a saját
+//      tömbjeikbe, de a VILÁGHOZ nem értek hozzá: a beakasztási pontok
+//      hiányoznak. Ez az egyetlen gát, ami a hiányzó HORGOT fogja meg — a
+//      `civ.js` maga tökéletesen működhet mellette.
+cim('12) v0.9/1 CIVILIZÁCIÓK — nyolc nép, két oldal, ugyanaz a pálya');
+const t12 = Date.now();
+let civBukas = bukas;
+const ketV09 = ketFutas(FORGATOKONYVEK.v09);
+let kevertV09 = { ok: false, tick: 0 };
+sor('forgatókönyv', FORGATOKONYVEK.v09.nev);
+sor('lefutott tick', ketV09.tick, '(' + ((Date.now() - t12) / 1000).toFixed(1) + ' mp)');
+if (ketV09.ok) {
+  sor('két futás', 'AZONOS', (FORGATOKONYVEK.v09.tickek / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV09.hashek.get(FORGATOKONYVEK.v09.tickek).toString(16).padStart(8, '0'));
+  kevertV09 = kevertFutas(ketV09.hashek, FORGATOKONYVEK.v09);
+  if (!kevertV09.ok) {
+    console.log('\n  ⛔ ELTÉRÉS a(z) ' + kevertV09.tick + '. ticken a KEVERT futásban.');
+    bukas++;
+  }
+} else {
+  console.log('\n  ⛔ DESYNC a(z) ' + ketV09.tick + '. ticken:');
+  console.log('       A: 0x' + (ketV09.a >>> 0).toString(16).padStart(8, '0'));
+  console.log('       B: 0x' + (ketV09.b >>> 0).toString(16).padStart(8, '0'));
+  console.log('     A `civ.js` csak egész aritmetikát használhat: a százalékok');
+  console.log('     `Civ.szazalek`-en át mennek, épp azért, hogy a kerekítés');
+  console.log('     EGY helyen dőljön el.');
+  bukas++;
+}
+
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const { CIV_NINCS, CIV_DB, CIV_NEV, HATAS, civBonuszai } = await import(
+    pathToFileURL(join(SIM_DIR, 'civ.js')).href);
+  const { NEHEZSEG } = await import(pathToFileURL(join(SIM_DIR, 'ai.js')).href);
+  const DB = FORGATOKONYVEK.v09.egysegSzam;
+  const TICK = FORGATOKONYVEK.v09.tickek;
+
+  // ── B) MŰKÖDÉS + C) HATÁS: két meccs, civvel és civ nélkül ─────────
+  // A civ NÉLKÜLI meccs mindenben azonos: ugyanaz a seed, ugyanaz a felállás,
+  // ugyanaz a nehézség mindkét oldalon. Az EGYETLEN különbség a nyolc bónusz.
+  const civvel = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  civvel.szondaFelallasV09(DB);
+  const nelkul = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  nelkul.szondaFelallas(DB, { munkasMinden: 1 });
+  nelkul.ai.beallit(0, NEHEZSEG.NEHEZ);
+  nelkul.ai.beallit(1, NEHEZSEG.NEHEZ);
+  for (let t = 1; t <= TICK; t++) { civvel.lep(); nelkul.lep(); }
+
+  const c0 = civvel.civ.osszesites(0), c1 = civvel.civ.osszesites(1);
+  console.log('');
+  sor('választott nép', c0.nev + ' / ' + c1.nev,
+    'a nyolcból (' + CIV_DB + ' elérhető)');
+  sor('bejegyzett bónusz-sor', c0.bonuszDb + ' / ' + c1.bonuszDb,
+    'elutasított beállítás: ' + c0.elutasitva + ' / ' + c1.elutasitva);
+  sor('alaptól eltérő érték', c0.elter + ' / ' + c1.elter,
+    'ha NULLA, a réteg néma');
+
+  if (c0.civ === CIV_NINCS || c1.civ === CIV_NINCS) {
+    console.log('\n  ⛔ VALAMELYIK CSAPAT SEMLEGES MARADT: a `civValaszt` nem ért el');
+    console.log('     a `Civ.beallit`-ig, vagy a `szondaFelallas` nullázása után nem');
+    console.log('     állt vissza. Ez a v0.5 technológia-nullázásának pontos mása.');
+    bukas++;
+  }
+  if (c0.civ === c1.civ) {
+    console.log('\n  ⛔ A KÉT CSAPAT UGYANAZT A NÉPET JÁTSSZA. Így egy elrontott');
+    console.log('     csapat-indexelés SEMMIT nem változtatna a hash-en — a vizsgálat');
+    console.log('     éppen azt veszítené el, amiért a két különböző civ bekerült.');
+    bukas++;
+  }
+  if (c0.elter === 0 || c1.elter === 0) {
+    console.log('\n  ⛔ VALAMELYIK CIV MINDEN ÉRTÉKE AZ ALAPON ÁLL: a `_hat()`');
+    console.log('     switch-je nem ír, vagy a `CIV_BONUSZ` sora üres. Nyolc néma nép');
+    console.log('     tökéletesen determinisztikus — és pontosan semmit nem ér.');
+    bukas++;
+  }
+  if (c0.elutasitva + c1.elutasitva > 0) {
+    console.log('\n  ⛔ VOLT ELUTASÍTOTT CIV-BEÁLLÍTÁS: rossz civ- vagy csapat-index');
+    console.log('     ment be a `beallit()`-be. A meccs elindult, de nem azzal, amit kért.');
+    bukas++;
+  }
+
+  // MINDEN NÉPNEK VAN HÁTRÁNYA IS. Nem stílus-kérdés: egy csupa pozitívumból
+  // álló nép nem „erős civ", hanem a választás megszüntetése — mindenki azt
+  // játszaná, és a másik hét nép halott kód lenne. Ez a szám a v0.13 hangolása
+  // ELŐTT és UTÁN is ugyanazt kell mondja.
+  //
+  // ⚠️ AZ ELŐJEL NEM ÖNMAGÁBAN BESZÉL. Az ÁR és az IDŐ fordítva olvasandó: a
+  // Kristálykovácsok +10 %-os egység-ára HÁTRÁNY, nem előny. A gát első
+  // változata pont ezen bukott el — és igaza is volt abban, hogy szólt: egy
+  // olyan ellenőrzés, ami a `-` jelet keresi, a v0.13 hangolása közben
+  // rendszeresen hazudna, hol az egyik, hol a másik irányba.
+  const FORDITOTT = [HATAS.EPULET_AR, HATAS.EGYSEG_AR, HATAS.EGYSEG_IDO];
+  const hatrany = (hatas, ertek) => (FORDITOTT.indexOf(hatas) >= 0 ? ertek > 0 : ertek < 0);
+  let csupaJo = -1;
+  for (let c = 0; c < CIV_DB; c++) {
+    const sorok = civBonuszai(c);
+    let van = false;
+    for (let s = 0; s < sorok.length; s++) if (hatrany(sorok[s][0], sorok[s][2])) { van = true; break; }
+    if (!van) { csupaJo = c; break; }
+  }
+  sor('hátrány minden népnél', csupaJo < 0 ? 'igen' : 'NEM (' + CIV_NEV[csupaJo] + ')',
+    'a hátrány nélküli nép megszünteti a választást');
+  if (csupaJo >= 0) {
+    console.log('\n  ⛔ A(Z) „' + CIV_NEV[csupaJo] + '" NÉPNEK NINCS EGYETLEN NEGATÍV');
+    console.log('     tétele sem. Aki ezt választja, minden másnál jobban jár, tehát a');
+    console.log('     többi hét nép a gyakorlatban kikerül a játékból.');
+    bukas++;
+  }
+
+  // ── C) A HATÁS: a két VILÁGNAK kell szétválnia ─────────────────────
+  //
+  // ⚠️ A ZÁRÓ HASH ITT NEM HASZNÁLHATÓ, ÉS EZ MÉRÉS EREDMÉNYE. Első
+  // változatban a gát azt kérdezte, hogy `allapotHash()` eltér-e civvel és
+  // anélkül. Kipróbálva — mind a kilenc lekérdező semlegesre írva — a hash
+  // AKKOR IS eltért: a civ-INDEX maga is benne van a hashben (épp azért, hogy
+  // a lockstepben ne lehessen két gép más néppel). Vagyis a gát SOSEM sült
+  // volna el, és pont azt a hibát nem fogta volna meg, amiért megírtuk.
+  //
+  // Ezért a összehasonlítás MÉRT VILÁG-SZÁMOKON megy, amikhez a civ CSAK a
+  // horgokon át érhet hozzá. Ha mind a nyolc egyezik, a bónuszok bejegyződtek
+  // a saját tömbjeikbe, de a világhoz nem értek hozzá.
+  const ujjlenyomat = (s) => {
+    const ki = [];
+    for (let cs = 0; cs < 2; cs++) {
+      let gy = 0;
+      for (let f = 0; f < 4; f++) gy += s.gazdasag.osszegyujtott[cs * 4 + f];
+      let epDb = 0, epHp = 0;
+      for (let i = 0; i < s.epuletek.db; i++) {
+        if (!s.epuletek.elo[i] || (s.epuletek.csapat[i] & 1) !== cs) continue;
+        epDb++; epHp += s.epuletek.hp[i];
+      }
+      let egyDb = 0, egyHp = 0;
+      for (let i = 0; i < s.egysegek.db; i++) {
+        if (!s.harc.elo[i] || (s.egysegek.csapat[i] & 1) !== cs) continue;
+        egyDb++; egyHp += s.harc.hp[i];
+      }
+      ki.push(gy, epDb, epHp, egyDb, egyHp,
+        s.kepzes.keszult[cs], s.gazdasag.nepessegAllapot(cs).max,
+        s.technologia.osszesites(cs).kesz);
+    }
+    return ki;
+  };
+  const uC = ujjlenyomat(civvel), uN = ujjlenyomat(nelkul);
+  let eltero = 0;
+  for (let i = 0; i < uC.length; i++) if (uC[i] !== uN[i]) eltero++;
+
+  const gyujt = (u, cs) => u[cs * 8];
+  sor('összegyűjtött nyersanyag', gyujt(uC, 0) + '·' + gyujt(uC, 1)
+    + '  /  ' + gyujt(uN, 0) + '·' + gyujt(uN, 1), 'civvel / nélküle');
+  sor('népesség-plafon', uC[6] + '·' + uC[14] + '  /  ' + uN[6] + '·' + uN[14],
+    'a folyami kereskedő +10 főt bír el');
+  sor('eltérő világ-szám', eltero + ' / ' + uC.length,
+    'csak a horgokon át változhat');
+
+  if (eltero === 0) {
+    console.log('\n  ⛔ A CIVVEL ÉS A CIV NÉLKÜL JÁTSZOTT MECCS VILÁGA AZONOS.');
+    console.log('     A bónuszok bejegyződtek a saját tömbjeikbe (`elter` nem nulla),');
+    console.log('     de a VILÁGHOZ nem értek hozzá: a beakasztási pontok hiányoznak.');
+    console.log('     Nézd meg a horgokat — `harc.js` (sebzés, páncél), `munkas.js`');
+    console.log('     (ütem, cipelés), `epuletek.js` (életerő), `parancsok.js` és');
+    console.log('     `kepzes.js` (ár, idő), `gazdasag.js` (népesség).');
+    bukas++;
+  }
+
+  // ── A HORGOK MEGLÉTE, FORRÁSSZINTEN ────────────────────────────────
+  //
+  // A fenti hash-gát azt mondja meg, hogy VALAMI hatott — de nem azt, hogy
+  // MIND A KILENC horog a helyén van-e. Két bónusz is elég ahhoz, hogy a hash
+  // szétváljon, és a maradék hét némán elveszne. A forrás-szintű ellenőrzés
+  // durva eszköz, viszont pont azt a hibát fogja meg, amit a mérés nem: a
+  // csendben eltűnt hívást egy későbbi átírás után.
+  const HORGOK = [
+    ['harc.js', 'sebzesBonusz'], ['harc.js', 'pancelBonusz'],
+    ['munkas.js', 'utemSzazalek'], ['munkas.js', 'cipelTobblet'],
+    ['epuletek.js', 'epuletHpSzazalek'], ['parancsok.js', 'epuletArSzazalek'],
+    ['kepzes.js', 'egysegArSzazalek'], ['kepzes.js', 'egysegIdoSzazalek'],
+    ['gazdasag.js', 'nepessegEltolas'], ['ai.js', 'epuletArSzazalek'],
+  ];
+  let hianyzo = [];
+  for (let i = 0; i < HORGOK.length; i++) {
+    const forras = readFileSync(join(SIM_DIR, HORGOK[i][0]), 'utf8');
+    if (!forras.includes(HORGOK[i][1])) hianyzo.push(HORGOK[i][0] + ':' + HORGOK[i][1]);
+  }
+  sor('beakasztási pont', (HORGOK.length - hianyzo.length) + ' / ' + HORGOK.length,
+    hianyzo.length ? 'HIÁNYZIK: ' + hianyzo.join(', ') : 'mind a helyén');
+  if (hianyzo.length) {
+    console.log('\n  ⛔ HIÁNYZÓ CIV-HOROG: ' + hianyzo.join(', '));
+    console.log('     A bónusz be van jegyezve, de senki nem kérdezi meg.');
+    bukas++;
+  }
+
+  if (bukas === civBukas) {
+    console.log('\n  ✓ A nyolc nép determinisztikus, tényleg más számokkal játszik,');
+    console.log('    és a különbség a VILÁGON is meglátszik.');
+  }
+}
+sor('lefutott', ((Date.now() - t12) / 1000).toFixed(1) + ' mp');
+civBukas = bukas - civBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -1558,6 +1808,7 @@ sor('9) v0.6 AI + v0.7 köd',
     : 'BUKOTT (tick ' + ketV06.tick + ')');
 sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('11) v0.8 lockstep', lockstepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
+sor('12) v0.9 civilizációk', civBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

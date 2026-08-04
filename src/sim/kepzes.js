@@ -23,6 +23,7 @@
 
 import { EP_NEPESSEG, EP_MERET } from './epuletek.js';
 import { TIPUS } from './units.js';
+import { Civ } from './civ.js';
 
 /** Egységenkénti ár: [étel, fa, kő, kristály]. */
 export const EGYSEG_AR = [
@@ -80,6 +81,13 @@ export class Kepzes {
     /** Statisztika: hány egység készült el, és hány sorbaállás bukott el. */
     this.keszult = [0, 0];
     this.elutasitva = [0, 0];
+
+    /**
+     * Újrahasznált ár-puffer a civ-szorzóhoz. Azért mező és nem lokális tömb,
+     * mert a `sorba()` tickenként sokszor fut, és a `lep()`-ben nulla allokáció
+     * a szabály — egy négyelemű tömb újraosztása is szemét.
+     */
+    this._arPuffer = [0, 0, 0, 0];
   }
 
   nullaz() {
@@ -118,15 +126,22 @@ export class Kepzes {
       this.elutasitva[csapat & 1]++;
       return false;
     }
-    if (!sim.gazdasag.levon(csapat, EGYSEG_AR[egysegTipus])) {
+    const ar = Civ.arSzazalek(
+      EGYSEG_AR[egysegTipus], sim.civ.egysegArSzazalek(csapat, egysegTipus), this._arPuffer);
+    if (!sim.gazdasag.levon(csapat, ar)) {
       this.elutasitva[csapat & 1]++;
       return false;
     }
 
     this.sor[ep * SOR_HOSSZ + this.sorDb[ep]] = egysegTipus;
     this.sorDb[ep]++;
-    if (this.sorDb[ep] === 1) this.hatra[ep] = EGYSEG_IDO[egysegTipus];
+    if (this.sorDb[ep] === 1) this.hatra[ep] = this._ido(csapat, egysegTipus);
     return true;
+  }
+
+  /** Képzési idő a civ-százalékkal (v0.9). Egész osztás, mint mindenhol. */
+  _ido(csapat, egysegTipus) {
+    return Civ.szazalek(EGYSEG_IDO[egysegTipus], this.sim.civ.egysegIdoSzazalek(csapat, egysegTipus));
   }
 
   /** Hány népesség-helyet foglalnak a MÁR SORBAN ÁLLÓ egységek egy csapatnál. */
@@ -207,7 +222,11 @@ export class Kepzes {
     for (let k = 1; k < this.sorDb[ep]; k++) this.sor[alap + k - 1] = this.sor[alap + k];
     this.sorDb[ep]--;
     this.sor[alap + this.sorDb[ep]] = -1;
-    this.hatra[ep] = this.sorDb[ep] > 0 ? EGYSEG_IDO[this.sor[alap]] : 0;
+    // ⚠️ ITT IS A CIV-SZÁZALÉKKAL, NEM CSAK A SORBAÁLLÁSNÁL. A `sorba()` a sor
+    // ELSŐ elemének idejét állítja, ez pedig a KÖVETKEZŐÉT — ha csak az egyik
+    // helyen skáláznánk, a sor első egysége gyorsulna, a többi nem.
+    this.hatra[ep] = this.sorDb[ep] > 0
+      ? this._ido(epuletek.csapat[ep], this.sor[alap]) : 0;
   }
 
   /** Összesítés a HUD-nak és a jelentéseknek. */

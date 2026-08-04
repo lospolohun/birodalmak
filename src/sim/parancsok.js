@@ -48,6 +48,14 @@ import { ALLAPOT, TIPUS } from './units.js';
 import { ALAKZAT } from './alakzat.js';
 import { PARANCS, ALLAS } from './parancsallapot.js';
 import { EP_AR, EP_MERET, EPULET } from './epuletek.js';
+import { Civ } from './civ.js';
+
+/**
+ * Újrahasznált négyelemű ár-puffer. A parancs-út a v0.1 óta nulla allokációt
+ * tart — egy `[0,0,0,0]` kattintásonként nem sok, de az `epit` a gépi
+ * ellenfélnél másodpercenként többször is lefut, csapatonként.
+ */
+const _arPuffer = [0, 0, 0, 0];
 
 /**
  * Egy parancs végrehajtása. A `Sim._vegrehajt` delegál ide.
@@ -309,12 +317,16 @@ function epit(sim, p) {
   if (!sim.epuletek.lerakhato(tipus, bx, by)) return;
   // ⚠️ ELŐBB a hely, UTÁNA a pénz. Fordított sorrendben egy foglalt helyre
   // adott parancs levonná az árat, és nem adna érte semmit.
-  if (!sim.gazdasag.levon(csapat, EP_AR[tipus])) return;
+  // ⚠️ A LEVONÁS ÉS A VISSZATÉRÍTÉS UGYANAZT A TÖMBÖT HASZNÁLJA. A civ-kedvezmény
+  // (v0.9) átskálázza az árat, és ha a visszatérítés a NYERS `EP_AR`-ral menne,
+  // a kudarcba fulladt építés TERMELNE nyersanyagot — a gazdaság egyirányúsága
+  // pont a másik irányba sérülne meg, mint amit ez az ág véd.
+  const ar = Civ.arSzazalek(EP_AR[tipus], sim.civ.epuletArSzazalek(csapat), _arPuffer);
+  if (!sim.gazdasag.levon(csapat, ar)) return;
   const i = sim.epuletek.lerak(tipus, bx, by, csapat, false);
   if (i < 0) {
     // Nem sikerült (betelt a tömb) — az árat visszaadjuk, hogy a gazdaság
     // egyirányúsága ne sérüljön a másik irányba sem.
-    const ar = EP_AR[tipus];
     for (let f = 0; f < 4; f++) sim.gazdasag.keszlet[csapat * 4 + f] += ar[f];
   }
 }

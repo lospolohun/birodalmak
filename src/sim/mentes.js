@@ -61,7 +61,7 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 1;
+export const MENTES_VERZIO = 2;   // v0.9: a `civ` blokk bekerült
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
@@ -97,6 +97,7 @@ export function mentes(sim) {
   const tc = sim.technologia;
   const ai = sim.ai;
   const kd = sim.kod;
+  const cv = sim.civ;
 
   // A PARANCS-SOR: csak a JÖVŐBELI tickek érdekesek. A `Map` bejárása itt
   // rendben van — nem a sim állapotát olvassuk belőle sorrendfüggően, hanem
@@ -238,6 +239,24 @@ export function mentes(sim) {
       tamadasDb: Array.from(ai.tamadasDb), vedekezesDb: Array.from(ai.vedekezesDb),
     },
 
+    // A CIV-RÉTEG (v0.9). A civ-INDEXEN kívül az ELŐRE SZÁMOLT tömböket is
+    // mentjük, pedig a `beallit()` mindet újraszámolná a civ-indexből. Azért
+    // így: a `CIV_BONUSZ` táblázat a v0.13 hangolásának FŐ célpontja, és ha a
+    // mentés csak az indexet őrizné, egy hangolás után visszatöltött állás
+    // MÁS SZÁMOKKAL folytatódna, mint amivel elindult — a hash pedig
+    // szétcsúszna a mentés-szonda alatt, ott, ahol a hiba a legnehezebben
+    // magyarázható. A mentés a hash specifikációja: legyen önhordó.
+    civ: {
+      civ: Array.from(cv.civ),
+      valasztas: Array.from(sim.civValasztas),
+      sebzes: Array.from(cv.sebzes), pancel: Array.from(cv.pancel),
+      utem: Array.from(cv.utem), cipel: Array.from(cv.cipel),
+      epuletHp: Array.from(cv.epuletHp), epuletAr: Array.from(cv.epuletAr),
+      egysegAr: Array.from(cv.egysegAr), egysegIdo: Array.from(cv.egysegIdo),
+      nepesseg: Array.from(cv.nepesseg),
+      bonuszDb: Array.from(cv.bonuszDb), elutasitva: Array.from(cv.elutasitva),
+    },
+
     kod: {
       latott: kd.latott.map((t) => Array.from(t)),
       lathato: kd.lathato.map((t) => Array.from(t)),
@@ -374,6 +393,15 @@ export function betoltes(sim, m) {
   be(ai.had, a.had); be(ai.frissitesIdo, a.frissitesIdo);
   be(ai.felderitDb, a.felderitDb); be(ai.felfedezDb, a.felfedezDb);
   be(ai.tamadasDb, a.tamadasDb); be(ai.vedekezesDb, a.vedekezesDb);
+
+  const cv = sim.civ;
+  be(cv.civ, m.civ.civ); be(sim.civValasztas, m.civ.valasztas);
+  be(cv.sebzes, m.civ.sebzes); be(cv.pancel, m.civ.pancel);
+  be(cv.utem, m.civ.utem); be(cv.cipel, m.civ.cipel);
+  be(cv.epuletHp, m.civ.epuletHp); be(cv.epuletAr, m.civ.epuletAr);
+  be(cv.egysegAr, m.civ.egysegAr); be(cv.egysegIdo, m.civ.egysegIdo);
+  be(cv.nepesseg, m.civ.nepesseg);
+  be(cv.bonuszDb, m.civ.bonuszDb); be(cv.elutasitva, m.civ.elutasitva);
 
   const kd = sim.kod;
   for (let cs = 0; cs < kd.csapatDb; cs++) {

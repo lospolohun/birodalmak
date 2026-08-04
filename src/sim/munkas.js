@@ -243,8 +243,16 @@ export class Munkasok {
         }
         // A gyűjtés üteme a technológiából jön (v0.5/4). Egész osztás — az
         // ekevas +25 %-a minden gépen ugyanazt a számot adja.
-        this.ora[i] += ((UTEM[fajta] * sim.technologia.utemSzazalek(e.csapat[i])) / 100) | 0;
-        const kap = KAPACITAS + sim.technologia.cipelTobblet(e.csapat[i]);
+        // ⚠️ KÉT KÜLÖN EGÉSZ OSZTÁS, RÖGZÍTETT SORRENDBEN: előbb a technológia,
+        // utána a civ. Egyetlen összevont szorzó (`tech% * civ% / 10000`) MÁS
+        // számot adna a levágások miatt, és a sorrend felcserélése is — a
+        // determinizmushoz nem elég, hogy egész legyen, az is kell, hogy
+        // MINDIG UGYANÚGY számoljuk.
+        const cs = e.csapat[i];
+        let utem = ((UTEM[fajta] * sim.technologia.utemSzazalek(cs)) / 100) | 0;
+        utem = ((utem * sim.civ.utemSzazalek(cs, fajta)) / 100) | 0;
+        this.ora[i] += utem;
+        const kap = KAPACITAS + sim.technologia.cipelTobblet(cs) + sim.civ.cipelTobblet(cs);
         while (this.ora[i] >= 100) {
           const vett = ef.kitermel(node, 1);
           this.ora[i] -= 100;

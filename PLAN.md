@@ -16,7 +16,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **kész** — lásd alább |
-| v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
+| v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | v0.9/1 **kész** — lásd alább |
 | v0.10 | Térkép-presetek, kampány | |
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
@@ -485,6 +485,60 @@ meg. A hash végig zöld volt.
 
 Mérve: gyors hálózaton 4 tick, lassún (5 kör késés) 16 tick, hat változással —
 és a két gép **bitre azonos** mindkét esetben.
+
+## A v0.9 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.9/1 | 8 civilizáció, bónusz-tábla, beakasztás a kilenc horogra | **kész** |
+| v0.9/2 | egyedi egységek civenként (új `TIPUS`, harc- és render-táblák) | nyitott |
+
+A civ **csak adat**: nyolc nép, ugyanaz az öt egység, más számokkal. A
+`CIV_BONUSZ` lapos `[hatás, index, érték]` hármasokból áll, hogy a v0.13
+hangolása egyetlen szám átírása legyen, ne kódmódosítás. A bónuszok a
+`beallit()`-ben terülnek szét előre számolt `Int32Array`-ekbe — a forró út csak
+olvas, pont mint a technológiánál.
+
+⚠️ **Minden népnek van hátránya is.** Nem stílus-kérdés: egy csupa pozitívumból
+álló nép nem „erős civ", hanem a választás megszüntetése — mindenki azt
+játszaná, a másik hét pedig halott kód lenne. A szonda ezt ellenőrzi is.
+
+**Alapértelmezés `CIV_NINCS`, nem a 0. civ.** A v0.1 regresszió-őre civ nélkül
+fut, és ha a 0. nép csendben ráülne, a `qa/V0.1_EREDMENY.md` számai
+megváltoznának.
+
+### v0.9/1 — a hash mint gát ITT NEM MŰKÖDIK
+
+A 12. vizsgálat záró gátja eredetileg azt kérdezte: eltér-e az `allapotHash()`
+civvel és civ nélkül? Kipróbálva — mind a kilenc lekérdezőt semlegesre írva —
+**a hash akkor is eltért**, mert a civ-INDEX maga is benne van a hashben (épp
+azért, hogy a lockstepben ne játszhasson két gép más néppel). A gát tehát
+SOSEM sült volna el, és pont azt a hibát nem fogta volna meg, amiért megírtuk:
+a hiányzó beakasztási pontot.
+
+A gát ezért **mért világ-számokon** megy — összegyűjtött nyersanyag, épület- és
+egység-darabszám, összesített életerő, kiképzett egységek, népesség-plafon,
+kikutatott technológia —, amikhez a civ CSAK a horgokon át érhet hozzá.
+Szabotázzsal ellenőrizve: ép kóddal 15/16 szám tér el, minden horgot
+semlegesítve **0/16**, vagyis a gát tényleg elsül.
+
+Mellette forrás-szintű ellenőrzés is fut arra, hogy mind a tíz hívási hely a
+helyén van-e. Durva eszköz, de a hash-gát csak azt mondja meg, hogy VALAMI
+hatott — két bónusz is elég a szétváláshoz, a maradék hét pedig némán elveszne.
+
+**A mentés-vizsgálat is átállt a v0.9 felállására.** Civ nélkül a nyolc
+civ-tömb mind a gyári értéken állna, és egy KIMARADÓ `civ` blokk a betöltés
+után pontosan ugyanazt a világot adná vissza — a vizsgálat zöld maradna egy
+olyan mentésre, ami a civ-választást elveszti. A mentés a származtatott
+tömböket is tárolja, nem csak a civ-indexet: a `CIV_BONUSZ` a v0.13 hangolásának
+fő célpontja, és egy hangolás után visszatöltött állás különben más számokkal
+folytatódna, mint amivel elindult.
+
+**Az AI ugyanazt az árat nézi, amit a parancs levon.** A gép előzetes
+ár-vizsgálata a v0.6 óta szűri a halott parancsokat; ha listaárral számolna, a
+Hegyi bányász fölöslegesen gyűjtene egy körrel tovább, a Kristálykovács pedig
+sorra adna be elutasításba futó képzést — vagyis épp az a zaj térne vissza,
+ami miatt a szűrés bekerült.
 
 ## A záró lépcsők (v0.11–v0.13)
 

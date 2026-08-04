@@ -153,7 +153,16 @@ export class Gazdasag {
       if (ep.epulHatra[i] !== 0) continue;     // a félkész ház még nem ad helyet
       max += EP_NEPESSEG[ep.tipus[i]];
     }
-    if (max > NEPESSEG_PLAFON) max = NEPESSEG_PLAFON;
+    // A civ népesség-eltolása (v0.9) a HÁZAK ÖSSZEGÉHEZ ÉS A PLAFONHOZ IS
+    // hozzáadódik. Ha csak az összeghez adnánk, a Fényhozók +10-e a plafon
+    // alatt eltűnne, épp ott, ahol a civjük ígéri a nagyobb hadat — vagyis a
+    // bónusz a meccs végén, a késői játékban lenne semmi. Ha csak a plafont
+    // emelnénk, a korai játékban nem érne semmit. Mindkettő.
+    const el = s.civ ? s.civ.nepessegEltolas(csapat) : 0;
+    max += el;
+    const plafon = NEPESSEG_PLAFON + el;
+    if (max > plafon) max = plafon;
+    if (max < 0) max = 0;
 
     let foglalt = 0;
     const e = s.egysegek;

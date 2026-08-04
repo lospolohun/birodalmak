@@ -57,6 +57,7 @@ import { EPULET, EP_AR, EP_MERET } from './epuletek.js';
 import { MUNKA } from './munkas.js';
 import { TECH_DB, techEpulete } from './technologia.js';
 import { EGYSEG_AR } from './kepzes.js';
+import { Civ } from './civ.js';
 
 export const NEHEZSEG = { KONNYU: 0, KOZEPES: 1, NEHEZ: 2 };
 export const NEHEZSEG_NEV = ['könnyű', 'közepes', 'nehéz'];
@@ -245,6 +246,18 @@ export class Ai {
     this.epitDb = new Int32Array(this.csapatDb);
     this.kepzesDb = new Int32Array(this.csapatDb);
     this.kutatasDb = new Int32Array(this.csapatDb);
+
+    /**
+     * Újrahasznált ár-puffer a civ-szorzókhoz (v0.9).
+     *
+     * ⚠️ A gépnek UGYANAZT az árat kell néznie, amit a parancs majd levon.
+     * A Hegyi bányász 10 %-kal olcsóbban épít: ha a gép a listaárral számolna,
+     * egy körrel tovább gyűjtene fölöslegesen; a Kristálykovács viszont 10 %-kal
+     * drágábban képez — ott a gép sorra adna be olyan parancsot, amit a
+     * `Kepzes.sorba` elutasít, épp azt a zajt visszahozva, ami miatt az előzetes
+     * ár-vizsgálat egyáltalán bekerült.
+     */
+    this._ar = [0, 0, 0, 0];
 
     // ── v0.6/3: a gép SAJÁT TUDÁSA és hadműveleti állapota ──────────────
     /** A felfedezett ellenséges bázis, vagy -1 ha még nem tudjuk. */
@@ -549,7 +562,7 @@ export class Ai {
     for (let k = 0; k < sor.length; k++) {
       const tipus = sor[k];
       if (this._epuletDb(cs, tipus) >= EPULET_CEL[tipus]) continue;
-      if (!sim.gazdasag.telik(cs, EP_AR[tipus])) return;   // erre gyűjtünk, nem lépünk tovább
+      if (!sim.gazdasag.telik(cs, this._epAr(cs, tipus))) return;   // erre gyűjtünk, nem lépünk tovább
       const el = HELY_ELTOLAS[tipus];
       const hely = this._epitesiHely(tipus, (bx | 0) + el[0], (by | 0) + el[1]);
       if (!hely) continue;
@@ -557,6 +570,16 @@ export class Ai {
       this.epitDb[cs]++;
       return;
     }
+  }
+
+  /** Épület-ár a csapat civ-szorzójával (v0.9). A puffer újrahasznált. */
+  _epAr(cs, tipus) {
+    return Civ.arSzazalek(EP_AR[tipus], this.sim.civ.epuletArSzazalek(cs), this._ar);
+  }
+
+  /** Egység-ár a csapat civ-szorzójával (v0.9). A puffer újrahasznált. */
+  _egysegAr(cs, tipus) {
+    return Civ.arSzazalek(EGYSEG_AR[tipus], this.sim.civ.egysegArSzazalek(cs, tipus), this._ar);
   }
 
   /**
@@ -617,7 +640,7 @@ export class Ai {
         // nehéz gép, aminek a túlnyomó része elutasításba futott. A v0.8-ban
         // ezek a parancsok a HÁLÓZATON is átmennének — egy AI, ami másodpercenként
         // tucat halott parancsot küld, ott már nem csak zaj.
-        if (!sim.gazdasag.telik(cs, EGYSEG_AR[t])) break;
+        if (!sim.gazdasag.telik(cs, this._egysegAr(cs, t))) break;
         sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg: t });
         this.kepzesDb[cs]++;
         break;
@@ -893,7 +916,7 @@ export class Ai {
     const foglalt = nep.foglalt + sim.kepzes.sorbanNepesseg(cs);
     const szabad = nep.max - foglalt;
     if (szabad >= HAZ_TARTALEK[this.nehezseg[cs]]) return;
-    if (!sim.gazdasag.telik(cs, EP_AR[EPULET.HAZ])) return;
+    if (!sim.gazdasag.telik(cs, this._epAr(cs, EPULET.HAZ))) return;
 
     const hely = this._epitesiHely(EPULET.HAZ, (bx | 0) + 5, (by | 0) - 6);
     if (!hely) return;

@@ -40,6 +40,7 @@ import { Kepzes } from './kepzes.js';
 import { Technologia, TECH, TECH_DB, techEpulete } from './technologia.js';
 import { Ai, NEHEZSEG } from './ai.js';
 import { Kod } from './kod.js';
+import { Civ, CIV, CIV_NINCS } from './civ.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -109,6 +110,19 @@ export class Sim {
     // mostani állapotból), a gépi ellenfél ebből tud, és a v0.8 újracsatlakozása
     // a saját felfedezett térképét kell visszakapja. Lásd `kod.js` fejléce.
     this.kod = new Kod(2, this);
+
+    // ── v0.9: civilizációk ──────────────────────────────────────────────
+    // A `Technologia` mintájára: előre számolt bónusz-tömbök, a lekérdezés a
+    // forró úton egyetlen tömb-olvasás. Az `Epuletek` külön hivatkozást kap,
+    // mert nincs `sim` mezője — ugyanúgy, ahogy a `tech`-et is megkapta.
+    this.civ = new Civ(2, this);
+    this.epuletek.civ = this.civ;
+    /**
+     * A MECCS civ-választása. A `szondaFelallas` ebből állítja vissza — a civ
+     * nem parancs, hanem a FELÁLLÁS része: a kezdő központ életerejére már a
+     * 0. tick előtt hatnia kell.
+     */
+    this.civValasztas = new Int32Array(2).fill(CIV_NINCS);
 
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
@@ -246,6 +260,15 @@ export class Sim {
     this.technologia.nullaz();
     this.ai.nullaz();
     this.kod.nullaz();
+    // ⚠️ A CIV IS AZ ÉPÜLETEK ELŐTT, ÉS AZONNAL VISSZA IS ÁLLÍTVA. Ugyanaz az
+    // indok, ami a technológiánál: az épület-életerő a LERAKÁSKORI százalékkal
+    // születik, a központok pedig pár sorral lentebb kerülnek le. Ha csak
+    // nulláznánk, a civ csendben elveszne minden újrafelállásnál — és a bónusz
+    // a hash-en kívül tűnne el, tehát semmi nem szólna érte.
+    this.civ.nullaz();
+    for (let cs = 0; cs < this.civValasztas.length; cs++) {
+      if (this.civValasztas[cs] !== CIV_NINCS) this.civ.beallit(cs, this.civValasztas[cs]);
+    }
     this.epuletek.nullaz();
     this.eroforrasok.nullaz();
     this.gazdasag.nullaz();
@@ -980,6 +1003,49 @@ export class Sim {
     return db;
   }
 
+  /**
+   * CIV-VÁLASZTÁS egy csapatnak (v0.9).
+   *
+   * NEM parancs, hanem a MECCS BEÁLLÍTÁSA: a felállás előtt kell megtörténnie,
+   * mert a kezdő központ életereje már a civ épület-bónuszával születik. A
+   * v0.11 főmenüje és a v0.8 meccs-konfigja innen fog dolgozni.
+   */
+  civValaszt(csapat, civ) {
+    if (csapat < 0 || csapat >= this.civValasztas.length) return;
+    this.civValasztas[csapat] = civ;
+    this.civ.beallit(csapat, civ);
+  }
+
+  /**
+   * v0.9 SZONDA-FELÁLLÁS — két KÜLÖNBÖZŐ civ, mindkét oldalon géppel.
+   *
+   * Ugyanaz a meccs, mint a v0.6-é (a gép viszi mindkét oldalt), de a két
+   * csapat más népet játszik. Két dolog miatt így:
+   *
+   *   · A civ-réteg minden beakasztási pontja a GÉP láncán fut végig —
+   *     gyűjtés-ütem, cipelés, épület-ár, épület-életerő, egység-ár és -idő,
+   *     népesség, sebzés, páncél. Kézzel írt parancs-listával ennek a felét
+   *     sem járnánk be.
+   *   · ⚠️ A KÉT CIV KÜLÖNBÖZŐ. Ha mindkét csapat ugyanazt játszaná, minden
+   *     civ-függő szám azonos lenne a két oldalon, és egy elrontott
+   *     CSAPAT-INDEXELÉS (`civ[0]` a `civ[1]` helyett) SEMMIT nem változtatna
+   *     a hash-en — a hiba a kapun belül maradna. Ugyanaz a megfontolás, mint
+   *     a v0.6 két nehézségi szintjénél.
+   *
+   * A NEHÉZSÉG viszont itt AZONOS mindkét oldalon, szándékosan: így a két
+   * gazdaság közti minden eltérés a CIV számlájára írható, nem a döntési ütemre.
+   */
+  szondaFelallasV09(osszDb) {
+    // A civ-választás a felállás ELŐTT: a `szondaFelallas` a `civValasztas`-ból
+    // állítja vissza, és a központok az ő épület-százalékával születnek meg.
+    this.civValaszt(0, CIV.HEGYI_BANYASZ);
+    this.civValaszt(1, CIV.FOLYAMI_KERESKEDO);
+    const db = this.szondaFelallas(osszDb, { munkasMinden: 1 });
+    this.ai.beallit(0, NEHEZSEG.NEHEZ);
+    this.ai.beallit(1, NEHEZSEG.NEHEZ);
+    return db;
+  }
+
   /** Legközelebbi járható pont egy célhoz (spirálban keresve). */
   _jarhatoKozel(x, y) {
     if (this.racs.jarhatoPont(x, y)) return { x, y };
@@ -1120,6 +1186,12 @@ export class Sim {
       for (let i = 0; i < t.length; i++) h = fnvSzam(h, t[i]);
       h = fnvSzam(h, kod.latottDb[cs]);
     }
+    // v0.9 — a CIV-VÁLASZTÁS a világ állapota. A belőle SZÁMOLT bónusz-tömbök
+    // nem kellenek a hashbe: azok a választásból egyértelműen levezethetők
+    // (`beallit()` determinisztikus). A választás viszont igen — ha két gépen
+    // más civet játszana ugyanaz a csapat, minden csapás és minden ár eltérne.
+    const cv = this.civ;
+    for (let cs = 0; cs < cv.csapatDb; cs++) h = fnvSzam(h, cv.civ[cs]);
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);
     // v0.4 — a repülő lövedék is állapot: a becsapódás ideje és a sebzése

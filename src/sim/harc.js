@@ -235,9 +235,11 @@ export class Harc {
       const nyilak = 1 + sim.beszallas.letszam[k];
       const e = sim.egysegek;
       const tech = sim.technologia;
-      const alap = TORONY_SEBZES + tech.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL);
+      const civ = sim.civ;
+      const alap = TORONY_SEBZES + tech.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL)
+        + civ.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL);
       let seb = ((alap * SZORZO[TAMADAS.NYIL][PANCEL_TIPUS[e.tipus[cel]]]) / 100) | 0;
-      seb -= tech.pancelBonusz(e.csapat[cel]);
+      seb -= tech.pancelBonusz(e.csapat[cel]) + civ.pancelBonusz(e.csapat[cel]);
       for (let n = 0; n < nyilak; n++) {
         sim.lovedekek.lo(ep.x[k], ep.y[k], cel, seb < 1 ? 1 : seb,
           ep.csapat[k], e.generacio[cel]);
@@ -319,7 +321,9 @@ export class Harc {
     // A technológia az ALAPSEBZÉST emeli, tehát az ellensúly-szorzó UTÁNA jön:
     // a kovácsolás így az ostromgépen sokat ér az épület ellen, a nyílon
     // keveset — pont ez a szorzó-tábla dolga, és nem akarjuk megkerülni.
-    const alap = ALAP_SEBZES[tamadoTipus] + this.sim.technologia.sebzesBonusz(tamadoCsapat, tt);
+    const alap = ALAP_SEBZES[tamadoTipus]
+      + this.sim.technologia.sebzesBonusz(tamadoCsapat, tt)
+      + this.sim.civ.sebzesBonusz(tamadoCsapat, tt);
     const seb = ((alap * SZORZO[tt][PANCEL.EPULET]) / 100) | 0;
     return seb < 1 ? 1 : seb;
   }
@@ -341,9 +345,11 @@ export class Harc {
     const pt = PANCEL_TIPUS[celTipus];
     const tech = this.sim.technologia;
     // Egész osztás — nincs kerekítési szabadság, tehát gépfüggetlen.
-    const alap = ALAP_SEBZES[tamadoTipus] + tech.sebzesBonusz(tamadoCsapat, tt);
+    const civ = this.sim.civ;
+    const alap = ALAP_SEBZES[tamadoTipus]
+      + tech.sebzesBonusz(tamadoCsapat, tt) + civ.sebzesBonusz(tamadoCsapat, tt);
     let seb = ((alap * SZORZO[tt][pt]) / 100) | 0;
-    seb -= PANCEL_ERTEK[celTipus] + tech.pancelBonusz(celCsapat);
+    seb -= PANCEL_ERTEK[celTipus] + tech.pancelBonusz(celCsapat) + civ.pancelBonusz(celCsapat);
     return seb < 1 ? 1 : seb;
   }
 
