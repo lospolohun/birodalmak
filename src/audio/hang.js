@@ -100,6 +100,18 @@ export class Hang {
 
     /** Működés-számok a HUD-nak és a hibakeresésnek. */
     this.stat = { szolam: 0, csomopont: 0, zeneHang: 0 };
+    /**
+     * ESEMÉNYENKÉNTI SZÁMLÁLÓ — halmozott, `ESEMENY.*` szerint indexelve.
+     *
+     * ⚠️ EZ AZ A SZÁM, AMI ELÁRULJA, HOGY CSINÁL-E VALAMIT. Az összesített
+     * „hány hang szólt" ugyanis akkor is szép nagy, ha egyetlen forrás
+     * (mondjuk a gyűjtés) hozza az egészet, és mellette hat másik NÉMA —
+     * pont ez történt a `sim.lovedek` elgépeléssel. Bontásban ez azonnal
+     * látszik, és a szonda 9. vizsgálata ebből dolgozik.
+     *
+     * Előre lefoglalt tömb: a képkockánkénti növelés nem allokál.
+     */
+    this.esemenyDb = new Int32Array(ESEMENY_DB);
   }
 
   /**
@@ -168,6 +180,7 @@ export class Hang {
     let harci = 0;
     for (let i = 0; i < db; i++) {
       const e = this.folyam.esemeny[i];
+      this.esemenyDb[e]++;
       if (e === ESEMENY.CSAPAS || e === ESEMENY.SEBZODES) harci++;
       const hang = this._esemenyHang[e];
       if (hang < 0) continue;
@@ -201,6 +214,7 @@ export class Hang {
     if (!this._enabled) return false;
     const hang = this._esemenyHang[kod];
     if (hang === undefined || hang < 0) return false;
+    this.esemenyDb[kod]++;
     const k = KATALOGUS[hang];
     const t = most === undefined ? this._utolsoMs : most;
     let tav = 0;
@@ -292,7 +306,13 @@ export class Hang {
       p[SZAMLALO.HALOTT_OK] = harc.halottak[ok];
       p[SZAMLALO.TORONY_SORTUZ] = harc.toronySortuz[cs];
     }
-    const lov = sim.lovedek;
+    // ⚠️ `lovedekek`, NEM `lovedek`. A `Sim` mezője többes számú, és az első
+    // változat egyes számban kérdezte — `undefined`-ot kapott, tehát a két
+    // lövedék-hang (íjhúr, becsapódás) SOSEM szólalt volna meg, kivétel és
+    // konzol-üzenet nélkül. Pontosan az a hibafajta, amit a v0.9/2 rövid
+    // táblája is produkált; a hang-szonda 9. vizsgálata azóta VALÓDI meccsen
+    // számolja meg eseményenként, hogy melyik forrás néma.
+    const lov = sim.lovedekek;
     if (lov) {
       p[SZAMLALO.LOVEDEK_KILOTT] = lov.kilott;
       p[SZAMLALO.LOVEDEK_TALALT] = lov.talalt;
@@ -504,6 +524,9 @@ export class Hang {
       szolam: this.stat.szolam, zeneHang: this.stat.zeneHang,
       harcSuruseg: this.harcSuruseg,
       tema: this._zeneMost ? this._zeneMost.nev : '—',
+      // MÁSOLAT: a hívó (szonda, konzol) nem írhatja el a számlálót. Ez a
+      // metódus diagnosztika, nem a képkocka-hurok része — itt szabad allokálni.
+      esemenyDb: Array.from(this.esemenyDb),
     };
   }
 }

@@ -1,4 +1,4 @@
-// AGE OF THE CRYSTALS — MENÜ-SZONDA (v0.11/2).
+// AGE OF THE CRYSTALS — MENÜ-SZONDA (v0.11/2 + v0.11/3 bekötés).
 //
 // ── MIÉRT VAN EZ EGYÁLTALÁN ───────────────────────────────────────────────
 // A főmenüt EGYETLEN meglévő kapu sem őrzi. A determinizmus-szonda
@@ -8,7 +8,7 @@
 // megégett: zöld kapu egy halott vagy hazug rendszer mellett.
 //
 // ── MIT MÉR — VAGYIS MI AZ A SZÁM, AMI ELÁRULJA, HOGY CSINÁL IS VALAMIT ───
-// Nem az, hogy „lefut". Hét gát van, és mindegyik egy KONKRÉT hibát fog meg:
+// Nem az, hogy „lefut". Nyolc gát van, és mindegyik egy KONKRÉT hibát fog meg:
 //
 //   1. MINDEN KÉPERNYŐ ELÉRHETŐ a főmenüből — és nem a táblázat szerint,
 //      hanem VALÓDI `lep()`-ekkel végigjárva. Egy menüpont, ami sehova nem
@@ -36,6 +36,15 @@
 //      seed/méret/preset a MENTÉSBŐL jön. Enélkül a hívó a menü saját seedjével
 //      építene `Sim`-et, és a `betoltes()` minden mentést elutasítana („más
 //      seed: a terep nem egyezne").
+//   8. ⚠️ A KONFIGBÓL TÉNYLEG VILÁG LESZ (v0.11/3 — a bekötés gátja). Az 1–7.
+//      gát mind a menü BELSEJÉRŐL szól: attól még mind zöld, hogy a menü
+//      kimenetét soha senki nem használja fel — pontosan ez volt az állapot a
+//      v0.10 végén. Ez a gát tehát VALÓDI `Sim`-et épít a menü konfigjából
+//      (`src/ui/meccs.js`), és megnézi, hogy a választott preset, a választott
+//      népek és a választott nehézség tényleg a világba kerültek-e, majd
+//      lépteti is a meccset: a gépi ellenfél gyűjtött-e egyáltalán nyersanyagot.
+//      A semmittevés is tökéletesen reprodukálható — ez az a szám, ami ezt
+//      megkülönbözteti a működéstől.
 //
 // HASZNÁLAT:  node tools/menu_szonda.mjs
 // Kilépési kód: 0 = rendben, 1 = bukás.
@@ -56,6 +65,10 @@ const { TERKEP, TERKEP_DB } = await be('src', 'sim', 'terkep.js');
 const { CIV, CIV_NEV, CIV_NINCS } = await be('src', 'sim', 'civ.js');
 const { NEHEZSEG } = await be('src', 'sim', 'ai.js');
 const { MENTES_VERZIO } = await be('src', 'sim', 'mentes.js');
+// A BEKÖTÉS rétege (v0.11/3): konfig → kész világ. Azért DOM-mentes külön
+// fájl, hogy pont ez a szonda meg tudja hajtani — a `main.js` node-ban nem fut.
+const { meccsSim, MECCS_ADAG, szondaKonfig, SZONDA_ADAG } = await be('src', 'ui', 'meccs.js');
+const { NYERS } = await be('src', 'sim', 'eroforras.js');
 
 let bukas = 0;
 const sor = (a, b, c) => console.log('  ' + String(a).padEnd(30) + String(b).padEnd(24) + (c ?? ''));
@@ -638,6 +651,130 @@ gat(mentesAtengedett === 0, mentesAtengedett + ' ROSSZ MENTÉST ELFOGADOTT A MEN
   'A hibás fejléc a `Sim` megépítése UTÁN derülne ki, amikor már nincs mit '
   + 'mondani a játékosnak.');
 
+// ── 8. VIZSGÁLAT — A KONFIGBÓL TÉNYLEG VILÁG LESZ ────────────────────────
+cim('8. VIZSGÁLAT — ⚠️ a menü konfigjából VALÓDI világ épül (a bekötés gátja)');
+console.log('  Az 1–7. gát a menü belsejéről szól: mind zöld maradna akkor is, ha a');
+console.log('  konfigot soha senki nem használná fel. Itt tehát `Sim` épül belőle.\n');
+sor('térkép + népek', 'a világban', 'egység / épület / gépi ellenfél');
+
+/** Mi mindent kell a világban VISSZATALÁLNI a konfigból. */
+function vilagEllenoriz(konfig, e) {
+  const h = [];
+  if (!e.ok) return ['a világ fel sem épült: ' + e.hibak.map((x) => x.mezo + ': ' + x.hiba).join(' · ')];
+  const s = e.sim;
+  if (s.terkep !== konfig.terkep) h.push('a preset nem került át: ' + s.terkep + ' ≠ ' + konfig.terkep);
+  if (s.seed !== (konfig.seed >>> 0)) h.push('a seed nem került át: ' + s.seed + ' ≠ ' + konfig.seed);
+  if (s.n !== konfig.n) h.push('a pályaméret nem került át: ' + s.n + ' ≠ ' + konfig.n);
+  if (s.maxEgyseg !== konfig.maxEgyseg) h.push('az egység-korlát nem került át');
+  for (let cs = 0; cs < 2; cs++) {
+    if (s.civValasztas[cs] !== konfig.civ[cs]) {
+      h.push('a(z) ' + cs + '. csapat népe nem került át: ' + s.civValasztas[cs] + ' ≠ ' + konfig.civ[cs]);
+    }
+  }
+  if (s.egysegek.db <= 0) h.push('nincs egyetlen egység sem a pályán');
+  if (s.epuletek.db < 2) h.push('nincs meg a két kezdő központ (' + s.epuletek.db + ')');
+  // A GÉPI ELLENFÉL a felállás UTÁN kapcsolódik be — ha a sorrend elcsúszik, a
+  // `szondaFelallas` nullázza, és az ellenfél NÉMÁN nem csinál semmit.
+  const gepi = konfig.sajatCsapat === 0 ? 1 : 0;
+  if (s.ai.aktiv[gepi] !== 1) h.push('a gépi ellenfél nincs bekapcsolva (a felállás nullázta?)');
+  if (s.ai.nehezseg[gepi] !== konfig.nehezseg) h.push('a nehézség nem került át');
+  if (s.ai.aktiv[konfig.sajatCsapat] !== 0) h.push('a JÁTÉKOS csapatát is a gép vette át');
+  return h;
+}
+
+let vilagHiba = 0;
+let vilagDb = 0;
+for (let t = 0; t < TERKEP_DB; t++) {
+  const par = CIV_PAROK[t % CIV_PAROK.length];
+  const v = vegigjatszas(t, par[0], par[1]);
+  if (!v.eredmeny.ok) { vilagHiba++; console.log('  ⛔ ' + t + ': a menü nem adott konfigot'); continue; }
+  const konfig = v.eredmeny.konfig;
+  const e = meccsSim(konfig, MECCS_ADAG);
+  const h = vilagEllenoriz(konfig, e);
+  vilagDb++;
+  if (h.length) { vilagHiba++; for (const x of h) console.log('  ⛔ ' + terkepLista()[t].nev + ': ' + x); }
+  sor(terkepLista()[t].nev + ' + ' + CIV_NEV[par[0]].slice(0, 10),
+    e.ok ? 'preset ' + e.sim.terkep + ' · civ ' + e.sim.civValasztas[0] + '/' + e.sim.civValasztas[1] : 'NEM ÉPÜLT ⛔',
+    e.ok ? e.sim.egysegek.db + ' egység · ' + e.sim.epuletek.db + ' épület · gépi: '
+      + e.sim.ai.aktiv[1] + (h.length ? '   ⛔' : '') : '⛔');
+}
+gat(vilagHiba === 0, vilagHiba + ' VILÁG NEM AZT KAPTA, AMIT A MENÜBEN VÁLASZTOTTAK.',
+  'A menü kimenete és a `Sim` bemenete elcsúszott. Ez a hibafajta CSENDES: a '
+  + 'meccs elindul, csak épp más pályán, más néppel vagy ellenfél nélkül — és '
+  + 'a determinizmus-kapu ettől még bitre zöld marad.');
+
+// ── A VILÁG ÉLJEN IS ──────────────────────────────────────────────────────
+// Eddig a felállásról volt szó. Az viszont statikus: egy világ, amiben semmi
+// nem történik, MINDEN fenti gáton átmegy. Ezért léptetjük is.
+{
+  const v = vegigjatszas(TERKEP.NYILT_MEZO, CIV.HEGYI_BANYASZ, CIV.FOLYAMI_KERESKEDO);
+  const e = meccsSim(v.eredmeny.konfig, MECCS_ADAG);
+  gat(e.ok, 'A LÉPTETÉSI PRÓBÁHOZ FEL SEM ÉPÜLT A VILÁG.',
+    e.ok ? '' : e.hibak.map((h) => h.mezo + ': ' + h.hiba).join(' · '));
+  const s = e.ok ? e.sim : null;
+  const gepi = 1;
+  if (s) {
+  const hashElott = s.allapotHash();
+  const TICK = 1200;                       // 60 másodperc sim-időben
+  for (let t = 0; t < TICK; t++) s.lep();
+  let gyujtott = 0;
+  for (let f = 0; f < 4; f++) gyujtott += s.gazdasag.osszegyujtott[gepi * 4 + f];
+  const hashUtan = s.allapotHash();
+  sor('léptetés', TICK + ' tick', 'hash ' + hashElott + ' → ' + hashUtan);
+  sor('gépi döntés', s.ai.dontesDb[gepi], 'gyűjtés-parancs: ' + s.ai.gyujtDb[gepi]
+    + ' · építés: ' + s.ai.epitDb[gepi]);
+  sor('összegyűjtött nyersanyag', gyujtott,
+    'étel ' + s.gazdasag.osszegyujtott[gepi * 4 + NYERS.ETEL]
+    + ' · fa ' + s.gazdasag.osszegyujtott[gepi * 4 + NYERS.FA]);
+  gat(hashUtan !== hashElott, 'A VILÁG ÁLL: ' + TICK + ' tick alatt a hash nem változott.');
+  gat(s.ai.dontesDb[gepi] > 0, 'A GÉPI ELLENFÉL EGYETLEN DÖNTÉST SEM HOZOTT.',
+    'Az `ai.beallit()` a `szondaFelallas` UTÁN kell fusson — a felállás nullázza.');
+  gat(gyujtott > 0, 'A GÉPI ELLENFÉL 60 MÁSODPERC ALATT SEMMIT NEM GYŰJTÖTT.',
+    'Ez az a szám, ami elárulja, hogy a meccs tényleg elindult. A v0.3 óta '
+    + 'tudjuk: a semmittevés is tökéletesen reprodukálható.');
+
+  // ⚠️ SZABOTÁZS: elsülne-e egyáltalán a gát? Ugyanaz a világ, LÉPTETÉS NÉLKÜL.
+  const sz = meccsSim(v.eredmeny.konfig, MECCS_ADAG);
+  let szGyujtott = 0;
+  for (let f = 0; f < 4; f++) szGyujtott += sz.sim.gazdasag.osszegyujtott[gepi * 4 + f];
+  sor('szabotázs: 0 tick', szGyujtott + ' nyersanyag',
+    szGyujtott === 0 ? 'a gát elsülne — a szám tényleg a meccset méri' : '⛔ mindig igaz');
+  gat(szGyujtott === 0,
+    'A GYŰJTÉS-GÁT LÉPTETÉS NÉLKÜL IS TELJESÜLNE — nem a meccset méri.');
+
+  // ⚠️ SZABOTÁZS: a preset-egyeztetés elsülne-e? Szándékosan MÁS presettel
+  // építünk világot, mint amit a konfig kér.
+  const mas = Object.assign({}, v.eredmeny.konfig, { terkep: TERKEP.HEGYVIDEK });
+  const masE = meccsSim(mas, MECCS_ADAG);
+  const kellHiba = vilagEllenoriz(v.eredmeny.konfig, masE);
+  sor('szabotázs: rossz preset', kellHiba.length + ' hiba',
+    kellHiba.length > 0 ? 'a preset-gát elsülne' : '⛔ nem venné észre');
+  gat(kellHiba.length > 0,
+    'A PRESET-EGYEZTETÉS NEM VESZI ÉSZRE, HA MÁS PÁLYA ÉPÜL.');
+  }
+}
+
+// A SZONDA-MEGKERÜLŐ ÚT ugyanazt a világot kell adja, amit a v0.1 óta mérünk:
+// SEED, 256×256, nyílt mező, 1600 egység, civ és gépi ellenfél NÉLKÜL. Ha ez
+// elcsúszik, az FPS-lépcsők elveszítik az összehasonlítási alapjukat — és ezt
+// GPU nélkül sehol máshol nem lehetne észrevenni.
+{
+  const k = szondaKonfig();
+  const e = meccsSim(k, SZONDA_ADAG);
+  const s = e.sim;
+  const jo = e.ok && s.seed === 20260803 && s.n === 256 && s.terkep === TERKEP.NYILT_MEZO
+    && s.maxEgyseg === 2400 && s.egysegek.db === 1600
+    && s.civValasztas[0] === CIV_NINCS && s.civValasztas[1] === CIV_NINCS
+    && s.ai.aktiv[0] === 0 && s.ai.aktiv[1] === 0;
+  sor('szonda-megkerülő út', e.ok ? s.egysegek.db + ' egység · ' + s.n + '×' + s.n : 'NEM ÉPÜLT ⛔',
+    'seed ' + s.seed + ' · preset ' + s.terkep + ' · civ/AI nélkül' + (jo ? '' : '   ⛔'));
+  gat(jo, 'A `?szonda=1` VILÁGA NEM A v0.1 ÓTA MÉRT FELÁLLÁS.',
+    'A `main.js` ezt a konfigot használja a menü megkerülésekor, és a '
+    + '`tools/fps_szonda.mjs` ezt a címet nyitja meg. Ha itt bármi elcsúszik '
+    + '(civ, gépi ellenfél, egységszám), a mért lépcsők nem hasonlíthatók '
+    + 'többé a v0.1-es számokhoz.');
+}
+
 // ── A FELKÍNÁLT LISTÁK ───────────────────────────────────────────────────
 cim('AMIT A JÁTÉKOS VÁLASZTHAT');
 const tl = terkepLista();
@@ -667,6 +804,9 @@ if (bukas === 0) {
     + CIV_PAROK.length + ' civ-páros)');
   console.log('     a menü determinisztikus: három azonos futás bitre azonos, '
     + 'és a forrásban nincs óra');
+  console.log('     ÉS A KONFIGBÓL VILÁG LESZ: ' + vilagDb + ' felépített meccs (preset, '
+    + 'nép, nehézség visszatalálva),');
+  console.log('     a gépi ellenfél 1200 tick alatt gyűjtött is — a bekötés nem papíron van');
 } else {
   console.log('  ❌ ' + bukas + ' vizsgálat BUKOTT.');
 }

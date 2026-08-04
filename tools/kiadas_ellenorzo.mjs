@@ -304,6 +304,9 @@ const TIPUS_TABLAK = [
   ['src/sim/parancsallapot.js', 'ELENGED'],
   ['src/sim/kod.js', 'LATOTAV_EGYSEG'],
   ['src/render/units3d.js', 'FIGURA'],
+  // A render-oldali táblák ugyanúgy `TIPUS`-szal indexelnek, mint a simesek —
+  // egy rövid `SUGAR` itt NaN-t ír a példány-mátrixba, és a gyűrű némán tűnik el.
+  ['src/render/kijeloles3d.js', 'SUGAR'],
 ];
 
 const EPULET_TABLAK = [

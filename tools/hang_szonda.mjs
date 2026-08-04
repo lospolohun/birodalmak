@@ -43,6 +43,20 @@
 //   8. A `hang.js` NODE-BAN IS BETÖLTHETŐ, sim és `AudioContext` nélkül is
 //      elindul és némán fut. Enélkül a szonda csak a katalógust őrizné, a
 //      megszólaltató réteg meg büntetlenül szivárogtathatna DOM-függést.
+//   9. ⚠️ VALÓDI MECCS, ESEMÉNYENKÉNTI BONTÁSBAN (v0.12/2 — a bekötés gátja).
+//      Az 1–8. gát a katalógusról és a keverőről szól: mind zöld marad akkor
+//      is, ha a `hang.js` a sim EGYETLEN számlálóját sem találja meg. Pontosan
+//      ez történt: a réteg `sim.lovedek`-et kérdezett `sim.lovedekek` helyett,
+//      `undefined`-ot kapott, és a két lövedék-hang NÉMA volt — kivétel és
+//      konzol-üzenet nélkül. Ez a gát ezért két valódi világot léptet
+//      (harc és gazdaság), és ESEMÉNYENKÉNT számolja meg, mi szólalt meg.
+//      Az összesített szám erre vak: azt egyetlen bőbeszédű forrás is
+//      megtölti, miközben hat másik némán hiányzik.
+//  10. A KLIENS-HÍD (`src/ui/hang_hid.js`). A négy kliens-esemény nem a
+//      simből jön (a kijelölés nem világállapot), tehát a 9. vizsgálat vak
+//      rájuk. Itt kijelölünk, parancsot adunk, és — ami a legfontosabb —
+//      beadunk egy MEGFIZETHETETLEN építési parancsot: a `Sim` azt CSENDBEN
+//      elnyeli, és a játékos csak akkor tudja meg, ha szól érte valami.
 //
 // HASZNÁLAT:  node tools/hang_szonda.mjs
 // Kilépési kód: 0 = rendben, 1 = bukás.
@@ -567,6 +581,241 @@ cim('8. VIZSGÁLAT — a `hang.js` node-ban is betölthető (nincs csupasz DOM-h
   }
 }
 
+// ── 9. VALÓDI MECCS, ESEMÉNYENKÉNTI BONTÁSBAN ─────────────────────────────
+cim('9. VIZSGÁLAT — ⚠️ valódi meccs: mi szólal meg TÉNYLEG (a bekötés gátja)');
+console.log('  Az 1–8. gát a katalógusról szól. Ez itt a simhez KÖTÖTTSÉGET méri:');
+console.log('  két világot léptetünk (harc + gazdaság), és eseményenként számolunk.');
+console.log('  Az összesített szám erre vak — egyetlen bőbeszédű forrás megtölti.\n');
+
+const { Sim } = await be('src', 'sim', 'sim.js');
+const { Hang: HangReteg } = await be('src', 'audio', 'hang.js');
+
+/** 60 FPS-es képkocka-idő ezredmásodpercben — a hang SAJÁT órája. */
+const KEPKOCKA_MS = 1000 / 60;
+/** Három képkocka jut egy tickre (60 FPS / 20 Hz). */
+const KEP_TICKENKENT = 3;
+
+/**
+ * Egy világ végigjátszása a hang-réteggel.
+ *
+ * A hívó úgy hajtja meg, ahogy a `main.js` teszi: tickeket léptet, és
+ * képkockánként meghívja a `frissit()`-et a SAJÁT (valós idejű) órájával.
+ * @returns {{hang, vak, sim}}
+ */
+function vilagotJatszik({ felallit, fut, tickek, parancsKoz = 100 }) {
+  const sim = new Sim({ seed: 20260804, n: 256, maxEgyseg: 2000 });
+  felallit(sim);
+  const hang = new HangReteg(sim, { sajatCsapat: 0 });
+  // ⚠️ A VAK PÁRJA — a `sim.lovedek` elgépelés újrajátszása. Ugyanaz a világ,
+  // de a lövedék-tár „nincs meg" rajta. Ha a szonda ezt NEM tudja
+  // megkülönböztetni az igazitól, akkor a 9. vizsgálat sem ér semmit.
+  const vakSim = Object.create(sim);
+  vakSim.lovedekek = undefined;
+  const vak = new HangReteg(vakSim, { sajatCsapat: 0 });
+
+  let most = 0;
+  let kor = 0;
+  const kozep = sim.n * 0.5;
+  for (let t = 0; t < tickek; t++) {
+    if (fut && (t % parancsKoz) === 0) { fut(sim, kor); kor++; }
+    sim.lep();
+    for (let f = 0; f < KEP_TICKENKENT; f++) {
+      most += KEPKOCKA_MS;
+      hang.frissit(sim, most, kozep, kozep);
+      vak.frissit(vakSim, most, kozep, kozep);
+    }
+  }
+  return { hang, vak, sim };
+}
+
+const HARC = vilagotJatszik({
+  felallit: (s) => s.szondaFelallas(400, { ostrom: 30 }),
+  fut: (s, kor) => s.szondaParancsV04(kor),
+  tickek: 900,
+});
+const GAZDASAG = vilagotJatszik({
+  // Mindkét csapatot a GÉP viszi: ez adja a gazdaságot, az építkezést, a
+  // képzést és a kutatást — vagyis azt a felét, amit a harc-világ nem.
+  felallit: (s) => s.szondaFelallasV06(24),
+  fut: null,
+  tickek: 4000,
+});
+
+const osszes = new Int32Array(ESEMENY_DB);
+for (const v of [HARC, GAZDASAG]) {
+  for (let e = 0; e < ESEMENY_DB; e++) osszes[e] += v.hang.esemenyDb[e];
+}
+
+sor('esemény', 'harc / gazdaság', 'összesen');
+let szamlalos = 0;
+let megszolalt = 0;
+for (let e = 0; e < ESEMENY_DB; e++) {
+  if (!ESEMENY_OK[e] || ESEMENY_OK[e].fajta !== FORRAS.SZAMLALO) continue;
+  szamlalos++;
+  if (osszes[e] > 0) megszolalt++;
+  sor(ESEMENY_NEV[e], HARC.hang.esemenyDb[e] + ' / ' + GAZDASAG.hang.esemenyDb[e],
+    osszes[e] + (osszes[e] > 0 ? '' : '   ⚠️ néma'));
+}
+const hKi = HARC.hang.osszesites();
+const gKi = GAZDASAG.hang.osszesites();
+sor('szólam (keverőn túl)', hKi.ki + ' / ' + gKi.ki,
+  'kérés: ' + (hKi.be + gKi.be) + ' → ' + (hKi.ki + gKi.ki));
+sor('elért sim-esemény', megszolalt + ' / ' + szamlalos, 'a szabály-táblából');
+console.log('\n  A „⚠️ néma" jelzés ITT nem bukás: a torony, a piac, a korszakváltás, a');
+console.log('  kutatás és az épület-omlás a FORGATÓKÖNYVTŐL függ, nem a bekötéstől —');
+console.log('  hogy megszólaltathatók-e, azt a 7. vizsgálat már bizonyította. Ami itt');
+console.log('  számít: a KÖTELEZŐ halmaz egyike sem maradhat nulla.\n');
+
+/**
+ * A KÖTELEZŐ HALMAZ. Szándékosan csak az, ami MINDEN futásban biztosan
+ * megtörténik: harc, halál, lövedék, gyűjtés, építés, képzés. A torony, a piac
+ * és a korszakváltás kimarad — azok a forgatókönyv esetlegességei, és egy
+ * ingadozó gát pár hamis riasztás után hiteltelen.
+ */
+const KOTELEZO = [
+  ESEMENY.CSAPAS, ESEMENY.SEBZODES, ESEMENY.HALAL_MI, ESEMENY.HALAL_OK,
+  ESEMENY.NYIL_KILOVES, ESEMENY.NYIL_BECSAPODAS,
+  ESEMENY.GYUJTES_ETEL, ESEMENY.GYUJTES_FA,
+  ESEMENY.EPITES_INDUL, ESEMENY.EPULET_KESZ, ESEMENY.EGYSEG_KESZ,
+];
+const hianyzo = KOTELEZO.filter((e) => osszes[e] === 0);
+for (const e of hianyzo) {
+  console.log('  ⛔ NÉMA: ' + ESEMENY_NEV[e] + ' — ' + ESEMENY_OK[e].mit);
+}
+gat(hianyzo.length === 0, hianyzo.length + ' KÖTELEZŐ ESEMÉNY NEM SZÓLALT MEG VALÓDI MECCSEN.',
+  'A katalógus szerint létezik, a szabály-tábla szerint keletkezhet — a `hang.js` '
+  + 'mégsem találja meg a sim számlálóját. Tipikusan elgépelt mezőnév: az '
+  + '`undefined` olvasás NEM dob, csak némán nem csinál semmit.');
+gat(hKi.ki > 0 && gKi.ki > 0,
+  'A KEVERŐ EGYETLEN SZÓLAMOT SEM ENGEDETT KI A VALÓDI MECCSEN.');
+
+// ⚠️ SZABOTÁZS — elsülne-e ez a gát? A vak párnak némának KELL lennie a
+// lövedékekre, miközben a csapás nála is megszólal (a világ ugyanaz).
+const vakNyil = HARC.vak.esemenyDb[ESEMENY.NYIL_KILOVES]
+  + HARC.vak.esemenyDb[ESEMENY.NYIL_BECSAPODAS];
+const igaziNyil = HARC.hang.esemenyDb[ESEMENY.NYIL_KILOVES]
+  + HARC.hang.esemenyDb[ESEMENY.NYIL_BECSAPODAS];
+sor('szabotázs: „sim.lovedek"', igaziNyil + ' → ' + vakNyil,
+  'csapás a vaknál is: ' + HARC.vak.esemenyDb[ESEMENY.CSAPAS]);
+gat(vakNyil === 0 && igaziNyil > 0 && HARC.vak.esemenyDb[ESEMENY.CSAPAS] > 0,
+  'A SZONDA NEM VESZI ÉSZRE, HA EGY SIM-FORRÁS HIÁNYZIK.',
+  'A vak párnak (`lovedekek` nélkül) pontosan a két lövedék-hangra kell '
+  + 'megnémulnia, minden másra nem. Ha ez nem így van, a 9. vizsgálat nem '
+  + 'fogná meg azt a hibát, amiért megírtuk.');
+
+// ⚠️ SZABOTÁZS — a szám tényleg a meccsről szól? Ugyanaz a világ, LÉPTETÉS
+// NÉLKÜL: az `Esemenyfolyam` első hívása csak rögzít, tehát nulla eseményt kell
+// adnia.
+{
+  const s = new Sim({ seed: 20260804, n: 256, maxEgyseg: 2000 });
+  s.szondaFelallas(400, { ostrom: 30 });
+  const h = new HangReteg(s, { sajatCsapat: 0 });
+  for (let f = 0; f < 30; f++) h.frissit(s, f * KEPKOCKA_MS, 128, 128);
+  let db = 0;
+  for (let e = 0; e < ESEMENY_DB; e++) db += h.esemenyDb[e];
+  sor('szabotázs: 0 tick', db + ' esemény',
+    db === 0 ? 'a gát elsülne — a szám a meccset méri' : '⛔ álló világon is szól');
+  gat(db === 0, 'ÁLLÓ VILÁGON IS KELETKEZTEK HANG-ESEMÉNYEK.',
+    'Akkor a 9. vizsgálat számai nem a meccsről szólnak.');
+}
+
+// ── 10. A KLIENS-HÍD ──────────────────────────────────────────────────────
+cim('10. VIZSGÁLAT — a kliens-híd: kijelölés, parancs, és a NÉMA elutasítás');
+console.log('  A négy kliens-esemény nem a simből jön, tehát a 9. vizsgálat vak rájuk.');
+console.log('  A `hang_hid.js` node-ban is fut (nincs benne csupasz DOM-hívás) — ezért');
+console.log('  a bevitel utánzásával itt végigjárható.\n');
+{
+  const { HangHid } = await be('src', 'ui', 'hang_hid.js');
+  const { EPULET } = await be('src', 'sim', 'epuletek.js');
+
+  const ujVilag = () => {
+    const s = new Sim({ seed: 20260804, n: 256, maxEgyseg: 600 });
+    s.szondaFelallas(40, { munkasMinden: 2 });
+    return s;
+  };
+
+  /**
+   * ELŐBB KERESSÜNK EGY VALÓBAN BEÉPÍTHETŐ HELYET. Enélkül a „sikeres építés"
+   * ága véletlenszerűen elutasításba futna (fa, erdő, épület alatt), és a
+   * vizsgálat hol zöld, hol piros lenne — a hullámzó gátnak pedig senki nem hisz.
+   * A pálya a seedből épül, tehát amit itt megtalálunk, az a friss világban is
+   * ugyanott lesz.
+   */
+  let hely = null;
+  {
+    const s = ujVilag();
+    for (let d = 0; d < 30 && !hely; d++) {
+      const x = ((s.n * 0.22) + 8 + d) | 0;
+      const y = ((s.n * 0.5) + 8) | 0;
+      const elotte = s.epuletek.db;
+      s.parancs({ fajta: 'epit', csapat: 0, tipus: EPULET.HAZ, x, y });
+      for (let t = 0; t < 4; t++) s.lep();
+      if (s.epuletek.db > elotte) hely = { x, y };
+    }
+  }
+  gat(hely !== null, 'NEM TALÁLTUNK BEÉPÍTHETŐ HELYET A PRÓBÁHOZ.');
+
+  const sim = ujVilag();
+  const hang = new HangReteg(sim, { sajatCsapat: 0 });
+  const bevitel = { kijeloles: { lista: [] } };
+  const hid = new HangHid(hang, sim, bevitel, { sajatCsapat: 0, hangero: 0.3 });
+  let ora = 0;
+  const kep = () => { ora += KEPKOCKA_MS; hid.frissit(ora); };
+  const lep = (db) => { for (let t = 0; t < db; t++) { sim.lep(); kep(); } };
+  const db = (e) => hang.esemenyDb[e];
+
+  kep();
+  // (a) KIJELÖLÉS — a lista változása a jel. Az ürítés SZÁNDÉKOSAN néma.
+  bevitel.kijeloles.lista = [1, 2, 3];
+  kep();
+  const kijelolt = db(ESEMENY.KIJELOLES);
+  bevitel.kijeloles.lista = [];
+  kep();
+  sor('kijelölés', kijelolt + ' hang', 'ürítés után: ' + db(ESEMENY.KIJELOLES) + ' (nem nő)');
+  gat(kijelolt === 1 && db(ESEMENY.KIJELOLES) === 1,
+    'A KIJELÖLÉS-HANG NEM PONTOSAN EGYSZER SZÓLT.');
+
+  // (b) MENET és TÁMADÓ MENET — a fajtát a híd a PARANCS-SORBÓL olvassa ki.
+  bevitel.kijeloles.lista = [1, 2, 3];
+  const kozel = sim._jarhatoKozel(sim.n * 0.5, sim.n * 0.5);
+  sim.parancs({ fajta: 'menet', egysegek: [1, 2, 3], x: kozel.x, y: kozel.y });
+  hid.parancsra(ora);
+  sim.parancs({ fajta: 'tamado_menet', egysegek: [1, 2, 3], x: kozel.x, y: kozel.y });
+  hid.parancsra(ora);
+  sor('menet / támadó menet', db(ESEMENY.PARANCS_MENET) + ' / ' + db(ESEMENY.PARANCS_TAMADAS),
+    'a fajta a parancs-sorból jött');
+  gat(db(ESEMENY.PARANCS_MENET) === 1 && db(ESEMENY.PARANCS_TAMADAS) === 1,
+    'A HÍD NEM KÜLÖNBÖZTETI MEG A MENETET A TÁMADÓ MENETTŐL.',
+    'A parancs fajtáját a `Sim` sorának utolsó eleméből olvassa ki — ha a '
+    + 'késleltetés vagy a sor szerkezete változott, ez némán elcsúszik.');
+
+  // (c) A LÉNYEG: A NÉMÁN ELNYELT PARANCS. Előbb a SIKERES építés — arra NEM
+  //     jöhet elutasítás-hang, különben a gát „mindenre igent mond".
+  const elutasitasElott = db(ESEMENY.PARANCS_ELUTASITVA);
+  sim.parancs({ fajta: 'epit', csapat: 0, tipus: EPULET.HAZ, x: hely.x, y: hely.y });
+  hid.parancsra(ora);
+  const epuletElott = sim.epuletek.db;
+  lep(8);
+  const felepult = sim.epuletek.db > epuletElott;
+  sor('sikeres építés', felepult ? 'felépült' : 'NEM ÉPÜLT ⛔',
+    'elutasítás-hang: ' + (db(ESEMENY.PARANCS_ELUTASITVA) - elutasitasElott));
+  gat(felepult && db(ESEMENY.PARANCS_ELUTASITVA) === elutasitasElott,
+    'A SIKERES ÉPÍTÉSRE IS ELUTASÍTÁS-HANG SZÓLT.',
+    'Egy gát, ami mindenre elutasítást mond, pontosan annyit ér, mint a némaság.');
+
+  //     …és most a megfizethetetlen: a központ 250 fát kér, a kezdő készlet 200.
+  sim.parancs({ fajta: 'epit', csapat: 0, tipus: EPULET.KOZPONT, x: hely.x + 10, y: hely.y });
+  hid.parancsra(ora);
+  lep(8);
+  const elutasitva = db(ESEMENY.PARANCS_ELUTASITVA) - elutasitasElott;
+  sor('megfizethetetlen épület', elutasitva + ' elutasítás-hang',
+    'a `Sim` csendben elnyelte, a játékos mégis megtudja');
+  gat(elutasitva === 1, 'A NÉMÁN ELNYELT PARANCSRA NEM SZÓLT SEMMI.',
+    'A `Sim` szándékosan nem ad hibát (a v0.8-ban a parancs a hálózatról jön). '
+    + 'Ha a híd sem szól, a játékos csak annyit lát, hogy „nem történt semmi" — '
+    + 'ez a leggyakoribb „elromlott a játék" élmény az RTS-ekben.');
+}
+
 // ── AMIT A JÁTÉKOS HALLANI FOG ────────────────────────────────────────────
 cim('AMIT A JÁTÉKOS HALLANI FOG');
 const csoport = {};
@@ -602,6 +851,12 @@ if (bukas === 0) {
     + retegOssz + ' szintézis-réteg');
   console.log('     minden esemény megszólaltatható, minden hangnak van kiváltó oka,');
   console.log('     és a vihar-gát nagyságrendet vág (lásd a 4. vizsgálat számait).');
+  console.log('     A BEKÖTÉS SEM PAPÍRON VAN: két valódi meccsen ' + megszolalt + ' / '
+    + szamlalos + ' sim-esemény szólalt meg,');
+  console.log('     ' + (hKi.ki + gKi.ki) + ' szólam ' + (hKi.be + gKi.be)
+    + ' kérésből — és a „hiányzó sim-forrás" szabotázs elsül.');
+  console.log('     A kliens-híd is él: kijelölés, menet, támadó menet, és a némán');
+  console.log('     elnyelt (megfizethetetlen) parancsra is szól elutasítás-hang.');
 } else {
   console.log('  ❌ ' + bukas + ' vizsgálat BUKOTT.');
 }

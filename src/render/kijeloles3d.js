@@ -19,6 +19,17 @@
 // menetel, vörös, ha harcérintkezésben van. Ez a v0.2-ben az egyetlen
 // visszajelzés arról, hogy a támadó menet tényleg megtalálta-e az ellenfelet —
 // a sebzés csak a v0.4-ben jön, tehát máshonnan nem látszana.
+//
+// ── MIÉRT KELL A `SUGAR`-NAK `TIPUS_DB` HOSSZÚNAK LENNIE ──────────────────
+// A `SUGAR[e.tipus[i]]` eredménye EGYENESEN a példány-mátrix három átlós
+// elemébe megy, egy `Float32Array`-be. Ha a tábla rövidebb a `TIPUS_DB`-nél,
+// a hiányzó típusnál `undefined` jön ki, abból a tömbben NaN lesz — a gyűrű
+// eltűnik vagy szemetel, NÉMÁN: nincs kivétel, nincs konzol-üzenet, és a
+// determinizmus-kapu is zöld marad, mert a sim nem is tud róla.
+// Pontosan ez ette meg a `LATOTAV`-ot a v0.9/2-ben (`LATOTAV[TIPUS.EGYEDI]`
+// undefined → `d <= undefined` mindig hamis → az egyedi egység két verzión át
+// vak volt). ÚJ TÍPUS → ÚJ SOR ITT, és a `tools/kiadas_ellenorzo.mjs`
+// `TIPUS_TABLAK` listája őrzi, hogy ne felejtődjön el.
 
 import { THREE } from './core3d.js';
 
@@ -27,8 +38,13 @@ const SZEGMENS = 16;
 /** A gyűrű a talaj FÖLÖTT lebeg ennyivel, hogy ne z-harcoljon a terepel. */
 const MAGASSAG = 0.07;
 
-/** Egység-típusonkénti gyűrű-sugár — a `units.js` SUGAR tömbjéhez igazítva. */
-const SUGAR = [0.42, 0.46, 0.44, 0.56, 0.78];
+/**
+ * Egység-típusonkénti gyűrű-sugár — a `units.js` SUGAR tömbjéhez igazítva
+ * (ütközési sugár + ~0,12; az ostromgépnél +0,16, hogy a nagy sziluett alól
+ * kilátsszon). A hossza KÖTELEZŐEN `TIPUS_DB` — lásd a fejlécet.
+ * Sorrend: MUNKAS, LANDZSAS, IJASZ, LOVAG, OSTROMGEP, EGYEDI.
+ */
+const SUGAR = [0.42, 0.46, 0.44, 0.56, 0.78, 0.48];
 
 const SZIN_ALL = 0x54e07a;
 const SZIN_MEGY = 0xe8d24a;

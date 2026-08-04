@@ -58,6 +58,15 @@ const DPR = erv('dpr', 1);
 // (Pontosan ez történt az első éles próbán.)
 // A név NEM `URL`: az leárnyékolná a globális `URL` konstruktort.
 const CIM = 'http://localhost:' + PORT + '/';
+// ⚠️ A MÉRÉS A `?szonda=1` CÍMET NYITJA MEG, és ez nem kényelmi kapcsoló.
+// A v0.11 óta a játék FŐMENÜVEL indul: a világ csak az „Indítás" gombra épül
+// fel, tehát a `window.__aoc.keszen` egy kattintásra váró menü mellett SOHA nem
+// lenne igaz, és a szonda 60 mp után a horog hiányát jelentené egy tökéletesen
+// működő játékon. A `?szonda=1` a menü megkerülésével AZONNAL a v0.1 óta mért
+// világot építi fel (SEED, 256×256, nyílt mező, 1600 egység, civ és gépi
+// ellenfél nélkül, a v0.1-es forgatókönyvvel, HANG NÉLKÜL) — vagyis a lépcsők
+// megőrzik az összehasonlítási alapjukat. Lásd `src/main.js` fejléce.
+const JATEK_CIM = CIM + '?szonda=1';
 
 /** A bontandó rétegek. Az 'ui' szándékosan kimarad: nem a képkocka tétele. */
 const RETEGEK = ['terep', 'props', 'egysegek', 'viz'];
@@ -206,7 +215,7 @@ try {
   lap.on('console', (m) => { if (m.type() === 'error') konzolHibak.push(m.text()); });
   lap.on('pageerror', (e) => konzolHibak.push('pageerror: ' + e.message));
 
-  await lap.goto(CIM, { waitUntil: 'domcontentloaded' });
+  await lap.goto(JATEK_CIM, { waitUntil: 'domcontentloaded' });
 
   // A szerződés (INTERFACES.md): a `src/main.js` állítja be a horgot.
   try {
@@ -215,6 +224,8 @@ try {
   } catch (e) {
     console.error('\n⛔ A `window.__aoc.keszen` 60 mp alatt nem lett igaz.');
     console.error('   A szonda CSAK ezt a horgot használja (lásd INTERFACES.md).');
+    console.error('   A `keszen` a MECCS futásakor igaz, nem a lap betöltésekor: ha a');
+    console.error('   `?szonda=1` megkerülő út elromlott, a boot a főmenüben áll meg.');
     console.error('   Ellenőrizd, hogy a `src/main.js` beállítja-e, és nézd meg a lap hibáit:');
     for (const h of konzolHibak.slice(0, 12)) console.error('     · ' + h);
     if (!konzolHibak.length) console.error('     (a lap nem adott hibát — lehet, hogy a boot még fut)');
@@ -401,7 +412,7 @@ try {
   const kimenet = {
     verzio: VERZIO, aocVerzio: verzio, ido: new Date().toISOString(),
     gep: { platform: process.platform, node: process.version, gpu, bongeszo: chromeLeiras() },
-    beallitas: { url: CIM, szelesseg: SZEL, magassag: MAG, dpr: DPR,
+    beallitas: { url: JATEK_CIM, szelesseg: SZEL, magassag: MAG, dpr: DPR,
       meresMp: MERES_MP, ablacioMp: ABLACIO_MP, retegek: RETEGEK },
     lepcsok: eredmenyek,
     itelet: {

@@ -1,7 +1,7 @@
 {
   "verzio": "0.10.1",
   "aocVerzio": "0.10.1",
-  "ido": "2026-08-04T07:12:16.496Z",
+  "ido": "2026-08-04T08:38:50.220Z",
   "gep": {
     "platform": "darwin",
     "node": "v24.18.1",
@@ -9,7 +9,7 @@
     "bongeszo": "AOC_CHROME=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
   },
   "beallitas": {
-    "url": "http://localhost:5273/",
+    "url": "http://localhost:5273/?szonda=1",
     "szelesseg": 1600,
     "magassag": 900,
     "dpr": 1,
@@ -26,261 +26,261 @@
     {
       "egyseg": 100,
       "tenylegesEgyseg": 100,
-      "fps": 241.4,
-      "kepkocka": 1450,
-      "atlagMs": 4.14,
-      "p95Ms": 7,
-      "simMs": 0.022,
-      "renderMs": 3.07,
-      "haromszog": 106634,
+      "fps": 174.6,
+      "kepkocka": 1049,
+      "atlagMs": 5.73,
+      "p95Ms": 11.8,
+      "simMs": 0.023,
+      "renderMs": 4.617,
+      "haromszog": 106858,
       "rajzhivas": 92,
-      "ablacioAlapMs": 4.31,
-      "zajMs": 0.17,
+      "ablacioAlapMs": 6.07,
+      "zajMs": 0.346,
       "bontas": {
         "terep": {
           "letezik": true,
-          "nelkuleMs": 4.16,
-          "nelkuleFps": 240.6,
-          "koltsegMs": 0.156,
-          "haromszog": 72036,
+          "nelkuleMs": 5.29,
+          "nelkuleFps": 189.2,
+          "koltsegMs": 0.789,
+          "haromszog": 72260,
           "rajzhivas": 57,
-          "szazalek": 3.6,
-          "zajAlatt": true
+          "szazalek": 13,
+          "zajAlatt": false
         },
         "props": {
           "letezik": true,
-          "nelkuleMs": 3.92,
-          "nelkuleFps": 255,
-          "koltsegMs": 0.39,
-          "haromszog": 66690,
+          "nelkuleMs": 5.3,
+          "nelkuleFps": 188.8,
+          "koltsegMs": 0.778,
+          "haromszog": 66914,
           "rajzhivas": 53,
-          "szazalek": 9,
+          "szazalek": 12.8,
           "zajAlatt": false
         },
         "egysegek": {
           "letezik": true,
-          "nelkuleMs": 3.63,
-          "nelkuleFps": 275.6,
-          "koltsegMs": 0.684,
-          "haromszog": 85590,
+          "nelkuleMs": 4.4,
+          "nelkuleFps": 227.5,
+          "koltsegMs": 1.679,
+          "haromszog": 85814,
           "rajzhivas": 80,
-          "szazalek": 15.9,
+          "szazalek": 27.6,
           "zajAlatt": false
         },
         "viz": {
           "letezik": true,
-          "nelkuleMs": 4.35,
-          "nelkuleFps": 229.8,
-          "koltsegMs": -0.04,
-          "haromszog": 109112,
+          "nelkuleMs": 5.48,
+          "nelkuleFps": 182.5,
+          "koltsegMs": 0.596,
+          "haromszog": 109336,
           "rajzhivas": 91,
-          "szazalek": -0.9,
-          "zajAlatt": true
+          "szazalek": 9.8,
+          "zajAlatt": false
         }
       },
-      "egyebMs": 3.122
+      "egyebMs": 2.232
     },
     {
       "egyseg": 400,
       "tenylegesEgyseg": 400,
-      "fps": 230.3,
-      "kepkocka": 1385,
-      "atlagMs": 4.34,
-      "p95Ms": 6.8,
-      "simMs": 0.03,
-      "renderMs": 3.2,
-      "haromszog": 179522,
+      "fps": 186.3,
+      "kepkocka": 1119,
+      "atlagMs": 5.37,
+      "p95Ms": 14,
+      "simMs": 0.061,
+      "renderMs": 3.57,
+      "haromszog": 179782,
       "rajzhivas": 92,
-      "ablacioAlapMs": 4.25,
-      "zajMs": 0.092,
+      "ablacioAlapMs": 5.49,
+      "zajMs": 0.264,
       "bontas": {
         "terep": {
           "letezik": true,
-          "nelkuleMs": 4.25,
-          "nelkuleFps": 235.1,
-          "koltsegMs": -0.004,
-          "haromszog": 143110,
-          "rajzhivas": 57,
-          "szazalek": -0.1,
-          "zajAlatt": true
-        },
-        "props": {
-          "letezik": true,
-          "nelkuleMs": 3.72,
-          "nelkuleFps": 269.1,
-          "koltsegMs": 0.534,
-          "haromszog": 137648,
-          "rajzhivas": 53,
-          "szazalek": 12.6,
-          "zajAlatt": false
-        },
-        "egysegek": {
-          "letezik": true,
-          "nelkuleMs": 3.47,
-          "nelkuleFps": 288.4,
-          "koltsegMs": 0.783,
-          "haromszog": 85590,
-          "rajzhivas": 80,
-          "szazalek": 18.4,
-          "zajAlatt": false
-        },
-        "viz": {
-          "letezik": true,
-          "nelkuleMs": 4.17,
-          "nelkuleFps": 240,
-          "koltsegMs": 0.083,
-          "haromszog": 179588,
-          "rajzhivas": 91,
-          "szazalek": 2,
-          "zajAlatt": true
-        }
-      },
-      "egyebMs": 2.854
-    },
-    {
-      "egyseg": 800,
-      "tenylegesEgyseg": 800,
-      "fps": 219.2,
-      "kepkocka": 1317,
-      "atlagMs": 4.56,
-      "p95Ms": 9.8,
-      "simMs": 0.081,
-      "renderMs": 3.327,
-      "haromszog": 273219,
-      "rajzhivas": 92,
-      "ablacioAlapMs": 4.72,
-      "zajMs": 0.161,
-      "bontas": {
-        "terep": {
-          "letezik": true,
-          "nelkuleMs": 4.67,
-          "nelkuleFps": 214.1,
-          "koltsegMs": 0.051,
-          "haromszog": 236775,
+          "nelkuleMs": 5.43,
+          "nelkuleFps": 184.3,
+          "koltsegMs": 0.061,
+          "haromszog": 143334,
           "rajzhivas": 57,
           "szazalek": 1.1,
           "zajAlatt": true
         },
         "props": {
           "letezik": true,
-          "nelkuleMs": 4.14,
-          "nelkuleFps": 241.4,
-          "koltsegMs": 0.58,
-          "haromszog": 231536,
+          "nelkuleMs": 5.22,
+          "nelkuleFps": 191.5,
+          "koltsegMs": 0.267,
+          "haromszog": 137872,
           "rajzhivas": 53,
-          "szazalek": 12.3,
+          "szazalek": 4.9,
           "zajAlatt": false
         },
         "egysegek": {
           "letezik": true,
-          "nelkuleMs": 3.46,
-          "nelkuleFps": 288.9,
-          "koltsegMs": 1.26,
-          "haromszog": 85590,
+          "nelkuleMs": 3.81,
+          "nelkuleFps": 262.7,
+          "koltsegMs": 1.682,
+          "haromszog": 85814,
           "rajzhivas": 80,
-          "szazalek": 26.7,
+          "szazalek": 30.6,
           "zajAlatt": false
         },
         "viz": {
           "letezik": true,
-          "nelkuleMs": 4.45,
-          "nelkuleFps": 224.8,
-          "koltsegMs": 0.273,
-          "haromszog": 273588,
+          "nelkuleMs": 5.75,
+          "nelkuleFps": 173.9,
+          "koltsegMs": -0.264,
+          "haromszog": 179812,
           "rajzhivas": 91,
-          "szazalek": 5.8,
-          "zajAlatt": false
+          "szazalek": -4.8,
+          "zajAlatt": true
         }
       },
-      "egyebMs": 2.558
+      "egyebMs": 3.742
     },
     {
-      "egyseg": 1600,
-      "tenylegesEgyseg": 1600,
-      "fps": 193.1,
-      "kepkocka": 1157,
-      "atlagMs": 5.18,
-      "p95Ms": 9.3,
-      "simMs": 0.164,
-      "renderMs": 3.696,
-      "haromszog": 460529,
+      "egyseg": 800,
+      "tenylegesEgyseg": 800,
+      "fps": 168.7,
+      "kepkocka": 1014,
+      "atlagMs": 5.93,
+      "p95Ms": 14.6,
+      "simMs": 0.181,
+      "renderMs": 3.885,
+      "haromszog": 273443,
       "rajzhivas": 92,
-      "ablacioAlapMs": 4.83,
-      "zajMs": 0.354,
+      "ablacioAlapMs": 6.7,
+      "zajMs": 0.769,
       "bontas": {
         "terep": {
           "letezik": true,
-          "nelkuleMs": 4.84,
-          "nelkuleFps": 206.8,
-          "koltsegMs": -0.002,
-          "haromszog": 425042,
+          "nelkuleMs": 6.58,
+          "nelkuleFps": 151.9,
+          "koltsegMs": 0.112,
+          "haromszog": 237222,
           "rajzhivas": 57,
-          "szazalek": 0,
+          "szazalek": 1.7,
           "zajAlatt": true
         },
         "props": {
           "letezik": true,
-          "nelkuleMs": 4.95,
-          "nelkuleFps": 202.2,
-          "koltsegMs": -0.111,
-          "haromszog": 419648,
+          "nelkuleMs": 6.28,
+          "nelkuleFps": 159.3,
+          "koltsegMs": 0.419,
+          "haromszog": 231760,
           "rajzhivas": 53,
-          "szazalek": -2.3,
+          "szazalek": 6.3,
           "zajAlatt": true
         },
         "egysegek": {
           "letezik": true,
-          "nelkuleMs": 3.31,
-          "nelkuleFps": 301.7,
-          "koltsegMs": 1.519,
-          "haromszog": 85590,
+          "nelkuleMs": 3.97,
+          "nelkuleFps": 252.1,
+          "koltsegMs": 2.73,
+          "haromszog": 85814,
           "rajzhivas": 80,
-          "szazalek": 31.4,
+          "szazalek": 40.8,
           "zajAlatt": false
         },
         "viz": {
           "letezik": true,
-          "nelkuleMs": 5.19,
-          "nelkuleFps": 192.8,
-          "koltsegMs": -0.354,
-          "haromszog": 461588,
+          "nelkuleMs": 6.92,
+          "nelkuleFps": 144.4,
+          "koltsegMs": -0.228,
+          "haromszog": 273812,
           "rajzhivas": 91,
-          "szazalek": -7.3,
+          "szazalek": -3.4,
           "zajAlatt": true
         }
       },
-      "egyebMs": 3.782
+      "egyebMs": 3.664
+    },
+    {
+      "egyseg": 1600,
+      "tenylegesEgyseg": 1600,
+      "fps": 138.9,
+      "kepkocka": 846,
+      "atlagMs": 7.2,
+      "p95Ms": 20.8,
+      "simMs": 0.368,
+      "renderMs": 4.937,
+      "haromszog": 460753,
+      "rajzhivas": 92,
+      "ablacioAlapMs": 7.15,
+      "zajMs": 1.69,
+      "bontas": {
+        "terep": {
+          "letezik": true,
+          "nelkuleMs": 7.05,
+          "nelkuleFps": 141.9,
+          "koltsegMs": 0.108,
+          "haromszog": 425266,
+          "rajzhivas": 57,
+          "szazalek": 1.5,
+          "zajAlatt": true
+        },
+        "props": {
+          "letezik": true,
+          "nelkuleMs": 7.92,
+          "nelkuleFps": 126.2,
+          "koltsegMs": -0.77,
+          "haromszog": 419872,
+          "rajzhivas": 53,
+          "szazalek": -10.8,
+          "zajAlatt": true
+        },
+        "egysegek": {
+          "letezik": true,
+          "nelkuleMs": 4.3,
+          "nelkuleFps": 232.3,
+          "koltsegMs": 2.85,
+          "haromszog": 85814,
+          "rajzhivas": 80,
+          "szazalek": 39.8,
+          "zajAlatt": false
+        },
+        "viz": {
+          "letezik": true,
+          "nelkuleMs": 8.84,
+          "nelkuleFps": 113.1,
+          "koltsegMs": -1.69,
+          "haromszog": 461812,
+          "rajzhivas": 91,
+          "szazalek": -23.6,
+          "zajAlatt": true
+        }
+      },
+      "egyebMs": 6.657
     }
   ],
   "itelet": {
-    "dontes": "GO",
-    "indok": "60 FPS tartva a cél-egységszámon",
+    "dontes": "FELTÉTELES",
+    "indok": "40+ FPS, de nincs tartalék a v0.2-re",
     "celEgyseg": 1600,
-    "p95Ms": 9.3,
-    "atlagMs": 5.18,
-    "fps": 193.1,
+    "p95Ms": 20.8,
+    "atlagMs": 7.2,
+    "fps": 138.9,
     "szukKeresztmetszet": "egysegek",
-    "szukMs": 1.519,
-    "szukSzazalek": 31.4,
+    "szukMs": 2.85,
+    "szukSzazalek": 39.9,
     "rangsor": [
       {
         "reteg": "egysegek",
-        "ms": 1.519
+        "ms": 2.85
       },
       {
         "reteg": "terep",
-        "ms": -0.002
+        "ms": 0.108
       },
       {
         "reteg": "props",
-        "ms": -0.111
+        "ms": -0.77
       },
       {
         "reteg": "viz",
-        "ms": -0.354
+        "ms": -1.69
       }
     ],
-    "egyebMs": 3.782,
+    "egyebMs": 6.657,
     "egyebNagyobbMintBarmelyReteg": true
   },
   "konzolHibak": [

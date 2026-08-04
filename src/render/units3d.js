@@ -15,23 +15,50 @@
 // példányosítás, nincs `.multiply()` metódus-lánc, nincs `Quaternion`.
 // Egyetlen alkatrész kiírása ~25 szorzás és 16 tömb-írás. Ez az, ami
 // megengedi, hogy egy figurának 8 mozgó alkatrésze legyen 1600 példányban:
-// alkatrészenként EGY rajzhívás, összesen 12 — nem 1600 × 8.
+// alkatrészenként EGY rajzhívás, összesen 13 — nem 1600 × 8. (A 13. az
+// alabárd, a v0.9/2b bajnokáé; ha nincs bajnok a pályán, a példányszáma nulla,
+// tehát a kimenő rajzhívás továbbra is 12.)
 //
 // Az ellentábor (mesh/figura, `Object3D` gyerekekkel) 1600 egységnél 12 800
 // mátrix-frissítést, ugyanennyi `matrixWorld` bejárást és 12 800 rajzhívást
 // jelentene: ott a 60 FPS meg sem közelíthető.
 //
-// ── AZ ALKATRÉSZEK (12 InstancedMesh) ─────────────────────────────────────
+// ── AZ ALKATRÉSZEK (13 InstancedMesh) ─────────────────────────────────────
 //   test              tunika + öv + váll   (instanceColor = CSAPAT-szín, típus
 //                                           szerint árnyalva)
 //   fej               (instanceColor = egyedi bőrszín)
 //   sisak             (instanceColor = csapat-szín, típusonként MÁS méret)
 //   balLab, jobbLab   a csípő körül, ELLENFÁZISBAN lengenek
 //   balKar, jobbKar   külön szögön — a típus tartása így felismerhető
-//   csákány · lándzsa · íj · kard   — a JOBB VÁLL ízületére szerelve, tehát
-//                     EGYÜTT MOZOG a karral (a fegyver nem lebeg a figura
-//                     mellett, hanem a kezében van)
-//   pajzs             — a BAL VÁLL ízületén (csak LANDZSAS)
+//   csákány · lándzsa · íj · kard · alabárd
+//                     — a JOBB VÁLL ízületére szerelve, tehát EGYÜTT MOZOG a
+//                     karral (a fegyver nem lebeg a figura mellett, hanem a
+//                     kezében van)
+//   pajzs             — a BAL VÁLL ízületén (LANDZSAS és a pajzsos bajnokok)
+//
+// ── A FIGURA-KATALÓGUS KÜLÖN FÁJLBAN VAN (v0.9/2b) ────────────────────────
+// Az `egyseg_figurak.js` mondja meg, melyik sim-típus melyik vázzá rajzolódik
+// és milyen arányokkal. Két oka van, hogy nem itt áll:
+//   1. A v0.9/2-ben az itteni `FIGURA` tábla `-1`-e (ostromgép = „nem én
+//      rajzolom") kifutott a FELÁLLÁS-útra is, és `TIPUS_KEVER[-1][0]`-t
+//      olvasott — TypeError, azaz az EGÉSZ render-hurok elszállt, amint a gép
+//      kiképezte az első faltörő kost. A katalógus most betöltéskor
+//      ÖNELLENŐRZŐ (tábla-hosszak), és a `-1`-et itt EGY helyen szűrjük.
+//   2. A bajnok (`TIPUS.EGYEDI`) nyolc nép nyolc külön kinézete — az adat
+//      mennyisége szétfeszítette volna ezt a fájlt.
+//
+// ── A BAJNOK: EGY ÚJ VÁZ, NYOLC KINÉZET, EGY ÚJ RAJZHÍVÁS (v0.9/2b) ───────
+// A `TIPUS.EGYEDI` a v0.9/2-ben a lándzsás figuráját kapta, tehát a képernyőn
+// SEMMI nem különböztette meg attól, amiért drágább és erősebb. Most saját
+// váza van (`FIG.BAJNOK`): magasabb testtel, ALABÁRDDAL a lándzsa helyett, és
+// a néptől függő pajzzsal.
+//
+// A nyolc nép különbsége viszont NEM nyolc geometria, hanem nyolc SOR a
+// megjelenés-táblákban: testmagasság, sisak Y-skála, alabárd-arány, pajzs
+// van/nincs és a jegyszín. Mind példányonkénti adat (skála a `reszMatrix`-ban,
+// szín az `instanceColor`-ban), amit a réteg amúgy is kiír — így a nyolc nép
+// NULLA rajzhívásba kerül. Az EGYETLEN új rajzhívás az alabárd-mesh, és az is
+// csak akkor megy ki, ha van bajnok a képen.
 //
 // ── MIÉRT NEM TÖMÖRÍTJÜK A FEGYVEREKET (eltérés a TELEPESEK-től) ──────────
 // A TELEPESEK-ben a szerszám és a cipelt áru RITKA és FUTÁS KÖZBEN VÁLTOZIK
@@ -126,37 +153,47 @@ import * as THREE from 'three';
 // fenn az „aktív kamera" jegyzéket, a `terrain3d` és a `props3d` is innen
 // veszi.
 import * as mag3d from './core3d.js';
-import { TIPUS, ALLAPOT, DT } from '../sim/units.js';
+import { ALLAPOT, DT } from '../sim/units.js';
+import {
+  FIG, FIGURA_DB, MEGJ_BAJNOK, megjelenesSor, ellenorizFigura,
+  TEST_KEVER, SISAK_KEVER, MERET_Y, MERET_XZ, SISAK_MX, SISAK_MY,
+  LEPES_HOSSZ, KAR_ALAP_BAL, KAR_ALAP_JOBB,
+  FEGY_SXZ, FEGY_SY, PAJZSOS, PAJZS_SX, PAJZS_SY,
+  osszevon, kezbe, epitAlabard,
+} from './egyseg_figurak.js';
 
 // ── ÁLLANDÓK ───────────────────────────────────────────────────────────────
 
 const TAU = Math.PI * 2;
 const FEL_PI = Math.PI * 0.5;
 
-/** Hány FIGURA-fajta van (a táblák ekkorák). */
-const TIPUS_DB = 4;
-
 /**
- * `sim`-TÍPUS → FIGURA-fajta. `-1` = ez a réteg NEM rajzolja ki.
+ * `sim`-TÍPUS → FIGURA-VÁZ. `-1` = ez a réteg NEM rajzolja ki.
  *
  * ⚠️ EZ VÁLTOTTA LE A `& 3` MASZKOT, ÉS NEM SZÉPÍTÉS. A maszk az ötödik
  * típust (ostromgép) a munkásra ejtette volna, ezért volt mellette egy
  * `tipus > 3 → rejtsd el` feltétel. A v0.9/2 hatodik típusa (`EGYEDI`) így
- * NÉMÁN LÁTHATATLAN lett volna: a sim kiképzi, a gép harcol vele, a hash
- * mozog — a képernyőn viszont nincs ott senki. Egy táblázat, ami kimondja,
- * mi mivé rajzolódik, ezt a hibafajtát megszünteti.
+ * NÉMÁN LÁTHATATLAN lett volna.
  *
- * Az egyedi egység egyelőre LÁNDZSÁS-figurát kap. Saját alak a v0.9/2b dolga;
- * addig is látszik, és a csapatszín megkülönbözteti.
+ * ⚠️ A `-1` NEM HASZNÁLHATÓ TÁBLA-INDEXNEK, ÉS EZ A TÁBLA EGYIK KÖLTSÉGE. A
+ * v0.9/2-ben a `_ujFelallas` mégis indexelt vele (`TIPUS_KEVER[-1][0]`), és a
+ * réteg TypeError-ral megállt, amint elkészült az első ostromgép. A `-1`-et
+ * ma EGYETLEN helyen szűrjük: a `_ujFelallas` hurkának elején.
+ *
+ * ⚠️ A TÁBLA ITT MARAD, NEM AZ `egyseg_figurak.js`-BEN. A
+ * `tools/kiadas_ellenorzo.mjs` 36. elvárása ezt a fájlt olvassa SZÖVEGESEN, és
+ * itt keresi név szerint — ha átköltözne, a kapu némán vakká válna. A tartalmi
+ * ellenőrzés viszont a katalógusé: `ellenorizFigura()` lent, betöltéskor.
  */
 const FIGURA = [
-  0,   // MUNKAS
-  1,   // LANDZSAS
-  2,   // IJASZ
-  3,   // LOVAG
-  -1,  // OSTROMGEP — saját rétege van (`ostrom3d.js`)
-  1,   // EGYEDI (v0.9/2) — lándzsás-figura, saját alak még nincs
+  FIG.MUNKAS,     // 0 MUNKAS
+  FIG.LANDZSAS,   // 1 LANDZSAS
+  FIG.IJASZ,      // 2 IJASZ
+  FIG.LOVAG,      // 3 LOVAG
+  -1,             // 4 OSTROMGEP — saját rétege van (`ostrom3d.js`)
+  FIG.BAJNOK,     // 5 EGYEDI (v0.9/2b) — alabárdos bajnok, civfüggő arányokkal
 ];
+ellenorizFigura(FIGURA);
 
 // A figura alap-magassága ~1,0 világegység, MÉRET-szorzó nélkül. A pálya egy
 // cellája 1 világegység, az ütközési sugarak 0,30–0,42 — egy ~1,0–1,3 magas
@@ -168,8 +205,9 @@ const CSIPO_X = 0.088, CSIPO_Y = 0.42;
 const LAB_HOSSZ = 0.42;
 const VALL_X = 0.155, VALL_Y = 0.735;
 const FEJ_Y = 0.86;
-/** A kéz helye a vállízülethez képest — ide kerül a fegyver markolata. */
-const MARKOLAT_Y = -0.30, MARKOLAT_Z = 0.035;
+// A kéz helye (`MARKOLAT_*`) és a `kezbe()` az `egyseg_figurak.js`-ben van: a
+// bajnok alabárdja is onnan épül, és két helyen álló markolat-eltolásból
+// előbb-utóbb két KÜLÖNBÖZŐ markolat-eltolás lesz.
 
 /** Bőrszín-alap (egységenként ±20% árnyalattal szórva). */
 const BOR_HEX = 0xe0b489;
@@ -180,53 +218,15 @@ const BOR_HEX = 0xe0b489;
  */
 const CSAPAT_HEX = [0x3f6fe0, 0xd63a2e];
 
-/**
- * Típusonkénti test-árnyalat: [keverőszín, keverő súly, fényerő].
- * A csapat-szín MARAD az uralkodó jel (azt kell 1600 egységnél elsőre
- * felismerni), a típus csak árnyalja — a MUNKAS fakó és barnás, a LOVAG
- * sötétebb és acélosabb.
- */
-const TIPUS_KEVER = [
-  [0x9a8258, 0.52, 0.94],   // MUNKAS   — durva vászon
-  [0xffffff, 0.06, 1.00],   // LANDZSAS — tiszta csapat-szín
-  [0x4f7a44, 0.30, 0.92],   // IJASZ    — zöldes köpeny
-  [0x2a2f3a, 0.26, 1.06],   // LOVAG    — sötét, telített
-];
-
-/** Sisak-árnyalat típusonként (a MUNKAS „sisakja" barna kalap). */
-const SISAK_KEVER = [
-  [0x8a6a3c, 0.80, 0.90],
-  [0xb9bec8, 0.55, 1.00],
-  [0x6d7a5a, 0.55, 0.96],
-  [0xd2d8e4, 0.62, 1.10],
-];
-
-/** Test-méret típusonként: [magasság, szélesség] szorzó. */
-const MERET_Y = [1.02, 1.10, 1.06, 1.30];
-const MERET_XZ = [1.00, 1.05, 1.00, 1.18];
-/** Sisak-méret szorzó (a LOVAG sisakja tömör, a MUNKASé lapos kalap). */
-const SISAK_MERET = [0.92, 1.00, 0.94, 1.14];
-
-/**
- * LÉPÉSHOSSZ típusonként (világegység). A járás-fázis ebből és a megtett
- * útból jön — nagyobb figura hosszabbat lép, tehát a LOVAG nem kapálózik.
- */
-const LEPES_HOSSZ = [0.72, 0.76, 0.74, 0.98];
-
-/**
- * ALAPTARTÁS: a kar nyugalmi szöge típusonként [bal, jobb], radiánban
- * (negatív = előre emelt). Ettől lesz felismerhető a típus MOZDULATLANUL is:
- *   MUNKAS   — vállra vetett csákány
- *   LANDZSAS — függőlegesen tartott lándzsa, bal karon a pajzs
- *   IJASZ    — a jobb kéz tartja az íjat (a szerződés szerint a fegyver a
- *              JOBB vállon van), a bal az ideget húzza
- *   LOVAG    — leeresztett, harcra kész kard
- */
-const KAR_ALAP_BAL = [-0.12, -0.62, -1.05, -0.16];
-const KAR_ALAP_JOBB = [-0.90, -0.34, -0.72, -0.28];
-
-// A fegyver-mesh indexe MEGEGYEZIK a típus indexével (0 csákány, 1 lándzsa,
-// 2 íj, 3 kard) — így a hurokban egyetlen tömb-olvasás, nincs elágazás.
+// A MEGJELENÉS-TÁBLÁK (test- és sisak-árnyalat, méret, lépéshossz, kar-alap-
+// tartás, fegyver- és pajzs-skála) az `egyseg_figurak.js`-ben állnak, mert a
+// bajnok miatt már nem négy, hanem tizenhárom soruk van. Ott a `MEGJ` index
+// nemcsak a figura-vázat, hanem a NÉPET is kódolja — a bajnok arányait a civje
+// szabja, és mindez PÉLDÁNYONKÉNTI adat, tehát nem kerül rajzhívásba.
+//
+// A fegyver-mesh indexe MEGEGYEZIK a figura-váz indexével (0 csákány,
+// 1 lándzsa, 2 íj, 3 kard, 4 alabárd) — így a hurokban egyetlen tömb-olvasás,
+// nincs elágazás.
 
 /** A járás-lengés amplitúdója (rad). */
 const LAB_LENGES = 0.62;
@@ -395,67 +395,8 @@ function reszMatrix(cel, ci, b, bo, px, py, pz, c, s, sx, sy, sz) {
 
 const _szinSeged = new THREE.Color();
 
-/**
- * Több apró geometria EGYBE olvasztása, részenként BESÜTÖTT vertex-színnel.
- * Így egy alkatrész (nyél + penge + él) EGYETLEN InstancedMesh marad, mégis
- * háromszínű — nem függünk a BufferGeometryUtils-tól.
- *   { g, c: hex }     — abszolút szín
- *   { g, k: [r,g,b] } — NYERS szorzó (ahol az instanceColor-t moduláljuk)
- * @param {Array<{g:THREE.BufferGeometry, c?:number, k?:number[]}>} reszek
- */
-function osszevon(reszek) {
-  const forras = [];
-  for (let i = 0; i < reszek.length; i++) {
-    const p = reszek[i];
-    if (!p || !p.g || !p.g.attributes || !p.g.attributes.position) continue;
-    const nyers = p.g.index ? p.g.toNonIndexed() : p.g;
-    if (!nyers.attributes.normal) nyers.computeVertexNormals();
-    forras.push({ g: nyers, c: p.c, k: p.k, sajat: nyers !== p.g, eredeti: p.g });
-  }
-  if (!forras.length) return new THREE.BufferGeometry();
-
-  let ossz = 0;
-  for (let i = 0; i < forras.length; i++) ossz += forras[i].g.attributes.position.count;
-
-  const P = new Float32Array(ossz * 3);
-  const N = new Float32Array(ossz * 3);
-  const C = new Float32Array(ossz * 3);
-  let o = 0;
-  for (let i = 0; i < forras.length; i++) {
-    const g = forras[i].g;
-    const db = g.attributes.position.count;
-    P.set(g.attributes.position.array.subarray(0, db * 3), o * 3);
-    N.set(g.attributes.normal.array.subarray(0, db * 3), o * 3);
-    let r = 1, zo = 1, b = 1;
-    if (forras[i].k) { r = forras[i].k[0]; zo = forras[i].k[1]; b = forras[i].k[2]; }
-    else {
-      _szinSeged.setHex(forras[i].c === undefined ? 0xffffff : forras[i].c);
-      r = _szinSeged.r; zo = _szinSeged.g; b = _szinSeged.b;
-    }
-    for (let k = 0; k < db; k++) {
-      C[(o + k) * 3] = r; C[(o + k) * 3 + 1] = zo; C[(o + k) * 3 + 2] = b;
-    }
-    o += db;
-  }
-
-  const ki = new THREE.BufferGeometry();
-  ki.setAttribute('position', new THREE.BufferAttribute(P, 3));
-  ki.setAttribute('normal', new THREE.BufferAttribute(N, 3));
-  ki.setAttribute('color', new THREE.BufferAttribute(C, 3));
-  ki.computeBoundingSphere();
-
-  for (let i = 0; i < forras.length; i++) {
-    forras[i].g.dispose();
-    if (forras[i].sajat && forras[i].eredeti.dispose) forras[i].eredeti.dispose();
-  }
-  return ki;
-}
-
-/** A markolatot a KÉZBE tolja (a vállízület az origó, a kar lefelé lóg). */
-function kezbe(g) {
-  g.translate(0, MARKOLAT_Y, MARKOLAT_Z);
-  return g;
-}
+// Az `osszevon()` és a `kezbe()` az `egyseg_figurak.js`-ben van (a bajnok
+// alabárdja is azokra épül) — onnan importáljuk.
 
 /** TEST — tunika + öv + váll. ~49 háromszög. Az origó a TALP. */
 function epitTest() {
@@ -658,8 +599,10 @@ export class Egysegek3D {
     this._projM = new THREE.Matrix4();
     this._frustum = new THREE.Frustum();
     this._gomb = new THREE.Sphere(new THREE.Vector3(), 0.95);
-    this._tipusSzam = new Int32Array(TIPUS_DB);
-    this._maxFegyver = new Int32Array(TIPUS_DB);
+    this._vazSzam = new Int32Array(FIGURA_DB);
+    this._maxFegyver = new Int32Array(FIGURA_DB);
+    /** A csapatok civje, amivel a megjelenés-sorokat utoljára kiszámoltuk. */
+    this._civJegy = new Int32Array(8).fill(-2);
 
     const kap = (opciok.maxEgyseg | 0)
       || (sim && sim.egysegek ? sim.egysegek.maxDb | 0 : 0) || 2048;
@@ -722,9 +665,17 @@ export class Egysegek3D {
     if (db > this._kap) db = this._kap;
 
     // ÚJ FELÁLLÁS? A `szondaFelallas` nullázza a `db`-t és újratölti, ilyenkor
-    // a típusok és a színek is mások lehetnek. Két jelet nézünk: változott a
-    // darabszám, vagy a tick visszaugrott (új meccs).
-    if (db !== this._db || sim.tick < this._elozoTick) this._ujFelallas(e, db);
+    // a típusok és a színek is mások lehetnek. Három jelet nézünk: változott a
+    // darabszám, visszaugrott a tick (új meccs), vagy CIVET VÁLTOTT egy csapat.
+    //
+    // ⚠️ A CIV-JEL NEM DÍSZ (v0.9/2b). A bajnok arányai és színe a csapat
+    // civjéből jönnek, a civet viszont a menü a felállás UTÁN is beállíthatja
+    // (`sim.civValaszt`), és olyankor a darabszám nem változik. E nélkül a
+    // jelzés nélkül a nyolc nép bajnoka a semleges soron ragadna — pontosan az
+    // a néma, „minden zöld, mégis rossz" hibafajta, amiből ez a réteg jött.
+    if (db !== this._db || sim.tick < this._elozoTick || this._civValtozott(sim)) {
+      this._ujFelallas(sim, e, db);
+    }
     this._elozoTick = sim.tick;
 
     this._pillanat(e, db, sim.tick);
@@ -798,6 +749,7 @@ export class Egysegek3D {
       landzsa: epitLandzsa(),
       ij: epitIj(),
       kard: epitKard(),
+      alabard: epitAlabard(),
       pajzs: epitPajzs(),
     };
 
@@ -854,11 +806,17 @@ export class Egysegek3D {
     this._mJobbLab = imk(this._geo.jobbLab, this._anyag.vegtag, k, false);
     this._mBalKar = imk(this._geo.balKar, this._anyag.vegtag, k, false);
     this._mJobbKar = imk(this._geo.jobbKar, this._anyag.vegtag, k, false);
+    // ⚠️ A FEGYVER-MESHEK SORRENDJE A `FIG.*` INDEXELÉS. Az ötödik (alabárd) a
+    // bajnoké, és ez az EGYETLEN új rajzhívás a v0.9/2b-ben — a nyolc nép
+    // közti különbség példány-adat (skála, szín), nem geometria. Ha nincs
+    // bajnok a pályán, a `count` nulla marad, tehát a réteg továbbra is 12
+    // rajzhívás: a régi FPS-mérések összehasonlíthatók maradnak.
     this._mFegyver = [
       imk(this._geo.csakany, this._anyag.fegyver, k, false),
       imk(this._geo.landzsa, this._anyag.fegyver, k, false),
       imk(this._geo.ij, this._anyag.fegyver, k, false),
       imk(this._geo.kard, this._anyag.fegyver, k, false),
+      imk(this._geo.alabard, this._anyag.fegyver, k, false),
     ];
     this._mPajzs = imk(this._geo.pajzs, this._anyag.pajzs, k, true);
 
@@ -866,6 +824,7 @@ export class Egysegek3D {
       this._mTest, this._mFej, this._mSisak,
       this._mBalLab, this._mJobbLab, this._mBalKar, this._mJobbKar,
       this._mFegyver[0], this._mFegyver[1], this._mFegyver[2], this._mFegyver[3],
+      this._mFegyver[4],
       this._mPajzs,
     ];
     for (let i = 0; i < this._meshek.length; i++) {
@@ -893,6 +852,7 @@ export class Egysegek3D {
       this._mFegyver[1].instanceMatrix.array,
       this._mFegyver[2].instanceMatrix.array,
       this._mFegyver[3].instanceMatrix.array,
+      this._mFegyver[4].instanceMatrix.array,
     ];
     this._aPajzs = this._mPajzs.instanceMatrix.array;
     this._cTest = this._mTest.instanceColor.array;
@@ -911,7 +871,22 @@ export class Egysegek3D {
     this._mostSzog = new Float32Array(k);
 
     // Felállás-függő, EGYSZER számolt adatok.
+    /**
+     * MEGJELENÉS-SOR egységenként (`egyseg_figurak.js` → `MEGJ`). A figura-váz
+     * ÉS a nép is benne van, ezért a képkocka-hurok EGY `Uint8Array`-olvasással
+     * megkapja a bajnok minden arányát — nem kell civet keresgélni.
+     */
+    this._megj = new Uint8Array(k);
     this._fegyverIdx = new Int32Array(k);
+    /**
+     * PAJZS-SLOT, vagy `-1`, ha nincs pajzsa.
+     * ⚠️ SAJÁT SZÁMLÁLÓ, nem a fegyver-slot. A pajzs EGYETLEN meshben van, de
+     * KÉT figura-váz visel (lándzsás és a pajzsos bajnokok), és a
+     * fegyver-slotok VÁZANKÉNT nulláról indulnak — ha a pajzs a fegyver-slotot
+     * használná, a 7. lándzsás és a 7. bajnok ugyanarra a pajzs-példányra írna,
+     * és egyikük pajzsa a másik testébe ugrálna át.
+     */
+    this._pajzsIdx = new Int32Array(k);
     this._meretY = new Float32Array(k);
     this._meretXZ = new Float32Array(k);
     this._faz0 = new Float32Array(k);         // járás fázis-eltolás
@@ -956,22 +931,48 @@ export class Egysegek3D {
    * animációs fázisok újraszámolása. O(db), de csak felálláskor fut — a
    * képkocka-hurokban egyetlen hash-hívás sincs.
    */
-  _ujFelallas(e, db) {
+  _ujFelallas(sim, e, db) {
     this._db = db;
-    this._tipusSzam.fill(0);
+    this._vazSzam.fill(0);
+    let pajzsSzam = 0;
+    const civTomb = (sim && sim.egyedi && sim.egyedi.civ) ? sim.egyedi.civ : null;
 
     for (let i = 0; i < db; i++) {
       const t = FIGURA[e.tipus[i]];
       const cs = e.csapat[i] & 1;
 
-      // A típuson belüli ÁLLANDÓ hely a fegyver-meshben (lásd fejléc).
-      this._fegyverIdx[i] = this._tipusSzam[t]++;
+      // ⚠️ AZ EGYETLEN HELY, AHOL A `-1`-ET KISZŰRJÜK — ÉS EDDIG NEM VOLT ITT.
+      // A `FIGURA[OSTROMGEP]` `-1`, mert azt az `ostrom3d.js` rajzolja. A
+      // v0.9/2-ig ez a hurok mégis végigment rajta: `this._vazSzam[-1]++`
+      // némán NaN-t adott, `MERET_Y[-1]` `undefined`-ot, a
+      // `TIPUS_KEVER[-1][0]` pedig **TypeError**-t — a teljes render-hurok
+      // elszállt, amint a gép kiképezte az első faltörő kost. A determinizmus-
+      // kapu ebből semmit nem lát: a sim zöld, csak a képernyő fekete.
+      // A `-1`-es slotok üresen maradnak; a `_rajzol` úgyis `vis = 0`-t ad
+      // nekik, a `_rejtReszek` pedig a `-1`-es fegyver-slotra nem ír.
+      if (t < 0) {
+        this._fegyverIdx[i] = -1;
+        this._pajzsIdx[i] = -1;
+        this._megj[i] = 0;
+        continue;
+      }
+
+      // MEGJELENÉS-SOR: a figura-váz, bajnoknál a NÉP is. A civ a csapaté, és
+      // a meccs alatt nem változik — a `frissit()` civ-jele mégis figyeli,
+      // mert a menü a felállás után is beállíthatja.
+      const mj = megjelenesSor(t, civTomb ? civTomb[cs] : -1);
+      this._megj[i] = mj;
+
+      // A VÁZON belüli ÁLLANDÓ hely a fegyver-meshben (lásd fejléc).
+      this._fegyverIdx[i] = this._vazSzam[t]++;
+      // A pajzsnak SAJÁT slot-tere van: egy mesh, két viselő váz.
+      this._pajzsIdx[i] = PAJZSOS[mj] ? pajzsSzam++ : -1;
 
       // TERMET: ±6% magasság, ±4% testesség — a tömeg ne ötven klón legyen.
       const v1 = valtozat(i, 0x27d4eb2f);
       const v2 = valtozat(i, 0x165667b1);
-      this._meretY[i] = MERET_Y[t] * (0.94 + 0.12 * v1);
-      this._meretXZ[i] = MERET_XZ[t] * (0.96 + 0.08 * v2);
+      this._meretY[i] = MERET_Y[mj] * (0.94 + 0.12 * v1);
+      this._meretXZ[i] = MERET_XZ[mj] * (0.96 + 0.08 * v2);
 
       // ANIMÁCIÓS FÁZISOK — aranymetszéses szórás + egyedi keverés, hogy a
       // sereg ne egy emberként lépjen.
@@ -985,15 +986,23 @@ export class Egysegek3D {
 
       // ── SZÍNEK: EGYSZER írjuk, utána a puffer nem mozdul ────────────────
       const ruha = 0.93 + 0.14 * valtozat(i, 0x9e3779b1);
-      this._szinKever(CSAPAT_HEX[cs], TIPUS_KEVER[t], ruha, this._cTest, i);
-      this._szinKever(CSAPAT_HEX[cs], SISAK_KEVER[t], 1.0, this._cSisak, i);
-      // pajzs: tiszta csapat-szín, hogy a falanx messziről is olvasható legyen
-      _szinSeged.setHex(CSAPAT_HEX[cs]);
-      const pi = this._fegyverIdx[i] * 3;
-      if (t === TIPUS.LANDZSAS) {
-        this._cPajzs[pi] = _szinSeged.r * 1.05;
-        this._cPajzs[pi + 1] = _szinSeged.g * 1.05;
-        this._cPajzs[pi + 2] = _szinSeged.b * 1.05;
+      this._szinKever(CSAPAT_HEX[cs], TEST_KEVER[mj], ruha, this._cTest, i);
+      this._szinKever(CSAPAT_HEX[cs], SISAK_KEVER[mj], 1.0, this._cSisak, i);
+      // PAJZS. A lándzsásé tiszta csapat-szín, hogy a falanx messziről is
+      // olvasható legyen; a bajnoké a NÉP jegyszínét kapja — a bajnokból
+      // kevés van, tehát a pajzsa nem zavarja meg a csapat-szín olvasását,
+      // viszont közelről megmondja, melyik nép küldte.
+      const pj = this._pajzsIdx[i];
+      if (pj >= 0) {
+        if (mj >= MEGJ_BAJNOK) {
+          this._szinKever(CSAPAT_HEX[cs], SISAK_KEVER[mj], 1.06, this._cPajzs, pj);
+        } else {
+          _szinSeged.setHex(CSAPAT_HEX[cs]);
+          const pi = pj * 3;
+          this._cPajzs[pi] = _szinSeged.r * 1.05;
+          this._cPajzs[pi + 1] = _szinSeged.g * 1.05;
+          this._cPajzs[pi + 2] = _szinSeged.b * 1.05;
+        }
       }
       // BŐRSZÍN: négy árnyalat közt keverve (világosabb ↔ sötétebb, melegebb)
       _szinSeged.setHex(BOR_HEX);
@@ -1010,7 +1019,7 @@ export class Egysegek3D {
     this._mPajzs.instanceColor.needsUpdate = true;
 
     // Példányszámok. A sűrű alkatrészeké a teljes darabszám, a fegyvereké a
-    // típusonkénti darabszám — a pajzsé a lándzsásoké.
+    // vázankénti darabszám — a pajzsé a pajzsot VISELŐKÉ (két váz, egy mesh).
     this._mTest.count = db;
     this._mFej.count = db;
     this._mSisak.count = db;
@@ -1018,11 +1027,30 @@ export class Egysegek3D {
     this._mJobbLab.count = db;
     this._mBalKar.count = db;
     this._mJobbKar.count = db;
-    for (let t = 0; t < TIPUS_DB; t++) this._mFegyver[t].count = this._tipusSzam[t];
-    this._mPajzs.count = this._tipusSzam[TIPUS.LANDZSAS];
+    for (let t = 0; t < FIGURA_DB; t++) this._mFegyver[t].count = this._vazSzam[t];
+    this._mPajzs.count = pajzsSzam;
 
     this._ervenytelenit();
     this._tarolTick = -1;      // az interpolációs pillanatkép is elavult
+  }
+
+  /**
+   * Váltott-e civet valamelyik csapat a legutóbbi felállás óta?
+   *
+   * Nyolc egész összehasonlítás képkockánként — ennyiért cserébe a bajnok
+   * SOSEM ragad a semleges soron. A `sim.egyedi.civ` a sim tulajdona, mi csak
+   * OLVASSUK (a render sosem ír vissza).
+   */
+  _civValtozott(sim) {
+    const cv = sim && sim.egyedi ? sim.egyedi.civ : null;
+    if (!cv) return false;
+    let n = cv.length;
+    if (n > 8) n = 8;
+    let valt = false;
+    for (let k = 0; k < n; k++) {
+      if (this._civJegy[k] !== cv[k]) { this._civJegy[k] = cv[k]; valt = true; }
+    }
+    return valt;
   }
 
   /** csapat-szín × típus-keverő → lineáris rgb az instanceColor pufferbe. */
@@ -1142,9 +1170,9 @@ export class Egysegek3D {
     // a `count`-ot le tudjuk vinni a LEGNAGYOBB HASZNÁLT slotra, és a sim a
     // csapatokat összefüggő index-tartományban hozza létre, tehát ha csak az
     // egyik sereget nézzük, ez nagyjából felezi a terhelést.
-    let maxTest = -1, maxReszlet = -1;
+    let maxTest = -1, maxReszlet = -1, maxPajzs = -1;
     const maxFegyver = this._maxFegyver;
-    maxFegyver[0] = -1; maxFegyver[1] = -1; maxFegyver[2] = -1; maxFegyver[3] = -1;
+    for (let t = 0; t < FIGURA_DB; t++) maxFegyver[t] = -1;
 
     for (let i = 0; i < db; i++) {
       // ── POZÍCIÓ: interpoláció az előző és a mostani tick között ──────────
@@ -1169,10 +1197,13 @@ export class Egysegek3D {
       // távolság- és frusztum-vágáshoz (nulla skálájú mátrix), tehát a halál
       // ugyanazon az úton megy ki a képből — nem kellett új mechanizmus.
       // v0.4/6: az OSTROMGÉP (típus 4) nem figura — saját rétege van
-      // (`ostrom3d.js`). Ez a réteg `& 3`-mal maszkol, tehát az ötödik típus
-      // itt a munkásra esne vissza; ezért zárjuk ki, nem pedig bővítjük.
+      // (`ostrom3d.js`), ezért a `FIGURA` `-1`-et ad rá, és itt esik ki.
+      // ⚠️ A `tip`-et EGYSZER olvassuk ki és végig ezt használjuk. Korábban
+      // háromszor is kiszámolta a hurok, és a rejtő ág egy `< 0 ? 0 : …`
+      // trükkel MUNKÁSNAK hazudta az ostromgépet — lásd `_rejtReszek`.
+      const tip = FIGURA[e.tipus[i]];
       let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1)
-        || FIGURA[e.tipus[i]] < 0) ? 0 : 2;
+        || tip < 0) ? 0 : 2;
       if (kam && vis !== 0) {
         if (fixSzint >= 0) {
           vis = fixSzint;
@@ -1189,7 +1220,7 @@ export class Egysegek3D {
 
       if (vis === 0) {
         if (this._uVis[i] !== 0) {
-          this._rejtMind(i, FIGURA[e.tipus[i]] < 0 ? 0 : FIGURA[e.tipus[i]]);
+          this._rejtMind(i, tip);
           this._uVis[i] = 0; this._uAnim[i] = 0;
           piszkos = true; irt++;
         }
@@ -1198,7 +1229,8 @@ export class Egysegek3D {
       lathato++;
       if (vis === 2) kozel++;
 
-      const tip = FIGURA[e.tipus[i]];
+      /** MEGJELENÉS-SOR: a váz és — bajnoknál — a nép. Egy `Uint8Array` olvasás. */
+      const mj = this._megj[i];
       const allapot = e.allapot[i];
 
       // A példányszám-vágás felső határai — a gyorstár-találat ELŐTT, mert a
@@ -1208,6 +1240,8 @@ export class Egysegek3D {
         if (i > maxReszlet) maxReszlet = i;
         const fj = this._fegyverIdx[i];
         if (fj > maxFegyver[tip]) maxFegyver[tip] = fj;
+        const pj0 = this._pajzsIdx[i];
+        if (pj0 > maxPajzs) maxPajzs = pj0;
       }
 
       // ── JÁRÁS-FÁZIS A MEGTETT ÚTBÓL ─────────────────────────────────────
@@ -1220,12 +1254,12 @@ export class Egysegek3D {
       let jarFaz = 0, jarSuly = 0;
       if (seb2 > 1e-6) {
         const seb = Math.sqrt(seb2);
-        jarFaz = ((ido * seb * (Math.PI / LEPES_HOSSZ[tip])) % TAU) + this._faz0[i];
+        jarFaz = ((ido * seb * (Math.PI / LEPES_HOSSZ[mj])) % TAU) + this._faz0[i];
         jarSuly = 1;
       }
 
       // ── MOZDULAT ────────────────────────────────────────────────────────
-      let labSzog = 0, karBal = KAR_ALAP_BAL[tip], karJobb = KAR_ALAP_JOBB[tip];
+      let labSzog = 0, karBal = KAR_ALAP_BAL[mj], karJobb = KAR_ALAP_JOBB[mj];
       let bukkan = 0, doles = 0, dol = 0, iranyPlusz = 0, oldal = 0;
       let anim = 0;
 
@@ -1253,7 +1287,7 @@ export class Egysegek3D {
         const w = ido * 7.5 + this._faz0[i];
         const sw = szin(w);
         karJobb = -0.55 - (0.5 - 0.5 * sw) * 1.6;
-        karBal = KAR_ALAP_BAL[tip] - 0.15;
+        karBal = KAR_ALAP_BAL[mj] - 0.15;
         doles = 0.16 - sw * 0.06;
         anim = 1;
       } else {
@@ -1344,11 +1378,14 @@ export class Egysegek3D {
 
       if (vis === 2) {
         const bo = i * 16;
-        // FEJ és SISAK — az ízület a fej közepe, forgatás nincs (a sisak
-        // mérete típusonként MÁS, ezt a skála-paraméterek adják).
+        // FEJ és SISAK — az ízület a fej közepe, forgatás nincs.
+        // ⚠️ A SISAK X- ÉS Y-SKÁLÁJA KÜLÖN JÁR (v0.9/2b). A sisak egy kúp;
+        // egyenletes skálán minden fej ugyanolyan alakú marad, csak nagyobb.
+        // A külön Y-ból UGYANABBÓL A GEOMETRIÁBÓL lesz lapos vadász-sapka és
+        // csúcsos bástyaőr-torony — geometria és rajzhívás nélkül.
         reszMatrix(aFej, i, aTest, bo, 0, FEJ_Y, 0, 1, 0, 1, 1, 1);
-        const sm = SISAK_MERET[tip];
-        reszMatrix(aSisak, i, aTest, bo, 0, FEJ_Y, 0, 1, 0, sm, sm, sm);
+        const smx = SISAK_MX[mj], smy = SISAK_MY[mj];
+        reszMatrix(aSisak, i, aTest, bo, 0, FEJ_Y, 0, 1, 0, smx, smy, smx);
 
         // LÁBAK — a csípő körül, ELLENFÁZISBAN
         const lc = kosz(labSzog), ls = szin(labSzog);
@@ -1362,11 +1399,20 @@ export class Egysegek3D {
         reszMatrix(aJobbKar, i, aTest, bo, VALL_X, VALL_Y, 0, jc, js, 1, 1, 1);
 
         // FEGYVER — a JOBB VÁLL ízületén, a kar SZÖGÉVEL: együtt mozog vele.
+        // A skála a MEGJELENÉS-SORBÓL jön: a bajnok alabárdja civenként más
+        // arányú (a Kőtörőé baltányi lapú, a Sztyeppei portyáé nyurga), az
+        // alap-figuráké 1,0 — tehát ugyanaz a két tábla-olvasás mindenkinek,
+        // elágazás nélkül.
         const fi = this._fegyverIdx[i];
-        reszMatrix(aFegyver[tip], fi, aTest, bo, VALL_X, VALL_Y, 0, jc, js, 1, 1, 1);
-        // PAJZS — a BAL váll ízületén, a bal kar szögével.
-        if (tip === TIPUS.LANDZSAS) {
-          reszMatrix(aPajzs, fi, aTest, bo, -VALL_X, VALL_Y, 0, bc, bs, 1, 1, 1);
+        const fsx = FEGY_SXZ[mj], fsy = FEGY_SY[mj];
+        reszMatrix(aFegyver[tip], fi, aTest, bo, VALL_X, VALL_Y, 0, jc, js,
+          fsx, fsy, fsx);
+        // PAJZS — a BAL váll ízületén, a bal kar szögével. Saját slot-tér:
+        // egy mesh, két viselő váz (lándzsás + pajzsos bajnokok).
+        const pj = this._pajzsIdx[i];
+        if (pj >= 0) {
+          reszMatrix(aPajzs, pj, aTest, bo, -VALL_X, VALL_Y, 0, bc, bs,
+            PAJZS_SX[mj], PAJZS_SY[mj], PAJZS_SX[mj]);
         }
       } else if (this._uVis[i] !== 1) {
         // TÁVOLI LOD: csak a test sziluettje marad. A rejtést CSAK a
@@ -1389,8 +1435,8 @@ export class Egysegek3D {
     this._mJobbLab.count = nReszlet;
     this._mBalKar.count = nReszlet;
     this._mJobbKar.count = nReszlet;
-    for (let t = 0; t < TIPUS_DB; t++) this._mFegyver[t].count = maxFegyver[t] + 1;
-    this._mPajzs.count = maxFegyver[TIPUS.LANDZSAS] + 1;
+    for (let t = 0; t < FIGURA_DB; t++) this._mFegyver[t].count = maxFegyver[t] + 1;
+    this._mPajzs.count = maxPajzs + 1;
 
     // ── FELTÖLTÉS ─────────────────────────────────────────────────────────
     // Egyetlen `needsUpdate` képkockánként meshenként; ha SENKI nem mozdult
@@ -1409,7 +1455,18 @@ export class Egysegek3D {
 
   // ── SEGÉDEK (példány-szint) ─────────────────────────────────────────────
 
-  /** A finom alkatrészek elrejtése (távoli LOD). A test marad. */
+  /**
+   * A finom alkatrészek elrejtése (távoli LOD). A test marad.
+   *
+   * ⚠️ A `tip < 0` ÁG NEM ELMÉLETI. A fej/végtag-slotok az egység INDEXÉVEL
+   * címzettek, a fegyver- és pajzs-slotok viszont VÁZANKÉNTI számlálóval — az
+   * ostromgépnek ilyenje nincs. A hívó korábban `tip < 0 ? 0 : tip`-et adott
+   * át, vagyis MUNKÁSNAK hazudta: a `_fegyverIdx` NaN-ból lett nullája miatt
+   * minden ostromgép a 0. CSÁKÁNYT rejtette el — az első munkás fegyvere
+   * eltűnt a kezéből, és a dirty-gyorstár miatt vissza sem jött.
+   * @param {number} i egység-index
+   * @param {number} tip FIGURA-váz, vagy `-1` (nem ez a réteg rajzolja)
+   */
   _rejtReszek(i, tip) {
     rejtMatrix(this._aFej, i);
     rejtMatrix(this._aSisak, i);
@@ -1417,12 +1474,17 @@ export class Egysegek3D {
     rejtMatrix(this._aJobbLab, i);
     rejtMatrix(this._aBalKar, i);
     rejtMatrix(this._aJobbKar, i);
+    if (tip < 0) return;
     const fi = this._fegyverIdx[i];
-    rejtMatrix(this._aFegyver[tip], fi);
-    if (tip === TIPUS.LANDZSAS) rejtMatrix(this._aPajzs, fi);
+    if (fi >= 0) rejtMatrix(this._aFegyver[tip], fi);
+    const pj = this._pajzsIdx[i];
+    if (pj >= 0) rejtMatrix(this._aPajzs, pj);
   }
 
-  /** A teljes figura elrejtése (látómezőn kívül / túl messze). */
+  /**
+   * A teljes figura elrejtése (halott, beszállt, látómezőn kívül, túl messze,
+   * vagy NEM EZ A RÉTEG rajzolja — ostromgép).
+   */
   _rejtMind(i, tip) {
     rejtMatrix(this._aTest, i);
     this._rejtReszek(i, tip);

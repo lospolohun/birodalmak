@@ -33,6 +33,11 @@ process.on('exit', takarit);
 // A `vite preview` `localhost`-ra köt, ami macOS-en ::1 is lehet — ezért
 // névvel várjuk, ne 127.0.0.1-gyel (ezen a szonda már egyszer elhasalt).
 const cim = 'http://localhost:' + PORT + '/';
+// ⚠️ A KÉP A `?szonda=1` CÍMRŐL KÉSZÜL. A v0.11 óta a játék főmenüvel indul, és
+// a világ csak az „Indítás" gombra épül fel — a kép különben a kezdőképernyőt
+// mutatná, a `waitForFunction(keszen)` pedig 60 mp után elszállna. A megkerülő
+// út a menü nélkül, azonnal a v0.1 óta fényképezett világot építi fel.
+const jatekCim = cim + '?szonda=1';
 let bongeszo;
 try {
   for (let i = 0; i < 60; i++) {
@@ -42,7 +47,7 @@ try {
 
   bongeszo = await chromium.launch({ ...chromeOpt(), args: ['--use-gl=angle'] });
   const lap = await bongeszo.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 });
-  await lap.goto(cim, { waitUntil: 'load' });
+  await lap.goto(jatekCim, { waitUntil: 'load' });
   await lap.waitForFunction(() => window.__aoc && window.__aoc.keszen === true, { timeout: 60000 });
 
   await lap.evaluate((n) => window.__aoc.egysegSzam(n), EGYSEG);
