@@ -241,6 +241,7 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
   let elozoFejezet = sim.tortenet.fejezet;
   let elozoNaploHossz = sim.naplok.length;
   let elozoVege = sim.jatekVege;
+  let hibaVolt = false;
 
   function eszkozMeret() {
     const e = epitesSav.eszkoz;
@@ -272,8 +273,37 @@ function hurok({ sim, szinter, allomas, lenyek, hud, epitesSav, panelek, modalok
     return false;
   }
 
+  /**
+   * Egy képkocka — kivétel-védelemmel.
+   *
+   * ── MIÉRT KELL EZ EGY 1.0-HOZ ───────────────────────────────────────────
+   * A `requestAnimationFrame` hurokban egy kivétel NEM állítja meg a
+   * ciklust, de az adott képkockát félbevágja: a világ leléptetve, a kép nem
+   * rajzolva, a felület fele frissítve. A játékos ebből annyit lát, hogy a
+   * játék „megfagyott" vagy „megbolondult" — a konzolt pedig nem nézi meg.
+   *
+   * Itt inkább KIMONDJUK. A szimulációt megállítjuk (a hibás állapotot ne
+   * vigyük tovább), a rajzolás megy tovább (legyen mit nézni), és a játékos
+   * megkapja a hibaüzenetet meg azt a tanácsot, ami tényleg segít: mentsen
+   * fájlba, mert abból a hiba bitre újrajátszható.
+   */
   function keret(most) {
     requestAnimationFrame(keret);
+    try {
+      keretBelso(most);
+    } catch (e) {
+      if (!hibaVolt) {
+        hibaVolt = true;
+        vezerlo.sebesseg(0);
+        console.error('PORTAL HUB TYCOON — hiba a fő hurokban:', e);
+        hud.uzen('Hiba történt, a világ megállt. Mentsd fájlba (💾 panel) — abból a hiba újrajátszható.', 'baj');
+      }
+      // A rajzolás akkor is fusson le, hogy ne fagyott képernyőt lásson.
+      try { szinter.rajzol(); } catch (e2) { /* ha ez sem megy, nincs mit tenni */ }
+    }
+  }
+
+  function keretBelso(most) {
     const dt = Math.min(0.25, (most - utolsoIdo) / 1000);
     utolsoIdo = most;
     ido += dt;
