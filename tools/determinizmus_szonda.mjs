@@ -1341,6 +1341,172 @@ let mentesBukas = bukas;
 sor('lefutott', ((Date.now() - t10) / 1000).toFixed(1) + ' mp');
 mentesBukas = bukas - mentesBukas;
 
+// ════════════════════════════════════════════════════════════════════════════
+// 11) v0.8/1 — LOCKSTEP MAG
+// ════════════════════════════════════════════════════════════════════════════
+//
+// A hálózat nem világállapotot küld, hanem PARANCSOKAT: ki mit adott ki és
+// melyik körre. Minden gép ugyanazt a szimulációt futtatja ugyanarra a
+// parancs-sorra — és ha a sim determinisztikus, az eredmény bitre azonos.
+//
+// Ezért volt a determinizmus KAPU a v0.1 óta: a teljes hálózati terv erre az
+// egy feltevésre épül. Ez a vizsgálat az, ami végre KI IS PRÓBÁLJA.
+//
+// ⚠️ ÉS EZÉRT NEM ELÉG MEGNÉZNI, HOGY KÉT EGYEZŐ FUTÁS EGYEZŐNEK LÁTSZIK-E.
+// Egy desync-detektor, ami sosem sül el, ROSSZABB A SEMMINÉL: biztonságérzetet
+// ad. A vizsgálat második fele ezért SZÁNDÉKOSAN elrontja az egyik oldalt, és
+// megköveteli, hogy a detektor kiszúrja.
+cim('11) v0.8/1 LOCKSTEP — két gép, közös parancs-sor');
+const t11 = Date.now();
+let lockstepBukas = bukas;
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const { Lockstep, KOR_TICK, KESLELTETES_KOR, ALLAPOT } = await import(
+    pathToFileURL(join(GYOKER, 'src', 'net', 'lockstep.js')).href);
+  const { Hurok } = await import(pathToFileURL(join(GYOKER, 'src', 'net', 'hurok.js')).href);
+
+  const KOROK = ervSzam('lskor', 900);
+
+  /**
+   * Két „gép", két friss sim, egy hurok. A parancsokat a KÖRSZÁMBÓL
+   * származtatjuk, nem véletlenből — így a vizsgálat maga is reprodukálható,
+   * és mindkét játékos ad parancsot (nem csak az egyik).
+   */
+  function ketGep(keses, rontas) {
+    const h = new Hurok();
+    const gepek = [];
+    for (let j = 0; j < 2; j++) {
+      const sim = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+      sim.szondaFelallasV06(FORGATOKONYVEK.v06.egysegSzam);
+      const ls = new Lockstep(sim, {
+        jatekos: j, jatekosDb: 2, kuld: (u) => h.kuld(u),
+      });
+      h.csatlakoz(j, (u) => ls.fogad(u), keses);
+      gepek.push({ sim, ls });
+    }
+    // INDÍTÁS CSAK AZ ÖSSZES VÉGPONT BEKÖTÉSE UTÁN — lásd `Lockstep.indit()`.
+    for (let j = 0; j < 2; j++) gepek[j].ls.indit();
+    for (let k = 0; k < KOROK; k++) {
+      for (let j = 0; j < 2; j++) {
+        const g = gepek[j];
+        // Minden 15. körben mindkét játékos menetparancsot ad a saját
+        // seregének. A cél a körszámból jön — determinisztikus „játékos".
+        if ((k % 15) === (j * 7)) {
+          const e = g.sim.egysegek;
+          const kik = [];
+          for (let i = 0; i < e.db && kik.length < 5; i++) {
+            if (e.csapat[i] === j && g.sim.harc.elo[i] && e.tipus[i] !== 0) kik.push(i);
+          }
+          if (kik.length) {
+            g.ls.helyiParancs({
+              fajta: 'menet', egysegek: kik,
+              x: 40 + ((k * 13) % 170), y: 40 + ((k * 29) % 170),
+            });
+          }
+        }
+        g.ls.lep();
+      }
+      h.lep();
+      // A ROMLÁS: egyetlen egység pozícióját elmozdítjuk az EGYIK gépen. Ez a
+      // legkisebb elképzelhető eltérés — ha ezt nem fogja meg a detektor,
+      // akkor egy valódi desyncet sem fogna meg.
+      if (rontas > 0 && k === rontas && gepek[1].sim.egysegek.db > 0) {
+        gepek[1].sim.egysegek.px[0] += 0.001;
+      }
+    }
+    return { gepek, hurok: h };
+  }
+
+  // ── A) TISZTA FUTÁS, KÉSLELTETETT HÁLÓZATTAL ───────────────────────
+  const A = ketGep(1, 0);
+  const a0 = A.gepek[0].ls.osszesites(), a1 = A.gepek[1].ls.osszesites();
+  const h0 = A.gepek[0].sim.allapotHash(), h1 = A.gepek[1].sim.allapotHash();
+  sor('lefutott kör', a0.vegrehajtottKor + ' / ' + a1.vegrehajtottKor,
+    KOR_TICK + ' tick/kör, bemenet-késleltetés ' + KESLELTETES_KOR + ' kör');
+  sor('csomag', a0.kuldott + ' küldött · ' + a0.fogadott + ' fogadott',
+    'hurok: ' + A.hurok.tovabbitott + ' továbbított, 1 kör késés');
+  sor('végrehajtott parancs', a0.vegrehajtottParancs + ' / ' + a1.vegrehajtottParancs);
+  sor('hash-vizsgálat', a0.hashVizsgalat + ' / ' + a1.hashVizsgalat, 'desync-detektor futásai');
+  sor('záró hash', '0x' + (h0 >>> 0).toString(16).padStart(8, '0')
+    + (h0 === h1 ? '  =  ' : '  ≠  ') + '0x' + (h1 >>> 0).toString(16).padStart(8, '0'));
+
+  if (a0.vegrehajtottKor === 0 || a1.vegrehajtottKor === 0) {
+    console.log('\n  \u26d4 A LOCKSTEP EGYETLEN KÖRT SEM HAJTOTT VÉGRE: örökre vár.');
+    console.log('     Nézd meg a kezdő üres csomagokat (`KESLELTETES_KOR` darab)');
+    console.log('     és a `_teljes()` feltételt.');
+    bukas++;
+  } else if (h0 !== h1) {
+    console.log('\n  \u26d4 A KÉT GÉP SZÉTTARTOTT, pedig ugyanazt a parancs-sort kapta.');
+    console.log('     Ez NEM hálózati hiba: vagy a sim nem determinisztikus, vagy a');
+    console.log('     parancsok VÉGREHAJTÁSI SORRENDJE gépenként más. Elsőnek a');
+    console.log('     `Lockstep.lep()` játékos-sorrendű ciklusát nézd meg.');
+    bukas++;
+  } else if (a0.vegrehajtottParancs === 0 || a1.vegrehajtottParancs === 0) {
+    // A determinizmus-kapu NEM működés-kapu: két SEMMIT NEM CSINÁLÓ gép is
+    // tökéletesen egyezik. Ha egyetlen parancs sem ment át, a vizsgálat a
+    // parancs-útról semmit nem mondott.
+    console.log('\n  \u26d4 EGYETLEN PARANCS SEM HAJTÓDOTT VÉGRE a lockstepen át.');
+    console.log('     A két gép egyezik, de üresen: a `helyiParancs` → csomag →');
+    console.log('     `parancsTickre` út nem futott le. Így a vizsgálat SEMMIT nem');
+    console.log('     bizonyít a hálózati útról.');
+    bukas++;
+  } else if (a0.hashVizsgalat === 0) {
+    console.log('\n  \u26d4 A DESYNC-DETEKTOR EGYSZER SEM FUTOTT LE: a csomagok nem');
+    console.log('     hoztak hasht, vagy a `_ellenoriz` körszáma sosem talál.');
+    bukas++;
+  } else {
+    console.log('\n  \u2713 Két gép, közös parancs-sor, késleltetett hálózat — bitre azonos.');
+  }
+
+  // ── B) LASSÚ HÁLÓZAT: MEGÁLL, MAJD FELZÁRKÓZIK ─────────────────────
+  //
+  // A lockstep legjellemzőbb viselkedése, hogy MEGÁLL, ha valakinek nem
+  // érkezett meg a csomagja. Az azonnali huroknál ez az ág alig fut le, tehát
+  // a kapun kívül maradna — egy öt körrel késleltetett hálózat viszont
+  // körönként megállásra kényszerít. A követelmény kettős: a megállásnak meg
+  // KELL történnie, és utána a két gépnek AZONOSAN kell folytatnia.
+  const L = ketGep(5, 0);
+  const l0 = L.gepek[0].ls.osszesites(), l1 = L.gepek[1].ls.osszesites();
+  const lh0 = L.gepek[0].sim.allapotHash(), lh1 = L.gepek[1].sim.allapotHash();
+  sor('lassú hálózat (5 kör)', l0.vegrehajtottKor + ' / ' + l1.vegrehajtottKor + ' kör',
+    'megállás: ' + l0.varakozas + ' / ' + l1.varakozas);
+  if (l0.varakozas === 0 && l1.varakozas === 0) {
+    console.log('\n  \u26d4 A LOCKSTEP EGYSZER SEM ÁLLT MEG öt kör késés mellett sem.');
+    console.log('     Vagy a hurok nem késleltet, vagy a `_teljes()` mindig igazat ad —');
+    console.log('     mindkét esetben a lockstep LÉNYEGE nincs kipróbálva.');
+    bukas++;
+  } else if (lh0 !== lh1) {
+    console.log('\n  \u26d4 LASSÚ HÁLÓZATON SZÉTTARTOTTAK. A késés nem befolyásolhatja az');
+    console.log('     eredményt — a kör csak KÉSŐBB fut le, nem MÁSKÉPP.');
+    bukas++;
+  } else if (l0.vegrehajtottKor === 0) {
+    console.log('\n  \u26d4 A LASSÚ HÁLÓZATON EGYETLEN KÖR SEM FUTOTT LE: nem lassulás,');
+    console.log('     hanem holtpont. Nézd meg a `TURELEM_KOR`-t és a csomag-küldést.');
+    bukas++;
+  } else {
+    console.log('  \u2713 Öt kör késésnél megáll és felzárkózik — az eredmény ugyanaz.');
+  }
+
+  // ── C) A DETEKTOR PRÓBÁJA ──────────────────────────────────────────
+  const B = ketGep(1, 120);
+  const b0 = B.gepek[0].ls.osszesites(), b1 = B.gepek[1].ls.osszesites();
+  const elkapta = b0.allapot === ALLAPOT.DESYNC || b1.allapot === ALLAPOT.DESYNC;
+  const kor = b0.desyncKor >= 0 ? b0.desyncKor : b1.desyncKor;
+  sor('szándékos romlás', '0,001 egység elmozdulás a 120. körben',
+    elkapta ? 'ELKAPVA a ' + kor + '. körnél' : 'ÉSZREVÉTLEN');
+  if (!elkapta) {
+    console.log('\n  \u26d4 A DESYNC-DETEKTOR NEM VETTE ÉSZRE a szándékos romlást.');
+    console.log('     Egy detektor, ami sosem sül el, ROSSZABB A SEMMINÉL: pontosan');
+    console.log('     ott ad biztonságérzetet, ahol a legnagyobb a baj. Nézd meg a');
+    console.log('     `_ellenoriz` körszámítását és azt, hogy a csomag visz-e hasht.');
+    bukas++;
+  } else {
+    console.log('  \u2713 A detektor a legkisebb elképzelhető eltérést is elkapta.');
+  }
+}
+sor('lefutott', ((Date.now() - t11) / 1000).toFixed(1) + ' mp');
+lockstepBukas = bukas - lockstepBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -1363,6 +1529,7 @@ sor('9) v0.6 AI + v0.7 köd',
   ketV06.ok ? (kevertV06.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV06.tick + ')')
     : 'BUKOTT (tick ' + ketV06.tick + ')');
 sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
+sor('11) v0.8 lockstep', lockstepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

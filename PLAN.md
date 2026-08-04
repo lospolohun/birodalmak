@@ -15,7 +15,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
-| **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
+| **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **folyamatban** — lásd alább |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
 | v0.10 | Térkép-presetek, kampány | |
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
@@ -324,6 +324,57 @@ a szimuláció része, a v0.8-ban a másik játékos nézőpontja minket nem ér
 **Ismert adósság:** az épületek csak akkor látszanak a minimapon, ha éppen
 láthatók. A műfaj-szokás az, hogy a felfedezett épület emlékként ottmarad — ez
 külön „emlékezett épületek" állapotot igényel, ami a v0.11 UI-körébe való.
+
+## A v0.8 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.8/1 | lockstep mag, hurok-szállítás, desync-detektor | **kész** |
+| v0.8/2 | WebSocket relay (szerver + kliens) | hátravan |
+| v0.8/3 | újracsatlakozás a mentésből, késleltetés-simítás | hátravan |
+
+**A hálózat nem világállapotot küld.** Nem pozíciókat, nem életerőt, nem
+nyersanyagot — egyetlen dolgot: ki mit parancsolt, és melyik körre. Minden gép
+ugyanazt a szimulációt futtatja ugyanarra a parancs-sorra, és ha a sim
+determinisztikus, az eredmény bitre azonos. **Ezért volt a determinizmus kapu a
+v0.1 óta**, nem „majd megnézzük" kérdés: a teljes hálózati terv erre az egy
+feltevésre épül. A v0.8/1 az, ami végre ki is próbálja — és megtartotta.
+
+A **kör nem tick**: 4 tick egy kör, egy csomag egy kör összes parancsát viszi.
+A T. körben kiadott parancs a T+2. körben hajtódik végre — ez adja a csomag
+útidejét. Az ára 0,4 másodperc, és pont ezért futott a sim **egyjátékosban is**
+késleltetéssel a v0.1 óta: hogy a v0.8-ban ne derüljön ki hirtelen, hogy
+„elromlott az irányítás".
+
+⚠️ **Egy desync-detektor, ami sosem sül el, rosszabb a semminél** — pontosan ott
+ad biztonságérzetet, ahol a legnagyobb a baj. A szonda ezért nem elégszik meg
+azzal, hogy két egyező futás egyezőnek látszik: **szándékosan elront** egyetlen
+egység pozícióját 0,001 egységgel, és megköveteli, hogy a detektor kiszúrja.
+(Elkapja, ugyanabban a körben.)
+
+A 11. vizsgálat három ágon fut:
+1. **tiszta futás** késleltetett hálózaton — 899 kör, 51 parancs, bitre azonos;
+2. **lassú hálózat** (5 kör késés) — 542 megállás, felzárkózás, ugyanaz az
+   eredmény. Enélkül a `VAR` ág a kapun kívül maradna, pedig az a lockstep
+   legjellemzőbb viselkedése;
+3. **a detektor próbája** — a szándékos romlás elkapva.
+
+**Két hiba, amit ez a szakasz talált:**
+
+- **Egy objektum ne küldjön, mielőtt a hívó befejezte a bekötését.** A
+  `Lockstep` a konstruktorból küldte a kezdő csomagokat, a hívó viszont csak
+  utána kötötte be a szállítást — az első gép csomagjai a semmibe hullottak, a
+  másodikéi nem. Az egyik oldal két kört futott, a másik egyet sem, és a meccs
+  beragadt. Innen a külön `indit()`.
+- **A desync-detektor kiszámolt körre nézett, és sosem talált.** Mire a társ
+  ujjlenyomata megérkezett egy körre, a sajátunkat már eldobtuk: 899 kör futott
+  le **nulla** hash-vizsgálattal. A detektor ott volt, csak sosem szólalt meg.
+  Az összevetés most eseményvezérelt — akkor fut, amikor a párja megérkezik,
+  akármelyik oldalról.
+
+A **hurok-szállítás** (`net/hurok.js`) nem egyszerűsített változata a
+valódinak: ugyanazt a felületet hajtja meg, ugyanazokkal az üzenetekkel, és tud
+késleltetni is. Ha valami ott működik, a WebSocket-változat már csak szállítás.
 
 ## A záró lépcsők (v0.11–v0.13)
 

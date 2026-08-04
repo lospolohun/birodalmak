@@ -139,10 +139,29 @@ export class Sim {
    * @param {{fajta:string, [k:string]:any}} parancs
    */
   parancs(parancs) {
-    const t = this.tick + KESLELTETES;
-    let lista = this._sor.get(t);
-    if (!lista) { lista = []; this._sor.set(t, lista); }
+    this.parancsTickre(this.tick + KESLELTETES, parancs);
+  }
+
+  /**
+   * Parancs beadása PONTOSAN egy megadott tickre (v0.8).
+   *
+   * A lockstep-rétegnek ez kell: ott nem „mostantól két tick múlva" a
+   * szabály, hanem „a T. KÖR első tickjén, minden gépen ugyanakkor". A
+   * `parancs()` a helyi kényelem, ez a hálózat pontossága — és a kettő
+   * ugyanabba a sorba ír, tehát a végrehajtás egyetlen úton megy.
+   *
+   * ⚠️ A MÚLTBA NEM LEHET PARANCSOLNI. Ha egy csomag késve érkezik és a tickje
+   * már lefutott, a beadás CSENDBEN elveszne — a `false` visszatérés az, ami
+   * ezt láthatóvá teszi a hívónak.
+   * @returns {boolean} sikerült-e beütemezni
+   */
+  parancsTickre(t, parancs) {
+    const cel = t | 0;
+    if (cel < this.tick) return false;
+    let lista = this._sor.get(cel);
+    if (!lista) { lista = []; this._sor.set(cel, lista); }
     lista.push(parancs);
+    return true;
   }
 
   /** Egy tick végrehajtása. */
