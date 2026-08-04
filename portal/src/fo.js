@@ -98,6 +98,10 @@ async function indit() {
       aktivSzint = Math.max(0, Math.min(RACS_SZINT - 1, i | 0));
       allomas.szintet(aktivSzint);
       lenyek.aktivSzint = aktivSzint;
+      // A szikrák is a szellemszint logikáját követik: enélkül a fölső
+      // emeletek kiszolgálás-jelei az aktív szint FÖLÖTT lebegnének, elszakadva
+      // az épülettől, ami kibocsátotta őket.
+      hatasok.aktivSzint = aktivSzint;
       szinter.talajY = aktivSzint * SZINT_MAGASSAG;
       hud.szintJeloles(aktivSzint);
     },

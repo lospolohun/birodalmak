@@ -153,8 +153,12 @@ export class Hatasok3d {
     // repülnének — a hatás helyett egy rándulás látszana.
     const d = dt > 0.05 ? 0.05 : (dt > 0 ? dt : 0);
     this._kvota = KVOTA;
+    // Az `ido` (folytonos óra) egyelőre nem kell egyik hatásnak sem: a
+    // szikrák a saját életkorukból élnek, nem közös fázisból. Megtartjuk a
+    // felületben, mert a többi render-réteg `frissit(ido)`-t kap, és egy
+    // eltérő alakú metódus a hívóhelyen okozna hibát.
     this._lep(d);
-    this._figyel(d, ido);
+    this._figyel(d);
     this._feltolt();
   }
 
@@ -247,9 +251,9 @@ export class Hatasok3d {
   // mentés betöltésekor egyszerre robbanna ki több ezer kiszolgálás-jel —
   // pontosan az a „minden villog egyszerre" hatás, amitől a visszajelzés
   // használhatatlanná válik. Ugyanez véd a menet közbeni bekapcsolástól is.
-  _figyel(dt, ido) {
+  _figyel(dt) {
     this._dimeket();
-    this._epuleteket(dt, ido);
+    this._epuleteket(dt);
     this._esemenyeket();
     this._elsoKor = false;
   }
@@ -275,7 +279,7 @@ export class Hatasok3d {
     const a = new Float32Array(uj); a.set(this._epAkku); this._epAkku = a;
   }
 
-  _epuleteket(dt, ido) {
+  _epuleteket(dt) {
     const sim = this.sim;
     const lista = sim.epuletek;
     this._epuletKeret(lista.length);
@@ -291,7 +295,7 @@ export class Hatasok3d {
       const ky = ep.z * SZINT_MAGASSAG;
 
       if (ep.kod === 'portal') {
-        this._portalt(ep, kx, ky, kz, dt, ido, rnd);
+        this._portalt(ep, kx, ky, kz, dt, rnd);
         continue;
       }
 
@@ -321,7 +325,7 @@ export class Hatasok3d {
    * épp nem nézi senki. Az érkezés-villanás ehhez képest esemény: egy utas
    * KILÉPETT, és ezt a kapu előtti szikrakör mondja el.
    */
-  _portalt(ep, kx, ky, kz, dt, ido, rnd) {
+  _portalt(ep, kx, ky, kz, dt, rnd) {
     const di = ep.dimenzio;
     const all = di >= 0 ? this.sim.dimenziok[di] : null;
     const alap = di >= 0 ? DIMENZIOK[di].szin : 0x8f8fb0;

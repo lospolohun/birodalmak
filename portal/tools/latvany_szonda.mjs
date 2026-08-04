@@ -242,18 +242,34 @@ try {
   // A LÉNYEG: az azonos típusú második adag EGYETLEN hívást sem adhat hozzá.
   if (m2.hivas === m1.hivas) ok(`+${m2.ep - m1.ep} azonos típusú épület: ${m1.hivas} → ${m2.hivas} hívás (változatlan)`);
   else rossz(`a hívások száma az ÉPÜLETEK számával nő: ${m1.hivas} → ${m2.hivas}`);
-  // Az első adag hozhat új TÍPUST (test + dísz + szellem = legfeljebb 3).
-  if (m1.hivas - m0.hivas <= 3) ok(`az első adag legfeljebb a típus árát fizette (+${m1.hivas - m0.hivas})`);
-  else rossz(`az első adag ${m1.hivas - m0.hivas} hívást adott hozzá — ez nem típus-alapú`);
+  // Az első adag hozhat ÚJ TÍPUST (test + dísz), és közben a kapun beeshet egy
+  // eddig nem látott FAJ is (test + fej) — a küszöb ezért nem 2, hanem 8.
+  // A lényeg úgyis a fenti, EXAKT vizsgálat: azonos típusból harminckettő
+  // nulla hívást ad hozzá. Itt csak azt zárjuk ki, hogy a szám az ÉPÜLETEK
+  // számával nőjön (az +32 lenne).
+  const elsoAdag = m1.hivas - m0.hivas;
+  if (elsoAdag <= 8) ok(`az első adag ${m1.ep - m0.ep} épületért ${elsoAdag} hívást fizetett (típus-alapú)`);
+  else rossz(`az első adag ${elsoAdag} hívást adott hozzá ${m1.ep - m0.ep} épületért — ez nem típus-alapú`);
 
   // ════════════════════════════════════════════════════════════════════════
   cim('3. A NAPPAL–ÉJSZAKA TÉNYLEG VÁLTOZTAT');
   const merve = await lap.evaluate(async () => {
     const P = window.PHT, sz = P.szinter;
     const NAP_TICK = 1200;   // TICK_HZ * 60 — a config-beli érték
+
+    // ⚠️ A HURKOT LE KELL FAGYASZTANI. A `fo.js` képkockánként hívja a
+    // `szinter.napszak(sim.tick)`-et, tehát a beállított napszakot azonnal
+    // visszaírja a valódira — a szonda pedig ugyanazt a két számot mérné a
+    // „nappal" és az „éjjel" helyén. (A hang-szonda pontosan ugyanebbe futott
+    // bele annak idején, ezért kapott a hangréteg `hangAuto` kapcsolót.)
+    // A példány-metódus elárnyékolja a prototípusét; a `delete` visszaadja.
+    const valodi = Object.getPrototypeOf(sz).napszak;
+    sz.napszak = () => {};
+    const allit = (a) => valodi.call(sz, a * NAP_TICK);
+
     const ki = [];
     for (const a of [0.0, 0.27, 0.5, 0.74, 0.86]) {
-      const keppont = await window.__mer(() => sz.napszak(a * NAP_TICK));
+      const keppont = await window.__mer(() => allit(a));
       ki.push({
         arany: sz.napszakArany,
         napEro: sz.nap.intensity,
@@ -276,13 +292,13 @@ try {
     // változata emiatt mérte ugyanazt a két számot, és jogosan bukott meg.
     const kam = { tav: sz.tav, dolt: sz.dolt, szog: sz.szog };
     sz.dolt = 1.30; sz.tav = 40; sz._kamerat();
-    sz.napszak(0);
     // A minta a képernyő FELSŐ HARMADA, teljes szélességben: egy szűk sávban
     // csak egy-két csillag lenne, és a mérés a saját zajában fulladna meg.
-    const egVan = await window.__mer(() => { sz.csillagok.visible = true; }, 1200, 280, 260);
-    const egNincs = await window.__mer(() => { sz.csillagok.visible = false; }, 1200, 280, 260);
+    const egVan = await window.__mer(() => { allit(0); sz.csillagok.visible = true; }, 1200, 280, 260);
+    const egNincs = await window.__mer(() => { allit(0); sz.csillagok.visible = false; }, 1200, 280, 260);
     sz.csillagok.visible = true;
     sz.tav = kam.tav; sz.dolt = kam.dolt; sz.szog = kam.szog; sz._kamerat();
+    delete sz.napszak;   // a hurok visszakapja az órát
     return { napszakok: ki, egVan, egNincs };
   });
   const napszakok = merve.napszakok;
@@ -521,7 +537,7 @@ try {
     const m = await import('/tools/forgatokonyv.mjs');
     const sim = window.PHT.sim;
     const fk = m.v01Uj();
-    for (let t = sim.tick; t < 7000; t++) { fk(sim, t); sim.lep(); }
+    for (let t = sim.tick; t < 5200; t++) { fk(sim, t); sim.lep(); }
   });
   await lap.click('#modal .valasz').catch(() => {});
   await varj(300);
@@ -550,20 +566,23 @@ try {
       sz.tav = t; sz.dolt = d;
       sz.cel.set(window.PHT.sim.kezdoX + (t < 20 ? 6 : 12), 0, window.PHT.sim.kezdoY + (t < 20 ? 5 : 8));
       sz._kamerat();
-      if (window.PHT._szondaNapszak) cancelAnimationFrame(window.PHT._szondaNapszak);
-      const l = () => { sz.napszak(a * 1200); window.PHT._szondaNapszak = requestAnimationFrame(l); };
-      l();
+      // Ugyanaz a fogás, mint a 3. vizsgálatban: beállítjuk a kívánt
+      // napszakot, majd elárnyékoljuk a metódust, hogy a hurok ne írja vissza.
+      delete sz.napszak;
+      Object.getPrototypeOf(sz).napszak.call(sz, a * 1200);
+      sz.napszak = () => {};
     }, { a: arany, t: tav, d: dolt });
     // Futunk egy keveset (kellenek az élő szikrák), majd MEGÁLLUNK és
     // elengedjük a modálokat. Egy fölugró fejezet-ablak elhomályosítja a
     // vásznat, és pont azt takarja el, amiért a kép készül — a szonda első
     // változatában így lett a „nappali" kép egy elmosott sötét folt.
     await lap.keyboard.press('2');
-    await varj(1400);
+    await varj(1000);
     await lap.keyboard.press('1');
     for (let i = 0; i < 3; i++) { await lap.click('#modal .valasz').catch(() => {}); await varj(160); }
     await lap.screenshot({ path: join(GYOKER, 'qa', nevKep) });
   }
+  await lap.evaluate(() => { delete window.PHT.szinter.napszak; });
   adat('portal/qa/latvany_nappal.png · latvany_ejjel.png · latvany_alkony.png · latvany_kozeli.png');
   ok('képek elkészültek (geometriát és színt mutatnak — sebességet NEM)');
 
