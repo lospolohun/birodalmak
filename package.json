@@ -32,9 +32,10 @@
     "portal:det": "node portal/tools/det_szonda.mjs",
     "portal:bongeszo": "node portal/tools/bongeszo_szonda.mjs",
     "portal:kep": "node portal/tools/kep.mjs",
-    "portal:szonda": "npm run portal:det && npm run portal:mertan && npm run portal:build && npm run portal:bongeszo && npm run portal:hang",
+    "portal:szonda": "npm run portal:det && npm run portal:mertan && npm run portal:build && npm run portal:bongeszo && npm run portal:hang && npm run portal:kiadas",
     "portal:mertan": "node portal/tools/mertan_szonda.mjs",
-    "portal:hang": "node portal/tools/hang_szonda.mjs"
+    "portal:hang": "node portal/tools/hang_szonda.mjs",
+    "portal:kiadas": "node portal/tools/kiadas_ellenorzo.mjs"
   },
   "dependencies": {
     "three": "^0.170.0",
