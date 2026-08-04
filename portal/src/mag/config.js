@@ -109,6 +109,44 @@ export const INSTABIL_HATAR = 1000;
 /** Összeomlás után ennyi tickig áll a kapu. */
 export const OSSZEOMLAS_SZUNET = 1600;
 
+// ── NEHÉZSÉGI FOKOZATOK ───────────────────────────────────────────────────
+//
+// MIÉRT SZORZÓK ÉS NEM KÜLÖN SZABÁLYOK: mert a szabály-alapú nehézség
+// („kemény módban nincs automata mentés") büntetésnek érződik, a szorzó
+// viszont ugyanazt a játékot adja más feszességgel. Így a tanulás átvihető
+// az egyik fokozatról a másikra — ami egy tycoonnál a lényeg.
+//
+// A `kod` STABIL AZONOSÍTÓ: a mentés ezt tárolja, és a betöltés ezzel
+// állítja vissza a világot. Új fokozat a lista VÉGÉRE megy.
+export const NEHEZSEGEK = [
+  {
+    kod: 'konnyu', nev: 'Könnyű', ikon: '🌤️',
+    penz: 1.6, ber: 0.75, instabil: 0.6, erkezes: 1.15, esemeny: 0.6,
+    leiras: 'Több kezdőtőke, olcsóbb bérek, lassabban romló kapuk. Az első állomáshoz.',
+  },
+  {
+    kod: 'normal', nev: 'Normál', ikon: '⚖️',
+    penz: 1, ber: 1, instabil: 1, erkezes: 1, esemeny: 1,
+    leiras: 'A tervezett egyensúly. Így van kitalálva a történet íve.',
+  },
+  {
+    kod: 'kemeny', nev: 'Kemény', ikon: '🔥',
+    penz: 0.7, ber: 1.35, instabil: 1.5, erkezes: 0.9, esemeny: 1.5,
+    leiras: 'Kevesebb pénz, drágább személyzet, gyorsan romló kapuk, sűrűbb események.',
+  },
+];
+
+export function nehezsegIdx(kod) {
+  for (let i = 0; i < NEHEZSEGEK.length; i++) if (NEHEZSEGEK[i].kod === kod) return i;
+  return 1;
+}
+
+// ── BÉRBEADÁS ─────────────────────────────────────────────────────────────
+/** Bérbe adott üzletnél a bevétel ekkora hányada marad nálunk. */
+export const BERLET_RESZESEDES = 0.42;
+/** …plusz napi fix bérleti díj az épület árának ekkora hányada. */
+export const BERLET_NAPIDIJ = 0.006;
+
 // ── SZIMULÁCIÓS SEBESSÉG (a render kéri, a sim nem tud róla) ──────────────
 export const SEBESSEGEK = [0, 1, 2, 4];
 

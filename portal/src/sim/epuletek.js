@@ -251,5 +251,11 @@ export function ujEpulet(azon, kod, x, y, z = 0) {
     kopas: 0,
     /** Ki van-e kapcsolva a játékos által. */
     kikapcsolva: false,
+    /**
+     * Bérbe adva: a bérlő üzemelteti. Nem kell hozzá személyzet, de a
+     * bevételnek csak egy hányada marad nálunk. Ez a tycoon klasszikus
+     * döntése: kevesebb pénz, kevesebb gond.
+     */
+    berbeadva: false,
   };
 }

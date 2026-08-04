@@ -31,7 +31,14 @@
  * új parancsfajta hozzáadása, hanem egy MEGLÉVŐ értelmezésének módosítása),
  * ezt léptetni kell — különben a régi mentés némán MÁS világot játszik le.
  */
-export const MENTES_VERZIO = 1;
+export const MENTES_VERZIO = 2;
+/**
+ * Amit még be tudunk tölteni. A v1 nem ismerte a nehézségi fokozatot — az
+ * összes ilyen mentés normálon készült, tehát hiánytalanul visszaadható.
+ * Egy régi mentés eldobása mindig az utolsó lehetőség: a játékos órái vannak
+ * benne, és a formátum bővülése nem az ő hibája.
+ */
+const OLVASHATO_VERZIOK = [1, 2];
 
 /**
  * Mentés-objektum egy futó világból.
@@ -43,6 +50,8 @@ export function mentesKeszit(sim, cimke = '') {
     v: MENTES_VERZIO,
     jatek: 'portal-hub-tycoon',
     seed: sim.seed,
+    /** A nehézség a világ állapota, tehát a mentésnek vinnie kell. */
+    nehezseg: sim.nehezseg.kod,
     tick: sim.tick,
     cimke,
     // A HUD-előnézethez — a betöltő lista ebből tud írni valamit anélkül,
@@ -52,6 +61,7 @@ export function mentesKeszit(sim, cimke = '') {
       penz: Math.round(sim.penz),
       hirnev: Math.round(sim.hirnev),
       fejezet: sim.tortenet.fejezet,
+      nehezseg: sim.nehezseg.nev,
       kapu: sim.nyitottDimenziok().length,
       utas: sim.utasSzam,
       vege: sim.jatekVege,
@@ -67,7 +77,7 @@ export function mentesKeszit(sim, cimke = '') {
 export function mentesEllenoriz(adat) {
   if (!adat || typeof adat !== 'object') return { rendben: false, ok: 'nem objektum' };
   if (adat.jatek !== 'portal-hub-tycoon') return { rendben: false, ok: 'másik játék mentése' };
-  if (adat.v !== MENTES_VERZIO) return { rendben: false, ok: `régi mentésformátum (v${adat.v}), ez a verzió v${MENTES_VERZIO}-t vár` };
+  if (!OLVASHATO_VERZIOK.includes(adat.v)) return { rendben: false, ok: `ismeretlen mentésformátum (v${adat.v}), ez a verzió v${MENTES_VERZIO}-ig olvas` };
   if (!Number.isInteger(adat.seed)) return { rendben: false, ok: 'hiányzó seed' };
   if (!Number.isInteger(adat.tick) || adat.tick < 0) return { rendben: false, ok: 'hibás tick-szám' };
   if (!Array.isArray(adat.naplo)) return { rendben: false, ok: 'hiányzó parancsnapló' };
@@ -98,7 +108,7 @@ export class Visszajatszo {
     const e = mentesEllenoriz(adat);
     if (!e.rendben) throw new Error('Érvénytelen mentés: ' + e.ok);
     this.adat = adat;
-    this.sim = new SimOsztaly({ seed: adat.seed });
+    this.sim = new SimOsztaly({ seed: adat.seed, nehezseg: adat.nehezseg || 'normal' });
     this.celTick = adat.tick;
     this._n = 0;
   }

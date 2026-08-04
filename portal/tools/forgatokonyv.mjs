@@ -200,7 +200,7 @@ export function v01Uj() {
 function hianyzoSzakma(sim) {
   for (let a = 0; a < sim.epuletek.length; a++) {
     const ep = sim.epuletek[a];
-    if (!ep) continue;
+    if (!ep || ep.berbeadva) continue;
     const t = sim.epuletTipusa(ep);
     if (!t.fajta || t.szemelyzet === 0) continue;
     if (ep.dolgozok.length < t.szemelyzet) return t.fajta;
@@ -298,6 +298,66 @@ export function v02Uj() {
     if (t % 20 === 0) {
       if (sim.tortenet.allapot === 'bevezeto') sim.parancs({ fajta: 'fejezet_tovabb' });
       else if (sim.tortenet.allapot === 'dontes') sim.parancs({ fajta: 'dontes', valasz: 0 });
+      for (let i = 0; i < sim.varakozoValaszok.length; i++) {
+        sim.parancs({ fajta: 'esemeny_valasz', azon: sim.varakozoValaszok[i].azon, valasz: 1 });
+      }
+    }
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  v0.3 — GAZDASÁGI DÖNTÉSEK (bérbeadás, nehézségi fokozat)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A v0.4 két új felülete: a `berbead` parancs és a nehézségi szorzók. A
+// nehézség nem parancs, hanem a világ kezdőállapota — ezért ezt a
+// forgatókönyvet a szonda KEMÉNY fokozaton futtatja, hogy a szorzók is
+// bekerüljenek a mérésbe. Enélkül a `nehezseg` mező végigmenne az egész
+// gazdaságon anélkül, hogy bármi ellenőrizné.
+
+/**
+ * v0.3 — bérbeadás kemény fokozaton.
+ * @returns {(sim: object, t: number) => void}
+ */
+export function v03Uj() {
+  let utolsoFelvetel = -999;
+  const berbeadva = new Set();
+  return function v03(sim, t) {
+    const kx = sim.kezdoX, ky = sim.kezdoY;
+    if (t === 5) sim.parancs({ fajta: 'epit', tipus: 'biztonsag', x: kx + 8, y: ky + 2 });
+    if (t === 9) sim.parancs({ fajta: 'epit', tipus: 'wc', x: kx + 8, y: ky + 6 });
+    if (t === 13) sim.parancs({ fajta: 'epit', tipus: 'etterem', x: kx + 12, y: ky + 2 });
+    if (t === 17) sim.parancs({ fajta: 'epit', tipus: 'bolt', x: kx + 12, y: ky + 6 });
+    if (t === 21) sim.parancs({ fajta: 'epit', tipus: 'konyvesbolt', x: kx + 16, y: ky + 6 });
+    if (t === 25) sim.parancs({ fajta: 'epit', tipus: 'varo', x: kx + 16, y: ky + 2 });
+    if (t === 29) sim.parancs({ fajta: 'epit', tipus: 'takarito', x: kx + 2, y: ky + 10 });
+
+    // Az étterem marad a miénk, a bolt és a könyvesbolt bérbe megy — így a
+    // szonda mindkét ágat méri, és a kettő bevétele össze is hasonlítható.
+    if (t > 800 && t % 100 === 0) {
+      for (const kod of ['bolt', 'konyvesbolt']) {
+        if (berbeadva.has(kod)) continue;
+        const ep = sim.epuletek.find((e) => e && e.kod === kod);
+        if (ep) { sim.parancs({ fajta: 'berbead', azon: ep.azon }); berbeadva.add(kod); }
+      }
+    }
+    // …és egyet vissza is veszünk, hogy a felmondás ága is fusson.
+    if (t === 9000) {
+      const ep = sim.epuletek.find((e) => e && e.kod === 'konyvesbolt');
+      if (ep) sim.parancs({ fajta: 'berbead', azon: ep.azon });
+    }
+
+    if (t - utolsoFelvetel > 50 && sim.penz > 2500) {
+      const hiany = hianyzoSzakma(sim);
+      if (hiany) { sim.parancs({ fajta: 'felvesz', tipus: hiany }); utolsoFelvetel = t; }
+    }
+    if (t > 600 && t % 300 === 0 && sim.aramszunet && sim.penz > 3500) {
+      const n = sim.epuletSzam('energiamag');
+      if (n < 3) sim.parancs({ fajta: 'epit', tipus: 'energiamag', x: kx + 18 + (n - 1) * 3, y: ky + 12 });
+    }
+    if (t % 20 === 0) {
+      if (sim.tortenet.allapot === 'bevezeto') sim.parancs({ fajta: 'fejezet_tovabb' });
+      else if (sim.tortenet.allapot === 'dontes') sim.parancs({ fajta: 'dontes', valasz: 1 });
       for (let i = 0; i < sim.varakozoValaszok.length; i++) {
         sim.parancs({ fajta: 'esemeny_valasz', azon: sim.varakozoValaszok[i].azon, valasz: 1 });
       }

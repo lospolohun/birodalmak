@@ -24,6 +24,7 @@ import {
   KOSZ_KISZOLGALASONKENT, KOSZ_TAKARITAS, ERKEZES_ALAP_TICK, INSTABIL_NOVEKEDES,
   INSTABIL_UTASONKENT, INSTABIL_KARBANTARTAS, INSTABIL_HATAR, OSSZEOMLAS_SZUNET,
   KEZDO_CSARNOK_SZ, KEZDO_CSARNOK_M, RACS_SZ, RACS_M, RACS_SZINT, EMELET_FELAR,
+  NEHEZSEGEK, nehezsegIdx, BERLET_RESZESEDES, BERLET_NAPIDIJ,
 } from '../mag/config.js';
 import { mulberry32, sulyozott, Osszeg } from '../mag/rng.js';
 import { Racs } from './racs.js';
@@ -45,6 +46,14 @@ export class Sim {
   constructor(opciok = {}) {
     const seed = (opciok.seed | 0) || 20260804;
     this.seed = seed;
+    /**
+     * A nehézségi fokozat a világ ÁLLAPOTA, nem beállítás: a mentés viszi
+     * magával, és az ellenőrző-összegben is benne van. Enélkül egy könnyű
+     * módban mentett állomás normálon töltődne vissza, és a játékos a saját
+     * mentésétől kapna büntetést.
+     */
+    this.nehezsegIdx = nehezsegIdx(opciok.nehezseg || 'normal');
+    this.nehezseg = NEHEZSEGEK[this.nehezsegIdx];
     this.rnd = mulberry32(seed);
     this.tick = 0;
     this.nap = 1;
@@ -88,7 +97,7 @@ export class Sim {
     this.erkezesSzorzoDim = new Float64Array(DIMENZIOK.length).fill(1);
 
     // ── GAZDASÁG ──────────────────────────────────────────────────────────
-    this.penz = KEZDO_PENZ;
+    this.penz = Math.round(KEZDO_PENZ * this.nehezseg.penz);
     this.hirnev = HIRNEV_KEZDO;
     this.kosz = 0;              // 0..1000
     this.koszTerheles = 0;      // extra hangulat-kopás ezredben
@@ -190,6 +199,7 @@ export class Sim {
       case 'epit': return this._pEpit(p);
       case 'bont': return this._pBont(p);
       case 'kapcsol': return this._pKapcsol(p);
+      case 'berbead': return this._pBerbead(p);
       case 'felvesz': return this._pFelvesz(p);
       case 'elbocsat': return this._pElbocsat(p);
       case 'beoszt': return this._pBeoszt(p);
@@ -302,6 +312,30 @@ export class Sim {
     return this._rendben();
   }
 
+  /**
+   * Bérbeadás ki/be. Csak olyan épületre, aminek VAN díja — a mosdót és a
+   * várót nem venné ki senki, a kaput meg végképp nem.
+   */
+  _pBerbead(p) {
+    const ep = this.epuletek[p.azon];
+    if (!ep) return this._elutasit('nincs ilyen épület');
+    const t = EPULETEK[ep.tipusIdx];
+    if (!t.igeny || t.dij <= 0) return this._elutasit('ezt az épületet nem lehet bérbe adni');
+    ep.berbeadva = !ep.berbeadva;
+    if (ep.berbeadva) {
+      // A bérlő hozza a saját embereit: a mi dolgozóink felszabadulnak.
+      // Ha bent maradnának, tovább fizetnénk a bérüket egy olyan üzletben,
+      // ami már nem is a miénk — ez a fajta némán szivárgó költség a
+      // legrosszabb, mert semmi nem hívja fel rá a figyelmet.
+      for (let i = ep.dolgozok.length - 1; i >= 0; i--) {
+        const d = this._dolgozo(ep.dolgozok[i]);
+        if (d) d.epuletAzon = -1;
+      }
+      ep.dolgozok.length = 0;
+    }
+    return this._rendben();
+  }
+
   _pFelvesz(p) {
     const idx = DOLGOZO_INDEX.get(p.tipus);
     if (idx === undefined) return this._elutasit('ismeretlen szakma');
@@ -339,6 +373,7 @@ export class Sim {
     if (!d) return this._elutasit('nincs ilyen dolgozó');
     const ep = p.epulet >= 0 ? this.epuletek[p.epulet] : null;
     if (p.epulet >= 0 && !ep) return this._elutasit('nincs ilyen épület');
+    if (ep && ep.berbeadva) return this._elutasit('a bérbe adott üzletbe a bérlő hozza a személyzetet');
     this._beoszt(d, ep);
     return this._rendben();
   }
@@ -540,6 +575,12 @@ export class Sim {
     for (let a = 0; a < this.epuletek.length; a++) {
       const ep = this.epuletek[a];
       if (!ep) continue;
+      // A bérbe adott üzletbe NEM osztunk embert: a bérlő hozza a sajátját.
+      // Az első változat ezt nem szűrte, és a felszabadított dolgozó a
+      // következő felvételnél azonnal visszakerült ugyanoda — fizettük a
+      // bérét egy olyan boltban, ami már nem is a miénk. A szonda 8.
+      // vizsgálata pont ezt kapta el.
+      if (ep.berbeadva) continue;
       const t = EPULETEK[ep.tipusIdx];
       if (t.fajta !== tipusKod) continue;
       if (ep.dolgozok.length < t.szemelyzet) return ep;
@@ -612,7 +653,8 @@ export class Sim {
       if (!ep) continue;
       const t = EPULETEK[ep.tipusIdx];
       let h = 1;
-      if (t.szemelyzet > 0) {
+      // A bérbe adott üzlet a bérlő gondja: mindig teljes létszámmal megy.
+      if (t.szemelyzet > 0 && !ep.berbeadva) {
         let ero = 0;
         for (let i = 0; i < ep.dolgozok.length; i++) {
           const d = this._dolgozo(ep.dolgozok[i]);
@@ -662,6 +704,7 @@ export class Sim {
       if (this.tortenetJelzok.has('megerosites')) nov *= 0.75;
       if (this.tortenetJelzok.has('terjeszkedes')) nov *= 1.35;
       if (this.tortenetJelzok.has('mindet_tartom')) nov *= 1.5;
+      nov *= this.nehezseg.instabil;
       d.instabilitas += nov;
       if (d.instabilitas >= INSTABIL_HATAR) { this._kapuOsszeomlas(d); continue; }
 
@@ -671,7 +714,7 @@ export class Sim {
       ep.visszaszamlalo--;
       if (ep.visszaszamlalo > 0) continue;
 
-      const utem = ERKEZES_ALAP_TICK
+      const utem = ERKEZES_ALAP_TICK / this.nehezseg.erkezes
         / (d.szint * 0.75 + 0.25)
         / (kapuHangolas * terjeszkedes * mindetTartom)
         / Math.max(0.25, hirnevSzorzo * dijVonzero(d) * this.erkezesSzorzoDim[d.idx])
@@ -797,8 +840,10 @@ export class Sim {
       if (dij > 0) {
         u.penz -= dij;
         u.koltott += dij;
-        this.bevetel(dij, t.nev);
-        ep.bevetel += dij;
+        // Bérbeadásnál a forgalom a bérlőé; nekünk a részesedés marad.
+        const nekunk = ep.berbeadva ? Math.round(dij * BERLET_RESZESEDES) : dij;
+        this.bevetel(nekunk, ep.berbeadva ? 'bérlet' : t.nev);
+        ep.bevetel += nekunk;
       }
     }
     ep.kiszolgalt++;
@@ -912,8 +957,8 @@ export class Sim {
     }
     if (this.tick < this.kovEsemenyTick) return;
     this._esemenytIndit();
-    const koz = ESEMENY_KOZ_MIN + Math.floor(this.rnd() * (ESEMENY_KOZ_MAX - ESEMENY_KOZ_MIN));
-    this.kovEsemenyTick = this.tick + koz;
+    const koz = (ESEMENY_KOZ_MIN + Math.floor(this.rnd() * (ESEMENY_KOZ_MAX - ESEMENY_KOZ_MIN))) / this.nehezseg.esemeny;
+    this.kovEsemenyTick = this.tick + Math.round(koz);
   }
 
   _esemenytIndit(kenyszerKod = null) {
@@ -962,6 +1007,7 @@ export class Sim {
   _napiElszamolas() {
     let ber = 0;
     for (let i = 0; i < this.dolgozok.length; i++) ber += dolgozoBer(this.dolgozok[i]);
+    ber = Math.round(ber * this.nehezseg.ber);
     if (ber > 0) this.koltseg(ber, 'bérek');
 
     let reklam = 0;
@@ -970,6 +1016,10 @@ export class Sim {
       if (!ep || ep.kikapcsolva) continue;
       const t = EPULETEK[ep.tipusIdx];
       if (t.naponta) reklam += t.naponta;
+      // Fix napi bérleti díj: az üres bolt is fizet valamennyit, tehát a
+      // bérbeadás akkor is hoz, amikor épp nincs forgalom. Ez a kockázat
+      // átadásának az ára — és pont ettől lesz valódi döntés.
+      if (ep.berbeadva) this.bevetel(Math.round(t.ar * BERLET_NAPIDIJ), 'bérleti díj');
     }
     if (reklam > 0) {
       // A reklám hozama csökkenő: a nyolcadik oszlop már csak zaj.
@@ -1201,7 +1251,7 @@ export class Sim {
    */
   ellenorzoOsszeg() {
     const o = new Osszeg();
-    o.be(this.tick).be(this.nap).be(this.rnd.allapot());
+    o.be(this.tick).be(this.nap).be(this.rnd.allapot()).be(this.nehezsegIdx);
     o.beF(this.penz).beF(this.hirnev).beF(this.kosz);
     o.be(this.utasSzam).be(this.osszTavozo).be(this.elegedettTavozok).be(this.duhosTavozok);
     o.be(this.energiaIgeny).be(this.energiaTermeles).be(this.aramszunet ? 1 : 0);
@@ -1213,7 +1263,7 @@ export class Sim {
     for (let a = 0; a < this.epuletek.length; a++) {
       const ep = this.epuletek[a];
       if (!ep) { o.be(-1); continue; }
-      o.be(ep.tipusIdx).be(ep.x).be(ep.y).be(ep.z).be(ep.sor.length).be(ep.bent.length)
+      o.be(ep.tipusIdx).be(ep.x).be(ep.y).be(ep.z).be(ep.berbeadva ? 1 : 0).be(ep.sor.length).be(ep.bent.length)
         .be(ep.dolgozok.length).be(ep.kiszolgalt).beF(ep.bevetel).beF(ep.hatekonysag);
     }
     for (let i = 0; i < this.dolgozok.length; i++) {

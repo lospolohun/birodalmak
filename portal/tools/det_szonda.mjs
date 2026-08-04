@@ -11,6 +11,7 @@
 //   5. VISSZAJÁTSZÁS — a parancsnaplóból újrajátszva ugyanaz jön ki
 //   6. MŰKÖDÉS — csinál-e egyáltalán valamit a gazdaság
 //   7. SZINTEK — a többszintes állomás minden ága lefut-e, és HASZNÁLJÁK-e
+//   8. GAZDASÁGI DÖNTÉSEK — bérbeadás és nehézségi fokozat
 //
 // ⚠️ A 6. VIZSGÁLAT NEM DÍSZ. A determinizmus-kapu nem működés-kapu: a
 // semmittevés is tökéletesen reprodukálható. Az AoC-nál a v0.3 mind a hat
@@ -26,7 +27,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
-import { v01Uj, v02Uj } from './forgatokonyv.mjs';
+import { v01Uj, v02Uj, v03Uj } from './forgatokonyv.mjs';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.env.PHT_TICK || 24000);
@@ -89,8 +90,8 @@ cim('1. STATIKUS — tiltott hívások a szimulációban');
 //  SEGÉD: egy teljes futás
 // ══════════════════════════════════════════════════════════════════════════
 
-function futas(seed, tickek = TICKEK, gyujtNaplot = false, fkGyar = v01Uj) {
-  const sim = new Sim({ seed });
+function futas(seed, tickek = TICKEK, gyujtNaplot = false, fkGyar = v01Uj, nehezseg = 'normal') {
+  const sim = new Sim({ seed, nehezseg });
   const fk = fkGyar();
   const minta = [];
   for (let t = 0; t < tickek; t++) {
@@ -266,10 +267,43 @@ cim('7. SZINTEK — emeleti padló, mozgólépcső, lift');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  8. GAZDASÁGI DÖNTÉSEK — bérbeadás és nehézségi fokozat
+// ══════════════════════════════════════════════════════════════════════════
+
+cim('8. GAZDASÁGI DÖNTÉSEK — bérbeadás, nehézségi fokozat');
+{
+  const G = futas(1234, 14000, true, v03Uj, 'kemeny');
+  const H = futas(1234, 14000, false, v03Uj, 'kemeny');
+  if (G.zaro === H.zaro) ok('14 000 tick kemény fokozaton — két futás azonos');
+  else rossz(`a gazdasági forgatókönyv szétcsúszott: ${G.zaro} ≠ ${H.zaro}`);
+
+  const s = G.sim;
+  if (s.nehezseg.kod === 'kemeny') ok('a nehézségi fokozat a világ állapota maradt');
+  else rossz(`a fokozat elveszett: ${s.nehezseg.kod}`);
+
+  const berelt = s.epuletek.filter((e) => e && e.berbeadva);
+  const sajat = s.epuletek.find((e) => e && e.kod === 'etterem');
+  info(`bérbe adva: ${berelt.map((e) => e.kod).join(', ') || 'egyik sem'}`);
+  info(`saját étterem bevétele ${Math.round(sajat ? sajat.bevetel : 0)} · bérelt bolt ${Math.round((s.epuletek.find((e) => e && e.kod === 'bolt') || {}).bevetel || 0)}`);
+  if (berelt.length >= 1) ok('a bérbeadás életben van'); else rossz('egyetlen épület sem került bérbe');
+  if (berelt.every((e) => e.dolgozok.length === 0)) ok('a bérelt üzletekben nem fizetünk személyzetet');
+  else rossz('bérelt üzletben maradt a mi dolgozónk — némán szivárgó bér');
+  if (s.tetelek.has('bérlet') || (s.elozoNap.tetelek && s.elozoNap.tetelek.has('bérlet'))) ok('a bérleti bevétel megjelenik a mérlegben');
+  else rossz('a bérlet nem hozott bevételt');
+
+  // Ugyanaz a forgatókönyv KÖNNYŰ fokozaton mérhetően jobban áll —
+  // ha nem, akkor a szorzók nem kötnek sehova.
+  const K = futas(1234, 14000, false, v03Uj, 'konnyu');
+  info(`pénz 14 000 ticknél — könnyű ${Math.round(K.sim.penz)} · kemény ${Math.round(s.penz)}`);
+  if (K.sim.penz > s.penz) ok('a könnyű fokozat tényleg könnyebb');
+  else rossz('a nehézségi fokozat nem hat a gazdaságra');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 
 console.log('');
 if (hiba === 0) {
-  console.log('\x1b[42m\x1b[30m  MIND A HÉT VIZSGÁLAT ZÖLD  \x1b[0m\n');
+  console.log('\x1b[42m\x1b[30m  MIND A NYOLC VIZSGÁLAT ZÖLD  \x1b[0m\n');
   process.exit(0);
 } else {
   console.log(`\x1b[41m\x1b[37m  ${hiba} HIBA  \x1b[0m\n`);

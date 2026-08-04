@@ -61,9 +61,9 @@ async function indit() {
     // RENDER oldalon vagyunk: a sim csak a kész számot kapja meg.
     const url = new URLSearchParams(location.search);
     const seed = (Number(url.get('seed')) | 0) || (Date.now() & 0x7fffffff);
-    sim = new Sim({ seed });
+    sim = new Sim({ seed, nehezseg: url.get('nehez') || 'normal' });
   }
-  history.replaceState(null, '', `?seed=${sim.seed}`);
+  history.replaceState(null, '', `?seed=${sim.seed}&nehez=${sim.nehezseg.kod}`);
 
   // A betöltés PILLANATÁBAN vett állapot. A hurok azonnal továbblépteti a
   // világot, tehát utólag már nem lehet összevetni a mentéssel — a

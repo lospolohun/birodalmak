@@ -14,6 +14,7 @@ import { el, be, ures, szam } from './elemek.js';
 import { DIMENZIOK, dimenzioDij } from '../sim/dimenziok.js';
 import { TECHNOLOGIAK, tech } from '../sim/kutatas.js';
 import { DOLGOZOK, dolgozoBer } from '../sim/dolgozok.js';
+import { NEHEZSEGEK } from '../mag/config.js';
 import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
 import { bestiariumot } from './bestiarium.js';
 import * as tarolo from './tarolo.js';
@@ -369,7 +370,7 @@ export class Panelek {
         const e = h.adat.elonezet;
         be(t, el('div', 'sorok')).lastChild.innerHTML =
           `pénz <b>${szam(e.penz)}</b> · hírnév <b>${e.hirnev}</b> · kapu <b>${e.kapu}</b> · ` +
-          `${e.fejezet + 1}. fejezet${e.vege ? ' · <b style="color:#ffd257">vége</b>' : ''}`;
+          `${e.fejezet + 1}. fejezet${e.nehezseg ? ' · ' + e.nehezseg : ''}${e.vege ? ' · <b style="color:#ffd257">vége</b>' : ''}`;
       }
       const gombok = el('div', 'sorok');
       if (h.hely !== 'auto') {
@@ -420,18 +421,36 @@ export class Panelek {
     be(p, el('h4', null, 'Új játszás'));
     const uj = el('div', 'tetel');
     uj.innerHTML = '<p>Minden világ egy seedből nő ki. Ugyanaz a seed ugyanazt a világot adja — ' +
-      'hibajelentéshez ezt írd le. A mostani: <b>' + sim.seed + '</b></p>';
+      'hibajelentéshez ezt írd le. A mostani: <b>' + sim.seed + '</b> · fokozat: <b>' + sim.nehezseg.nev + '</b></p>';
     const mezo = el('input');
     mezo.type = 'text';
     mezo.placeholder = 'seed (üresen: véletlen)';
     mezo.style.cssText = 'width:100%;margin:6px 0;background:#1a2144;color:#e6ecff;border:1px solid rgba(140,160,230,.25);border-radius:6px;padding:6px;';
+    // Nehézség: a fokozat a világ kezdőállapota, ezért CSAK új játszásnál
+    // választható. Menet közben átállítani annyi lenne, mint a saját
+    // eredményedet átírni — és a mentés se tudna mit kezdeni vele.
+    let valasztott = sim.nehezseg.kod;
+    const fokozatSor = el('div', 'sorok');
+    const fokozatGombok = [];
+    for (const n of NEHEZSEGEK) {
+      const g = el('button', 'mini', `${n.ikon} ${n.nev}`);
+      g.title = n.leiras;
+      g.style.opacity = n.kod === valasztott ? '1' : '0.55';
+      g.onclick = () => {
+        valasztott = n.kod;
+        for (const { g: g2, kod } of fokozatGombok) g2.style.opacity = kod === valasztott ? '1' : '0.55';
+      };
+      fokozatGombok.push({ g, kod: n.kod });
+      be(fokozatSor, g);
+    }
+    const leiras = el('p', null, NEHEZSEGEK.map((n) => `${n.ikon} ${n.nev}: ${n.leiras}`).join('  '));
     const indit = el('button', 'mini', 'Új állomás indítása');
     indit.onclick = () => {
       if (!confirm('A mostani játszás elveszik, ha nem mentetted el. Új állomást kezdesz?')) return;
       const sz = (Number(mezo.value) | 0);
-      location.search = sz ? `?seed=${sz}` : '';
+      location.search = `?nehez=${valasztott}` + (sz ? `&seed=${sz}` : '');
     };
-    be(uj, mezo, indit);
+    be(uj, mezo, fokozatSor, leiras, indit);
     be(p, uj);
   }
 
@@ -483,6 +502,19 @@ export class Panelek {
       k.innerHTML = `<div class="fej"><span>${dim.ikon}</span><b>${dim.nev}</b></div>` +
         `<div class="sorok">szint <b>${all.szint}</b> · instabilitás <b>${(all.instabilitas / 10).toFixed(0)}%</b> · díj <b>${dimenzioDij(all)}</b></div>`;
       p.appendChild(k);
+    }
+
+    if (t.igeny && t.dij > 0) {
+      const b = el('div', 'tetel');
+      b.innerHTML = ep.berbeadva
+        ? '<div class="fej"><b>🤝 Bérbe adva</b></div><p>A bérlő üzemelteti: nem kell hozzá személyzet, ' +
+          'és napi fix díjat is fizet — cserébe a forgalom bevételének csak 42 %-a a tiéd.</p>'
+        : '<div class="fej"><b>🤝 Bérbeadás</b></div><p>Add ki a helyet egy bérlőnek: nem kell hozzá személyzet, ' +
+          'és napi fix díjat fizet — cserébe a forgalom bevételének csak 42 %-a marad nálad.</p>';
+      const g = el('button', 'mini', ep.berbeadva ? 'Bérlet felmondása' : 'Bérbeadás');
+      g.onclick = () => this._parancs({ fajta: 'berbead', azon: ep.azon });
+      be(b, g);
+      p.appendChild(b);
     }
 
     const gombok = el('div', 'sorok');
