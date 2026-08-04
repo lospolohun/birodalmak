@@ -114,3 +114,56 @@ export function kertBetoltes() {
   const adat = betolt(hely === 'auto' ? 'auto' : Number(hely));
   return adat;
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════
+//  FÁJLBA MENTÉS ÉS FÁJLBÓL BETÖLTÉS
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ── MIÉRT KELL, HA VAN localStorage ───────────────────────────────────────
+// Kettőért. Egy: a böngésző tárolója TÖRÖLHETŐ — egy „cookie-k törlése" vagy
+// egy privát ablak bezárása elviszi az órák munkáját, és ezt a játékos csak
+// utólag tudja meg. Kettő, és ez a fontosabb: a mentés a seed + a
+// parancsnapló, tehát egy HIBAJELENTÉS tökéletes formája. Aki elakadt vagy
+// furcsaságot lát, elküldheti a fájlt, és a hiba bitre újrajátszható.
+
+/** A mostani állás letöltése fájlként. */
+export function fajlbaMent(sim) {
+  const adat = mentesKeszit(sim, `${sim.nap}. nap`);
+  const szoveg = JSON.stringify(adat);
+  const blob = new Blob([szoveg], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `portal-hub-tycoon_${sim.seed}_${sim.nap}nap.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // A böngésző csak a letöltés MEGKEZDÉSE után olvassa ki az URL-t; azonnali
+  // felszabadításnál üres fájlt kapnánk. Egy másodperc bőven elég.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return { rendben: true };
+}
+
+/**
+ * Fájl beolvasása és betöltés-kérés. A visszatérés a hibaüzenet vagy null.
+ * @param {File} fajl
+ * @param {(ok: string|null) => void} kesz
+ */
+export function fajlbolBetolt(fajl, kesz) {
+  const olvaso = new FileReader();
+  olvaso.onerror = () => kesz('nem sikerült beolvasni a fájlt');
+  olvaso.onload = () => {
+    let adat;
+    try { adat = JSON.parse(String(olvaso.result)); } catch (e) { kesz('ez nem érvényes mentésfájl'); return; }
+    const e2 = mentesEllenoriz(adat);
+    if (!e2.rendben) { kesz(e2.ok); return; }
+    // A tárolón keresztül megy, mert a betöltés újratöltéssel történik
+    // (lásd a fájl közepén lévő magyarázatot).
+    const v = ir(kulcs(HELYEK), adat);
+    if (!v.rendben) { kesz(v.ok); return; }
+    kesz(null);
+    betoltestKer(HELYEK);
+  };
+  olvaso.readAsText(fajl);
+}

@@ -514,6 +514,33 @@ export class Panelek {
       be(p, hd);
     }
 
+    // ── FÁJL ──────────────────────────────────────────────────────────
+    be(p, el('h4', null, 'Fájl'));
+    const f = el('div', 'tetel');
+    f.innerHTML = '<p>A böngésző tárolója törölhető — egy fájlba mentett állás nem. ' +
+      'És mivel a mentés a seed + a parancsnaplód, ez egyben a tökéletes HIBAJELENTÉS is: ' +
+      'a fájlból a hiba bitre újrajátszható.</p>';
+    const fSor = el('div', 'sorok');
+    const le = el('button', 'mini', '⬇ Mentés fájlba');
+    le.onclick = () => { tarolo.fajlbaMent(sim); this.hud.uzen('Mentés letöltve.', 'jo'); };
+    const fel = el('button', 'mini', '⬆ Betöltés fájlból');
+    const mezoF = el('input');
+    mezoF.type = 'file';
+    mezoF.accept = 'application/json,.json';
+    mezoF.style.display = 'none';
+    mezoF.onchange = () => {
+      if (!mezoF.files || !mezoF.files[0]) return;
+      tarolo.fajlbolBetolt(mezoF.files[0], (ok) => {
+        if (ok) this.hud.uzen('Nem sikerült: ' + ok, 'baj');
+      });
+    };
+    fel.onclick = () => {
+      if (confirm('A mostani játszás elveszik, ha nem mentetted el. Betöltöd a fájlt?')) mezoF.click();
+    };
+    be(fSor, le, fel);
+    be(f, fSor, mezoF);
+    be(p, f);
+
     be(p, el('h4', null, 'Új játszás'));
     const uj = el('div', 'tetel');
     uj.innerHTML = '<p>Minden világ egy seedből nő ki. Ugyanaz a seed ugyanazt a világot adja — ' +
