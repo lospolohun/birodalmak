@@ -19,6 +19,7 @@ import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
 import { bestiariumot } from './bestiarium.js';
 import * as tarolo from './tarolo.js';
 import { tanacsok } from './tanacsado.js';
+import { ESEMENYEK } from '../sim/esemenyek.js';
 import { vonal } from './grafikon.js';
 import { ALLAPOT_NEV } from '../sim/utas.js';
 
@@ -416,6 +417,27 @@ export class Panelek {
       be(h, l);
     }
     p.appendChild(h);
+
+    // ── ESEMÉNYEK ─────────────────────────────────────────────────────
+    // Nem díszlet: a leggyakoribb esemény megmutatja, mi ellen érdemes
+    // FELKÉSZÜLNI. Sok mimik-lopás → őrök kellenek; sok áramszünet →
+    // tartalék energiamag; sok kapuomlás → karbantartó.
+    if (sim.esemenyDb.size > 0) {
+      be(p, el('h4', null, 'Ami történt veled'));
+      const d = el('div', 'tetel');
+      const l = el('div', 'sorok');
+      l.style.flexDirection = 'column';
+      const rend = [...sim.esemenyDb.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+      for (const [kod, db] of rend) {
+        const def = ESEMENYEK.find((x) => x.kod === kod);
+        const sor = el('div');
+        sor.style.cssText = 'display:flex;justify-content:space-between;width:100%';
+        sor.innerHTML = `<span>${def ? def.ikon + ' ' + def.nev : kod}</span><b>${db}×</b>`;
+        l.appendChild(sor);
+      }
+      be(d, l);
+      p.appendChild(d);
+    }
 
     be(p, el('h4', null, 'Legjobb üzletek'));
     const sorrend = sim.epuletek.filter(Boolean).slice().sort((a, b) => b.bevetel - a.bevetel).slice(0, 6);
