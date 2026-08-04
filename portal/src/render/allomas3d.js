@@ -19,6 +19,25 @@
 //
 // A portálok kivételek: ott a forgó gyűrű annyira a játék arca, hogy megéri
 // nekik külön objektumot adni. Belőlük legfeljebb pár tucat van.
+//
+// ── A SZELLEMSZINT (v0.7) ─────────────────────────────────────────────────
+// A v0.3-ban az aktív szint FÖLÖTTI emeleteket egyszerűen nem rajzoltuk ki.
+// Ez működött, csak hazudott: a földszinten állva úgy tűnt, mintha az emelet
+// nem is létezne, és a játékos nem tudta megítélni, hova érdemes átjárót
+// tenni, hol lóg ki az emeleti padló, meddig ér a fönti csarnok.
+//
+// A csere: a fölső szintek HALVÁNYAN, áttetszően látszanak. Három szabály,
+// mindhárom fájdalomból tanulva:
+//
+//  1. `depthWrite: false` a szellemrétegeken. Ha írnának a mélységpufferbe,
+//     az egymást átfedő áttetsző lapok a kamera szögétől függően takarnák ki
+//     egymást — vagyis a fönti padló VILLOGNA forgatás közben.
+//  2. A szellem is PÉLDÁNYOSÍTVA megy: típusonként EGY külön InstancedMesh.
+//     A rajzolási hívások száma így továbbra is a TÍPUSOK számától függ.
+//     És mivel a `count = 0`-s példányosított mesh-re a three ki sem adja a
+//     hívást, aki sosem épít emeletre, az egyet sem fizet érte.
+//  3. Az aktív szint ALATTI emeletek teljesen átlátszatlanok maradnak — azok
+//     nem kontextus, hanem a szerkezet, amin állunk.
 
 import * as THREE from 'three';
 import { RACS_SZ, RACS_M, RACS_SZINT, SZINT_MAGASSAG } from '../mag/config.js';
@@ -29,6 +48,9 @@ import { epuletMertanok, epuletDiszek } from './epulet_mertan.js';
 
 const MAX_EPULET = 600;
 const MAX_PORTAL = 24;
+/** A szellemréteg átlátszósága. 0,3 fölött már versenyez az aktív szinttel. */
+const SZELLEM_ATLATSZO = 0.24;
+const SZELLEM_PADLO = 0.18;
 
 export class Allomas3d {
   constructor(szinter, sim) {
@@ -49,13 +71,13 @@ export class Allomas3d {
     this._epuleteket();
     this._portalokat();
     this._elonezetet();
+    this._kiemelest();
 
     this._racsVerzio = -1;
     /**
-     * Az aktív szint. A FÖLÖTTE lévő emeleteket nem rajzoljuk ki — enélkül a
-     * földszinten dolgozó játékos a saját emeletének a padlóját nézné, és nem
-     * látná, hová épít. Ez a legfontosabb következménye annak, hogy az
-     * állomás többszintes lett.
+     * Az aktív szint. A FÖLÖTTE lévő emeletek SZELLEMKÉNT látszanak (lásd a
+     * fejlécet), az alattiak teljes fényben. Enélkül a földszinten dolgozó
+     * játékos a saját emeletének a padlóját nézné, és nem látná, hová épít.
      */
     this.aktivSzint = 0;
     this._rajzoltSzint = -1;
@@ -85,16 +107,32 @@ export class Allomas3d {
   }
 
   // ── PADLÓ ───────────────────────────────────────────────────────────────
+  //
+  // Két mesh, EGY geometria: a szilárd (aktív szint és alatta) és a szellem
+  // (fölötte). Azért nem egy mesh példányonkénti átlátszósággal, mert az
+  // WebGL-ben csak saját shaderrel megy — és a szellemréteg amúgy is más
+  // rendezési szakaszba tartozik (áttetsző, mélységírás nélkül).
   _padlot() {
     const g = new THREE.BoxGeometry(0.98, 0.24, 0.98);
     g.translate(0, -0.12, 0);
+    const kapacitas = RACS_SZ * RACS_M * RACS_SZINT;
     const a = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const m = new THREE.InstancedMesh(g, a, RACS_SZ * RACS_M * RACS_SZINT);
+    const m = new THREE.InstancedMesh(g, a, kapacitas);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.receiveShadow = true;
     m.count = 0;
     this.gyoker.add(m);
     this.padlo = m;
+
+    const sza = new THREE.MeshLambertMaterial({
+      color: 0xffffff, transparent: true, opacity: SZELLEM_PADLO, depthWrite: false,
+    });
+    const sm = new THREE.InstancedMesh(g, sza, kapacitas);
+    sm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    sm.count = 0;
+    sm.renderOrder = 2;
+    this.gyoker.add(sm);
+    this.padloSzellem = sm;
   }
 
   // ── ÉPÜLETEK ────────────────────────────────────────────────────────────
@@ -142,7 +180,18 @@ export class Allomas3d {
       disz.frustumCulled = false;
       this.gyoker.add(disz);
     }
-    return { kod, test, disz, kapacitas, geo, diszGeo };
+    // A SZELLEM-változat csak a TESTET viszi, díszt nem: 24 %-os
+    // átlátszóságnál a kémény és a cégér amúgy is beleolvad, cserébe ez
+    // huszonhárom rajzolási hívást spórol azon a szinten, ahol a játékos
+    // épp NEM dolgozik.
+    const szellem = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({
+      color: 0xffffff, transparent: true, opacity: SZELLEM_ATLATSZO, depthWrite: false,
+    }), kapacitas);
+    szellem.count = 0;
+    szellem.frustumCulled = false;
+    szellem.renderOrder = 3;
+    this.gyoker.add(szellem);
+    return { kod, test, disz, szellem, kapacitas, geo, diszGeo };
   }
 
   /** Kapacitás-növelés: a régi mesh-ek helyére kétszer akkorák kerülnek. */
@@ -150,6 +199,8 @@ export class Allomas3d {
     this.gyoker.remove(bejegyzes.test);
     bejegyzes.test.dispose();
     if (bejegyzes.disz) { this.gyoker.remove(bejegyzes.disz); bejegyzes.disz.dispose(); }
+    this.gyoker.remove(bejegyzes.szellem);
+    bejegyzes.szellem.dispose();
     const uj = this._tipusMesheket(bejegyzes.kod, bejegyzes.geo, bejegyzes.diszGeo, bejegyzes.kapacitas * 2);
     this.tipusMesh.set(bejegyzes.kod, uj);
     return uj;
@@ -188,7 +239,24 @@ export class Allomas3d {
       cs.add(talp, kulso, gyuru, orveny, feny);
       cs.visible = false;
       this.gyoker.add(cs);
-      this.portalok.push({ cs, gyuru, kulso, orveny, feny, talp });
+      this.portalok.push({ cs, gyuru, kulso, orveny, feny, talp, szellem: false });
+    }
+  }
+
+  /**
+   * A fölső szint kapuja szellemként. A `transparent` átbillentése SHADERT
+   * fordíttat újra a three-vel, ezért ez CSAK szintváltáskor futhat — nem
+   * képkockánként. (A hívó, a `_epuleteketEpit`, a rács verziójához van kötve,
+   * tehát ez teljesül; ha valaha képkockánkénti hívóhelyet kap, az akadozni fog.)
+   */
+  _portaltSzellemit(o, szellem) {
+    if (o.szellem === szellem) return;
+    o.szellem = szellem;
+    for (const r of [o.gyuru, o.kulso, o.talp]) {
+      r.material.transparent = szellem || r === o.kulso;
+      r.material.opacity = szellem ? SZELLEM_ATLATSZO : (r === o.kulso ? 0.7 : 1);
+      r.material.depthWrite = !szellem;
+      r.material.needsUpdate = true;
     }
   }
 
@@ -220,6 +288,70 @@ export class Allomas3d {
     e.material.color.setHex(ervenyes ? 0x63d68a : 0xff5d73);
   }
 
+  // ── KIJELÖLÉS-KIEMELÉS ──────────────────────────────────────────────────
+  //
+  // MIÉRT KELL: a „kéz" eszközzel az épületre mutatva eddig CSAK a súgóbuborék
+  // változott — a képernyő túloldalán. A játékos így nem tudta, melyik házra
+  // vonatkozik, amit olvas; sűrűn beépített csarnokban ez rendszeresen rossz
+  // épület elbontásához vezetett.
+  //
+  // MIÉRT GYŰRŰ ÉS NEM SZÍNEZÉS: az épület színe INFORMÁCIÓ (a típusé), a
+  // példányszíne pedig a példányosított mesh-ben lakik — kiemeléshez át kellene
+  // írni, majd visszaállítani, és egy elmaradt visszaállítás tartósan hazudna.
+  // A gyűrű független objektum: nem tud „beragadni" egy épület színébe.
+  _kiemelest() {
+    const cs = new THREE.Group();
+    const gy = new THREE.Mesh(
+      new THREE.TorusGeometry(0.5, 0.055, 8, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.9, depthWrite: false }),
+    );
+    gy.rotation.x = -Math.PI * 0.5;
+    // Álló keret: a gyűrű a talpat jelöli, ez a magasságot. Az `EdgesGeometry`
+    // egyetlen vonal-hívás, és nem takarja el, amit körberajzol.
+    const keret = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.75, depthWrite: false }),
+    );
+    keret.position.y = 0.5;
+    cs.add(gy, keret);
+    cs.visible = false;
+    cs.renderOrder = 6;
+    this.gyoker.add(cs);
+    this.kiemeles = cs;
+    this.kiemelesGyuru = gy;
+    this.kiemelesKeret = keret;
+    /** A kiemelt épület azonosítója, vagy −1. */
+    this.kiemeltAzon = -1;
+  }
+
+  /**
+   * Kiemelés be/ki. A `fo.js` hívja a „kéz" eszköznél:
+   *   `allomas.kiemel(azon)`  — az egér alatti épület azonosítója
+   *   `allomas.kiemel(-1)`    — nincs mit kiemelni
+   * Nem hibázik ismeretlen azonosítóra, és nem tart hivatkozást a sim
+   * objektumaira: minden képkockában újra megkérdezi, létezik-e még.
+   * @param {number|null} azon
+   */
+  kiemel(azon) {
+    this.kiemeltAzon = (azon === null || azon === undefined) ? -1 : (azon | 0);
+  }
+
+  _kiemelestFrissit(ido) {
+    const cs = this.kiemeles;
+    const ep = this.kiemeltAzon >= 0 ? this.sim.epuletek[this.kiemeltAzon] : null;
+    if (!ep) { cs.visible = false; return; }
+    const t = EPULETEK[ep.tipusIdx];
+    const magas = t.atjaro ? SZINT_MAGASSAG : (t.magas || 1.4);
+    cs.visible = true;
+    cs.position.set(ep.x + ep.sz * 0.5, ep.z * SZINT_MAGASSAG + 0.06, ep.y + ep.m * 0.5);
+    // Lüktetés: a szem a MOZGÁST veszi észre, nem a színt. Egy statikus gyűrű
+    // beleolvad a sok apró geometriába, egy lélegző nem.
+    const p = 1 + Math.sin(ido * 4.2) * 0.05;
+    this.kiemelesGyuru.scale.set((ep.sz + 0.5) * p, (ep.m + 0.5) * p, 1);
+    this.kiemelesKeret.scale.set(ep.sz + 0.16, magas + 0.16, ep.m + 0.16);
+    this.kiemelesGyuru.material.opacity = 0.72 + Math.sin(ido * 4.2) * 0.22;
+  }
+
   // ── KÉPKOCKÁNKÉNT ───────────────────────────────────────────────────────
 
   frissit(ido) {
@@ -232,16 +364,18 @@ export class Allomas3d {
     }
     this._jelzoketFrissit();
     this._portalokatAnimal(ido);
+    this._kiemelestFrissit(ido);
   }
 
   _padlotEpit() {
     const racs = this.sim.racs;
-    const m = this.padlo;
+    const m = this.padlo, szm = this.padloSzellem;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
     q.identity(); s.set(1, 1, 1);
-    let n = 0;
+    let n = 0, szn = 0;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    for (let z = 0; z <= this.aktivSzint; z++) {
+    for (let z = 0; z < RACS_SZINT; z++) {
+    const szellem = z > this.aktivSzint;
     const magas = z * SZINT_MAGASSAG;
     for (let y = 0; y < RACS_M; y++) {
       for (let x = 0; x < RACS_SZ; x++) {
@@ -253,6 +387,17 @@ export class Allomas3d {
         }
         p.set(x + 0.5, magas, y + 0.5);
         mat.compose(p, q, s);
+        if (szellem) {
+          // A szellempadló EGYSZÍNŰ, hűvös derengés: a zónaszínek és a
+          // sakktábla itt csak zajt adnának, hiszen nem azon a szinten
+          // tervezünk. Az alakja viszont — meddig ér, hol lyukas — pont az,
+          // amiért ez a réteg egyáltalán van.
+          szm.setMatrixAt(szn, mat);
+          sz.setRGB(0.42, 0.56, 0.86, THREE.SRGBColorSpace);
+          szm.setColorAt(szn, sz);
+          szn++;
+          continue;
+        }
         m.setMatrixAt(n, mat);
         // Alapszín + cellánkénti apró eltérés, hogy a padló ne legyen lapos
         // egyszínű felület. A `hash2` sorrendfüggetlen, tehát ugyanaz a cella
@@ -280,6 +425,9 @@ export class Allomas3d {
     m.count = n;
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    szm.count = szn;
+    szm.instanceMatrix.needsUpdate = true;
+    if (szm.instanceColor) szm.instanceColor.needsUpdate = true;
 
     if (n > 0) {
       this.alaplemez.visible = true;
@@ -292,7 +440,7 @@ export class Allomas3d {
     const sim = this.sim;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
     q.identity();
-    for (const b of this.tipusMesh.values()) { b.test.count = 0; if (b.disz) b.disz.count = 0; }
+    for (const b of this.tipusMesh.values()) { b.test.count = 0; if (b.disz) b.disz.count = 0; b.szellem.count = 0; }
     let portalN = 0;
     this._portalHozzarendeles = [];
 
@@ -300,7 +448,7 @@ export class Allomas3d {
       const ep = sim.epuletek[a];
       if (!ep) continue;
       const t = EPULETEK[ep.tipusIdx];
-      if (ep.z > this.aktivSzint) continue;
+      const szellem = ep.z > this.aktivSzint;
       const magas = ep.z * SZINT_MAGASSAG;
 
       if (ep.kod === 'portal') {
@@ -308,7 +456,8 @@ export class Allomas3d {
           const o = this.portalok[portalN];
           o.cs.visible = true;
           o.cs.position.set(ep.x + ep.sz * 0.5, magas, ep.y + ep.m * 0.5);
-          this._portalHozzarendeles.push({ o, ep });
+          this._portaltSzellemit(o, szellem);
+          this._portalHozzarendeles.push({ o, ep, szellem });
           portalN++;
         }
         continue;
@@ -316,7 +465,10 @@ export class Allomas3d {
 
       let b = this.tipusMesh.get(ep.kod);
       if (!b) continue;
-      if (b.test.count >= b.kapacitas) b = this._tipustNovel(b);
+      // ⚠️ A növelés ELDOBJA a régi mesh-eket, tehát utána SEMMILYEN korábbi
+      // hivatkozást nem szabad használni — ezért kérdezzük le a számlálót
+      // közvetlenül a bejegyzésből, és nem tartunk el egy `cel` változót.
+      if ((szellem ? b.szellem.count : b.test.count) >= b.kapacitas) b = this._tipustNovel(b);
 
       // Az átjáró a két szint közti teret tölti ki, nem a saját magasságát:
       // a mozgólépcsőnek FEL kell érnie, különben ránézésre nem vezet sehová.
@@ -326,6 +478,17 @@ export class Allomas3d {
       // A mértan a [0..1]³-ban van, az origója a bal-felső sarok alja — ezért
       // a pozíció a SAROK, nem a közép, és a skála a teljes alapterület.
       mat.compose(p, q, s);
+
+      if (szellem) {
+        const i = b.szellem.count++;
+        b.szellem.setMatrixAt(i, mat);
+        // Hidegebb, fakóbb változat: a szellemszint legyen felismerhető, de
+        // ne versenyezzen az aktív szint telített színeivel.
+        sz.setHex(t.szin).lerp(SZELLEM_SZIN, 0.45);
+        b.szellem.setColorAt(i, sz);
+        continue;
+      }
+
       const i = b.test.count++;
       b.test.setMatrixAt(i, mat);
       sz.setHex(t.szin);
@@ -342,6 +505,8 @@ export class Allomas3d {
     for (const b of this.tipusMesh.values()) {
       b.test.instanceMatrix.needsUpdate = true;
       if (b.test.instanceColor) b.test.instanceColor.needsUpdate = true;
+      b.szellem.instanceMatrix.needsUpdate = true;
+      if (b.szellem.instanceColor) b.szellem.instanceColor.needsUpdate = true;
       if (b.disz) {
         b.disz.instanceMatrix.needsUpdate = true;
         if (b.disz.instanceColor) b.disz.instanceColor.needsUpdate = true;
@@ -387,7 +552,7 @@ export class Allomas3d {
   _portalokatAnimal(ido) {
     const lista = this._portalHozzarendeles || [];
     for (let i = 0; i < lista.length; i++) {
-      const { o, ep } = lista[i];
+      const { o, ep, szellem } = lista[i];
       const dim = ep.dimenzio >= 0 ? DIMENZIOK[ep.dimenzio] : null;
       const all = ep.dimenzio >= 0 ? this.sim.dimenziok[ep.dimenzio] : null;
       const alap = dim ? dim.szin : 0x6a6a8a;
@@ -401,8 +566,13 @@ export class Allomas3d {
       o.kulso.material.color.copy(this._sz);
       o.orveny.material.color.copy(this._sz);
       o.feny.color.copy(this._sz);
-      o.feny.intensity = all2 ? 6 + inst * 10 : 0;
-      o.orveny.material.opacity = all2 ? 0.45 + Math.sin(ido * 2.2) * 0.08 : 0.08;
+      // A szellemszint kapuja nem világít bele az aktív emeletbe: a
+      // pontfénynek nincs „ez az emelet" fogalma, tehát a fönti kapu fénye
+      // a földszinti padlón jelenne meg — pont ott, ahol semmi sem áll.
+      o.feny.intensity = (all2 && !szellem) ? 6 + inst * 10 : 0;
+      o.orveny.material.opacity = szellem
+        ? SZELLEM_ATLATSZO
+        : (all2 ? 0.45 + Math.sin(ido * 2.2) * 0.08 : 0.08);
 
       o.gyuru.rotation.z = ido * (0.5 + inst * 3.4);
       o.kulso.rotation.z = -ido * (0.35 + inst * 2.2);
@@ -418,4 +588,6 @@ export class Allomas3d {
 }
 
 const PIROS = new THREE.Color(0xff3355);
+/** A szellemréteg felé húzott hideg alapszín (lásd `_epuleteketEpit`). */
+const SZELLEM_SZIN = new THREE.Color(0x8fb4ff);
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }

@@ -15,6 +15,19 @@
 // A lény színe a hangulatával a vörös felé csúszik. Ez a játék legfontosabb
 // vizuális visszajelzése: a HUD-on lévő „hírnév 42" absztrakt, de egy vörösödő
 // tömeg a biztonsági ellenőrzés előtt azonnal elmondja, mit rontottál el.
+//
+// ── A SZELLEMTÖMEG (v0.7) ─────────────────────────────────────────────────
+// A fölső szintek lényei eddig eltűntek. Ez pont a legfontosabb információt
+// vette el: hogy VAN-E ott fönt forgalom. Egy emeleti üzletsor, amiről nem
+// látszik, jár-e oda bárki, nem tervezhető.
+//
+// A szellemtömeg ezért EGY közös, áttetsző mesh — nem fajonkénti. Két oka van,
+// és mindkettő fontosabb, mint a sziluett: (1) 24 %-os átlátszóságnál a
+// kobold és a troll formája úgysem különböztethető meg, (2) a lények
+// KÉPKOCKÁNKÉNT mozognak, tehát ez a réteg az egyetlen, ami tényleg minden
+// frame-ben ír — itt a tíz plusz rajzolási hívás valódi ár lenne, a haszon
+// meg nulla. A szín viszont marad fajonkénti: a tömeg SZÍNE messziről is
+// elmondja, kik vannak fönt.
 
 import * as THREE from 'three';
 import { MAX_UTAS, SZINT_MAGASSAG } from '../mag/config.js';
@@ -24,12 +37,14 @@ import { ALLAPOT } from '../sim/utas.js';
 import { lenyMertanok } from './leny_mertan.js';
 
 const MAX_DOLGOZO = 240;
+/** A szellemtömeg kerete. Ennél több egyszerre úgysem olvasható ki a képből. */
+const MAX_SZELLEM = 600;
 const PIROS = new THREE.Color(0xff3344);
 
 export class Lenyek3d {
   constructor(szinter, sim) {
     this.sim = sim;
-    /** A fölötte lévő szintek lényeit nem rajzoljuk — az emeletet takarnánk el. */
+    /** Efölött a lények SZELLEMKÉNT látszanak (lásd a fejlécet). */
     this.aktivSzint = 0;
     this.gyoker = new THREE.Group();
     szinter.jelenet.add(this.gyoker);
@@ -66,6 +81,23 @@ export class Lenyek3d {
     // Dühjelző: apró kocka a nagyon rossz hangulatú lények fölött.
     const jg = new THREE.BoxGeometry(0.2, 0.2, 0.2);
     this.duhJelzok = this._mesh(jg, false, 300, false, true);
+
+    // ── SZELLEMTÖMEG ──────────────────────────────────────────────────────
+    // `MeshBasicMaterial`, tehát fénytől független: éjjel is látszik, hogy
+    // fönt van forgalom. `depthWrite: false` — enélkül az egymás mögötti
+    // szellemlények kioltanák egymást, és a tömeg foltokban villogna.
+    const szg = new THREE.SphereGeometry(0.36, 7, 5);
+    szg.scale(1, 1.55, 1);
+    szg.translate(0, 0.55, 0);
+    const szm = new THREE.InstancedMesh(szg, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false,
+    }), MAX_SZELLEM);
+    szm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    szm.count = 0;
+    szm.frustumCulled = false;
+    szm.renderOrder = 4;
+    this.gyoker.add(szm);
+    this.szellemMesh = szm;
   }
 
   /**
@@ -112,7 +144,7 @@ export class Lenyek3d {
   frissit(ido) {
     const sim = this.sim;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
-    let duhN = 0;
+    let duhN = 0, szellemN = 0;
     for (const b of this.fajMesh.values()) { b.test.count = 0; b.fej.count = 0; }
 
     for (let i = 0; i < sim.utasok.length; i++) {
@@ -121,9 +153,25 @@ export class Lenyek3d {
       // A kiszolgálás alatt álló utas BENT van az épületben — nem rajzoljuk.
       // Ez egyben olcsóbb is, és a sorok hossza így őszintén látszik.
       if (u.allapot === ALLAPOT.KISZOLGALAS) continue;
-      if (u.z > this.aktivSzint && u.valtasHatra === 0) continue;
 
       const faj = FAJOK[u.fajIdx];
+
+      // A szintváltás közben lévő lény MINDIG szilárd: ő épp a két emelet
+      // között utazik, és pont az a mozgás a lényeg, amit látni kell.
+      if (u.z > this.aktivSzint && u.valtasHatra === 0) {
+        if (szellemN < MAX_SZELLEM) {
+          p.set(u.x, u.z * SZINT_MAGASSAG + (faj.lebeg || faj.atmegyFalon ? 0.45 : 0), u.y);
+          q.identity();
+          s.set(faj.meret, faj.meret, faj.meret);
+          mat.compose(p, q, s);
+          this.szellemMesh.setMatrixAt(szellemN, mat);
+          sz.setHex(faj.szin);
+          this.szellemMesh.setColorAt(szellemN, sz);
+          szellemN++;
+        }
+        continue;
+      }
+
       let b = this.fajMesh.get(faj.kod);
       if (!b) continue;
       if (b.test.count >= b.kapacitas) b = this._fajtNovel(b);
@@ -188,7 +236,20 @@ export class Lenyek3d {
       const t = DOLGOZOK[d.tipusIdx];
       const dep = d.epuletAzon >= 0 ? sim.epuletek[d.epuletAzon] : null;
       const dz = dep ? dep.z : 0;
-      if (dz > this.aktivSzint) continue;
+      if (dz > this.aktivSzint) {
+        // A fönti dolgozó is a szellemtömegbe kerül: enélkül az emeleti
+        // üzletsorról nem látszana, hogy egyáltalán VAN-e ott személyzet.
+        if (szellemN < MAX_SZELLEM) {
+          p.set(d.x, dz * SZINT_MAGASSAG, d.y);
+          q.identity(); s.set(0.9, 0.9, 0.9);
+          mat.compose(p, q, s);
+          this.szellemMesh.setMatrixAt(szellemN, mat);
+          sz.setHex(t.szin);
+          this.szellemMesh.setColorAt(szellemN, sz);
+          szellemN++;
+        }
+        continue;
+      }
       p.set(d.x, dz * SZINT_MAGASSAG + 0.05 + Math.sin(ido * 2 + i) * 0.03, d.y);
       q.setFromAxisAngle(this._tengely, ido * 0.6 + i);
       const m = 0.9 + (d.szint - 1) * 0.14;
@@ -205,6 +266,7 @@ export class Lenyek3d {
     for (const b of this.fajMesh.values()) { this._zar(b.test, b.test.count); this._zar(b.fej, b.fej.count); }
     this._zar(this.dolgozoMesh, dN);
     this._zar(this.duhJelzok, duhN);
+    this._zar(this.szellemMesh, szellemN);
   }
 
   _zar(mesh, n) {

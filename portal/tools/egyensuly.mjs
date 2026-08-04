@@ -19,21 +19,35 @@
 // Itt kizárólag JÁTÉKMENET-számok születnek — azok viszont a seedtől eltekintve
 // bitre reprodukálhatók.
 //
+// ── v0.5: MIÉRT KELLETT ÁG-ABLÁCIÓ ÉS NEHÉZSÉG-MÉRÉS ──────────────────────
+// A stratégiák EGYMÁSSAL való összehasonlítása nem tudja megmondani, hogy
+// „megéri-e az emelet": az `emeletes` és a `kiegyensulyozott` húsz számban
+// különbözik, tehát a különbségük nem az emeleté. Ezért van a 13. szakasz:
+// UGYANAZ a stratégia fut, egyetlen ág be- és kikapcsolva. Ez az egyetlen
+// mérés, ami egy alrendszer értékét önmagában adja vissza.
+//
+// A nehézségi fokozat pedig a `Sim` konstruktorának paramétere, nem parancs —
+// ezért kellett a `futas()`-nak külön argumentum. Fokozatot mérni csak úgy
+// lehet, hogy MINDEN MÁS azonos: ugyanaz a stratégia, ugyanazok a seedek.
+//
 // ── HASZNÁLAT ─────────────────────────────────────────────────────────────
 //   node portal/tools/egyensuly.mjs [tick] [seedDb] [gyors]
-//   alap: 60000 tick (50 játéknap) × 8 seed × 6 stratégia
-//   a „gyors" harmadik szó kihagyja a technológia- és díjszabás-kísérletet.
+//   alap: 60000 tick (50 játéknap) × 8 seed × 10 stratégia
+//   a „gyors" harmadik szó kihagyja a technológia-, díjszabás- és
+//   ág-ablációs kísérletet (a nehézség-mérés marad: az a v0.5 fő kérdése).
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
-import { MAX_UTAS, NAP_TICK, KEZDO_PENZ } from '../src/mag/config.js';
+import { MAX_UTAS, NAP_TICK, KEZDO_PENZ, NEHEZSEGEK, RACS_SZINT } from '../src/mag/config.js';
 import { DIMENZIOK } from '../src/sim/dimenziok.js';
-import { EPULETEK } from '../src/sim/epuletek.js';
+import { EPULETEK, epuletTipus } from '../src/sim/epuletek.js';
 import { TECHNOLOGIAK } from '../src/sim/kutatas.js';
 import { IGENYEK } from '../src/sim/epuletek.js';
-import { JATEKOSOK, JATEKOS_NEVEK, kiegyensulyozott, fuggosegiSor, epuletArak } from './jatekosok.mjs';
+import {
+  JATEKOSOK, JATEKOS_NEVEK, kiegyensulyozott, olcso, fuggosegiSor, epuletArak,
+} from './jatekosok.mjs';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.argv[2] || 60000);
@@ -60,15 +74,23 @@ const IGENY_NEV = new Map(IGENYEK.map((i) => [i.kod, i.nev]));
  * @param {Function} gyar a játékos-gyár (opciókkal már felparaméterezve)
  * @param {number} seed
  * @param {number} tickek
+ * @param {string} nehezseg 'konnyu' | 'normal' | 'kemeny'
  */
-function futas(nev, gyar, seed, tickek) {
-  const sim = new Sim({ seed });
+function futas(nev, gyar, seed, tickek, nehezseg = 'normal') {
+  const sim = new Sim({ seed, nehezseg });
   const jatekos = gyar();
 
   const napiSor = [];
   let utasOsszeg = 0, plafonTick = 0, aramTick = 0;
   let penzMin = sim.penz, penzMinTick = 0;
   let osszeomlas = 0;
+  /**
+   * Tételes bevétel/kiadás a teljes futásra. A `sim.tetelek` naponta ürül, a
+   * `sim.elozoNap.tetelek` viszont megmarad a napváltásig — innen gyűjtjük.
+   * Enélkül a bérbeadás mérhetetlen: a bérleti díj és a bérlet-részesedés
+   * SEHOL máshol nem különül el a többi bevételtől.
+   */
+  const tetelOsszeg = new Map();
   const elozoSzunet = new Int32Array(sim.dimenziok.length);
   const techIdo = [];
   const keszTech = new Set();
@@ -113,6 +135,9 @@ function futas(nev, gyar, seed, tickek) {
 
     if (sim.nap !== prevNap) {
       prevNap = sim.nap;
+      if (sim.elozoNap.tetelek) {
+        for (const [k, v] of sim.elozoNap.tetelek) tetelOsszeg.set(k, (tetelOsszeg.get(k) || 0) + v);
+      }
       napiSor.push({
         nap: sim.nap - 1,
         penz: Math.round(sim.penz),
@@ -127,11 +152,32 @@ function futas(nev, gyar, seed, tickek) {
       });
     }
 
+    // ⚠️ v0.6: A GYŐZELEM NEM ÁLLÍTJA MEG A VILÁGOT. A hét fejezet után
+    // korszakok jönnek, és a `jatekVege` már CSAK a csődöt jelenti. Ha itt a
+    // régi módon törnék ki, a jól játszó stratégiák futása a 17-20. napon
+    // véget érne, a rosszaké meg az 50-en — és az összes „végállapot" oszlop
+    // két különböző hosszúságú játékot hasonlítana össze.
     if (sim.jatekVege) { vegTick = t + 1; break; }
   }
 
   // ── ÖSSZESÍTÉS ──────────────────────────────────────────────────────────
   const epStat = new Map();
+  // v0.5: szintenkénti épületszám, bérbe adott üzletek, csatorna-épületek.
+  // Ezek nélkül a három új alrendszerről csak annyit lehetne mondani, hogy
+  // „a stratégia állítólag használja" — a mérésnek látnia kell, hogy tényleg.
+  const szintDb = new Array(RACS_SZINT).fill(0);
+  let berbeadDb = 0, berbeadBevetel = 0, csatornaDb = 0;
+  /**
+   * Eszközérték: a felépített épületek katalógus-ára összesen.
+   *
+   * MIÉRT KELL: a végállapot KÉSZPÉNZE önmagában félrevezet egy növekedési
+   * szakaszban. Aki 100 000-et beépít, az szegényebbnek látszik annál, aki a
+   * párnája alatt tartja — miközben az épület termel. Mérve is: az ág-abláció
+   * első változatában MIND a hat ág „nem érte meg" volt, holott a vasutas ág
+   * össz. bevétele 51 %-kal nagyobb volt az alapnál. A nettó vagyon
+   * (készpénz + eszközérték) az, ami a kettőt egy nevezőre hozza.
+   */
+  let eszkozErtek = 0;
   for (let a = 0; a < sim.epuletek.length; a++) {
     const ep = sim.epuletek[a];
     if (!ep) continue;
@@ -140,6 +186,11 @@ function futas(nev, gyar, seed, tickek) {
     e.db++;
     e.bevetel += ep.bevetel;
     e.kiszolgalt += ep.kiszolgalt;
+    if (ep.z < szintDb.length) szintDb[ep.z]++;
+    if (ep.szintek > 1 && ep.z + 1 < szintDb.length) szintDb[ep.z + 1]++;  // az átjáró két szinten áll
+    if (ep.berbeadva) { berbeadDb++; berbeadBevetel += ep.bevetel; }
+    if (EPULETEK[ep.tipusIdx].csatorna) csatornaDb++;
+    eszkozErtek += EPULETEK[ep.tipusIdx].ar;
   }
   const epuletek = [...epStat.values()].map((e) => ({
     ...e,
@@ -169,13 +220,29 @@ function futas(nev, gyar, seed, tickek) {
   let osszBevetel = 0, osszKoltseg = 0;
   for (const n of napiSor) { osszBevetel += n.bevetel; osszKoltseg += n.koltseg; }
 
+  // Csatorna- és kapu-oldal szétválasztva: a „nyugodt ág" kérdése pont ez.
+  let kapuUtas = 0, kapuDij = 0, csatornaUtas = 0, csatornaDij = 0;
+  let kapuSzintOssz = 0, kapuSzintDb = 0;
+  for (let i = 0; i < sim.dimenziok.length; i++) {
+    const d = sim.dimenziok[i];
+    if (DIMENZIOK[i].csatorna) { csatornaUtas += d.osszUtas; csatornaDij += d.bevetel; }
+    else {
+      kapuUtas += d.osszUtas; kapuDij += d.bevetel;
+      if (d.nyitva) { kapuSzintOssz += d.szint; kapuSzintDb++; }
+    }
+  }
+
   return {
     strategia: nev,
     seed,
+    nehezseg,
     tickek: vegTick,
     nap: sim.nap,
     veg: sim.jatekVege,
     vegNap: sim.jatekVege ? sim.nap : null,
+    gyoztel: !!sim.gyoztel,
+    gyozelemNap: sim.gyoztel ? Math.floor(sim.gyozelemTick / NAP_TICK) + 1 : null,
+    korszak: sim.tortenet.korszak,
     fejezet: sim.tortenet.fejezet,
     fejezetAllapot: sim.tortenet.allapot,
     penzVeg: Math.round(sim.penz),
@@ -210,6 +277,23 @@ function futas(nev, gyar, seed, tickek) {
     osszBevetel,
     osszKoltseg,
     hianyok,
+    // ── v0.5 ──────────────────────────────────────────────────────────────
+    eszkozErtek,
+    vagyon: Math.round(sim.penz) + eszkozErtek,
+    // Az utolsó három nap átlagos bevétele: a „hol tart most" mérőszám. A
+    // végállapot vagyona a MÚLTAT összegzi, ez a JELEN teljesítményt mutatja.
+    napiBevetelVeg: napiSor.length
+      ? Math.round(napiSor.slice(-3).reduce((n, x) => n + x.bevetel, 0) / Math.min(3, napiSor.length))
+      : 0,
+    szintDb,
+    emeletEpulet: szintDb.slice(1).reduce((a, b) => a + b, 0),
+    berbeadDb,
+    berbeadBevetel: Math.round(berbeadBevetel),
+    csatornaDb,
+    kapuUtas, kapuDij: Math.round(kapuDij),
+    csatornaUtas, csatornaDij: Math.round(csatornaDij),
+    kapuSzintAtlag: kapuSzintDb ? kapuSzintOssz / kapuSzintDb : 0,
+    tetelek: [...tetelOsszeg.entries()].map(([k, v]) => [k, Math.round(v)]),
     napiSor,
   };
 }
@@ -259,15 +343,19 @@ const perStrat = (nev) => eredmenyek.filter((e) => e.strategia === nev);
 // ── 1. STRATÉGIÁK EGYMÁS MELLETT ──────────────────────────────────────────
 cim('1. STRATÉGIÁK — seedeken átlagolva');
 tabla(
-  ['stratégia', 'gyŐz', 'csŐd', 'fejezet', 'pénz(vég)', 'pénz(min)', 'hírnév', 'elég.%', 'düh%', 'utas(csúcs)', 'utas(átl)', 'kapu', 'épület', 'omlás', 'áram%'],
+  ['stratégia', 'gyŐz', 'gyŐz.nap', 'korszak', 'csŐd', 'fejezet', 'pénz(vég)', 'vagyon(vég)', 'pénz(min)', 'hírnév', 'elég.%', 'düh%', 'utas(csúcs)', 'utas(átl)', 'kapu', 'épület', 'omlás', 'áram%'],
   JATEKOS_NEVEK.map((nev) => {
     const l = perStrat(nev);
+    const gy = l.filter((e) => e.gyoztel);
     return [
       nev,
-      `${l.filter((e) => e.veg === 'gyozelem').length}/${l.length}`,
+      `${gy.length}/${l.length}`,
+      gy.length ? p1(atl(gy, (e) => e.gyozelemNap)) : '—',
+      p1(atl(l, (e) => e.korszak)),
       `${l.filter((e) => e.veg === 'csod').length}/${l.length}`,
       p1(atl(l, (e) => e.fejezet + 1)),
       sz1(atl(l, (e) => e.penzVeg)),
+      sz1(atl(l, (e) => e.vagyon)),
       sz1(atl(l, (e) => e.penzMin)),
       p1(atl(l, (e) => e.hirnevVeg)),
       szaz(atl(l, (e) => e.elegedettArany)),
@@ -293,6 +381,48 @@ if (plafonos.length) {
   sor(`\n  A MAX_UTAS (${MAX_UTAS}) plafont egyetlen futás sem érte el érdemben — a mérés nincs levágva.`);
 }
 
+// ── 1b. A v0.4 HÁROM ÚJ ALRENDSZERE ───────────────────────────────────────
+// Ez a tábla nem eredményt mér, hanem LEFEDETTSÉGET: tényleg használja-e a
+// stratégia azt, amit használni akar. Ha egy oszlop végig nulla, akkor az
+// alrendszer nem „gyengén szerepelt", hanem MÉRETLEN maradt — és a v0.4
+// jelentése pont ezért nem tudott mondani róla semmit.
+cim('1b. EMELET · BÉRBEADÁS · CSATORNA — használja-e egyáltalán?');
+tabla(
+  ['stratégia', 'épület össz.', 'ebből emeleten', 'átjáró', 'bérbe adva', 'bérlet-bevétel', 'csatorna db', 'csat. utas', 'csat. portáldíj', 'kapu utas', 'kapu portáldíj', 'kapuszint átl.'],
+  JATEKOS_NEVEK.map((nev) => {
+    const l = perStrat(nev);
+    const epDb = (kod) => atl(l, (e) => { const x = e.epuletek.find((y) => y.kod === kod); return x ? x.db : 0; });
+    return [
+      nev,
+      p1(atl(l, (e) => e.epuletDb)),
+      p1(atl(l, (e) => e.emeletEpulet)),
+      p1(epDb('lepcso') + epDb('teleportlift')),
+      p1(atl(l, (e) => e.berbeadDb)),
+      sz1(atl(l, (e) => e.berbeadBevetel)),
+      p1(atl(l, (e) => e.csatornaDb)),
+      sz1(atl(l, (e) => e.csatornaUtas)),
+      sz1(atl(l, (e) => e.csatornaDij)),
+      sz1(atl(l, (e) => e.kapuUtas)),
+      sz1(atl(l, (e) => e.kapuDij)),
+      p1(atl(l, (e) => e.kapuSzintAtlag)),
+    ];
+  }),
+);
+
+// ── 1c. TÉTELES BEVÉTEL ÉS KIADÁS ─────────────────────────────────────────
+cim('1c. MIBŐL ÉL AZ ÁLLOMÁS — tételes bontás (seed-átlag, teljes futás)');
+{
+  const kodok = new Set();
+  for (const e of eredmenyek) for (const [k] of e.tetelek) kodok.add(k);
+  const lista = [...kodok];
+  const ertek = (nev, k) => atl(perStrat(nev), (e) => { const t = e.tetelek.find((x) => x[0] === k); return t ? t[1] : 0; });
+  tabla(['tétel', ...JATEKOS_NEVEK],
+    lista.map((k) => [k, ...JATEKOS_NEVEK.map((nev) => sz1(ertek(nev, k)))])
+      .sort((a, b) => Math.abs(Number(b[6])) - Math.abs(Number(a[6]))));
+  sor('  (a negatív szám KIADÁS. A „bérlet" a bérbe adott üzletből ránk eső 42 %,');
+  sor('   a „bérleti díj" a napi fix tétel — a kettő együtt a passzív ág teljes hozama.)');
+}
+
 // ── 2. PÉNZ IDŐSOR ────────────────────────────────────────────────────────
 cim('2. PÉNZ ÉS HÍRNÉV IDŐBEN (seed-átlag)');
 tabla(
@@ -315,7 +445,7 @@ tabla(
     seed,
     ...JATEKOS_NEVEK.map((nev) => {
       const e = eredmenyek.find((x) => x.strategia === nev && x.seed === seed);
-      const jel = e.veg === 'gyozelem' ? '★' : e.veg === 'csod' ? '✖' : ' ';
+      const jel = e.veg === 'csod' ? '✖' : e.gyoztel ? '★' : ' ';
       return `${e.fejezet + 1}.${jel} ${sz1(e.penzVeg)}`;
     }),
   ]),
@@ -547,6 +677,165 @@ cim('11. FORDULÓPONT — mennyire dönti el a korai állapot a végeredményt')
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  NEHÉZSÉGI FOKOZATOK
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A fokozat a `Sim` konstruktorának paramétere (a világ ÁLLAPOTA, nem
+// beállítás), tehát csak így mérhető: ugyanaz a stratégia, ugyanazok a seedek,
+// más fokozat. Két stratégia fut, mert egy nem elég: a `kiegyensulyozott` azt
+// mutatja meg, hogy a JÓ játékos hol veszít, az `olcso` (tömeg-stratégia,
+// alacsony díj, vékony tartalék) azt, hogy a fokozat mennyire bünteti a
+// szűkösebb pénzügyi mozgásteret.
+//
+// Amit ki kell derülnie:
+//   • a könnyű ne legyen unalmas — ha ott MINDENKI nyer, méghozzá korán, a
+//     fokozat nem „segítség", hanem a játék kikapcsolása;
+//   • a kemény ne legyen lehetetlen — ha ott SENKI nem nyer és mindenki
+//     csődbe megy, az nem nehézség, hanem fal.
+
+cim('12. NEHÉZSÉGI FOKOZATOK — ugyanaz a stratégia, ugyanazok a seedek');
+const nehezsegMeres = [];
+for (const nev of ['kiegyensulyozott', 'olcso']) {
+  for (const n of NEHEZSEGEK) {
+    const l = [];
+    for (const seed of SEEDEK) l.push(futas(`${nev}@${n.kod}`, JATEKOSOK[nev], seed, TICKEK, n.kod));
+    nehezsegMeres.push({ strategia: nev, nehezseg: n.kod, futasok: l });
+    process.stdout.write('.');
+  }
+}
+process.stdout.write('\n');
+tabla(
+  ['stratégia', 'fokozat', 'győz', 'csőd', 'győzelem napja', 'korszak', 'fejezet', 'pénz(vég)', 'vagyon', 'pénz(min)', 'hírnév', 'elég.%', 'düh%', 'utas(átl)', 'omlás', 'neg.nap'],
+  nehezsegMeres.map((m) => {
+    const l = m.futasok;
+    const gy = l.filter((e) => e.gyoztel);
+    return [
+      m.strategia, m.nehezseg,
+      `${gy.length}/${l.length}`,
+      `${l.filter((e) => e.veg === 'csod').length}/${l.length}`,
+      gy.length ? p1(atl(gy, (e) => e.gyozelemNap)) : '—',
+      p1(atl(l, (e) => e.korszak)),
+      p1(atl(l, (e) => e.fejezet + 1)),
+      sz1(atl(l, (e) => e.penzVeg)),
+      sz1(atl(l, (e) => e.vagyon)),
+      sz1(atl(l, (e) => e.penzMin)),
+      p1(atl(l, (e) => e.hirnevVeg)),
+      szaz(atl(l, (e) => e.elegedettArany)),
+      szaz(atl(l, (e) => e.duhosArany)),
+      sz1(atl(l, (e) => e.utasAtlag)),
+      p1(atl(l, (e) => e.osszeomlas)),
+      p1(atl(l, (e) => e.negativNapok)),
+    ];
+  }),
+);
+sor('  A fokozat-szorzók (config.js → NEHEZSEGEK):');
+for (const n of NEHEZSEGEK) {
+  sor(`    ${n.kod.padEnd(7)} pénz×${n.penz} · bér×${n.ber} · instabil×${n.instabil} · érkezés×${n.erkezes} · esemény×${n.esemeny}`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  ÁG-ABLÁCIÓ: MEGÉRI-E AZ EMELET, A BÉRBEADÁS, A CSATORNA?
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ EZT A KÉRDÉST A STRATÉGIÁK ÖSSZEHASONLÍTÁSA NEM TUDJA MEGVÁLASZOLNI.
+// Az `emeletes` és a `kiegyensulyozott` húsz számban különbözik; ha az egyik
+// jobb, abból nem következik, hogy az EMELET a jó. Itt ezért ugyanaz a
+// stratégia fut, és pontosan EGY ág kapcsolódik hozzá. A viszonyítás a
+// „semmi extra" futás.
+//
+// Ugyanaz a korlát, mint a technológia-ablációnál: a léghajó ága magával
+// hozza az emeleti padló árát is (a kikötő csak emeleten áll meg), tehát az ő
+// száma a kettő EGYÜTTES hatása — ezt a jelentés is kimondja.
+
+const AG_EMELET_TERV = [
+  ['varo', (s, f) => 1 + Math.floor(f / 140)],
+  ['bolt', (s, f) => 1 + Math.floor(f / 90)],
+  ['konyvesbolt', (s, f) => 1 + Math.floor(f / 180)],
+  ['wc', (s, f) => Math.floor(f / 160)],
+  ['etterem', (s, f) => Math.floor(f / 160)],
+];
+
+let agKiserlet = [];
+if (!GYORS) {
+  cim('13. ÁG-ABLÁCIÓ — ugyanaz a stratégia, egyetlen ág be- vagy kikapcsolva');
+  // 6 seed, nem 4: az első futásban a szórás elnyomta a hatást — a nettó
+  // vagyont az döntötte el, hogy az adott seedben megnyílt-e a Sárkánytrónus
+  // (utasonként 397 tallér), nem az, hogy be volt-e kapcsolva az ág.
+  const kSeedek = SEEDEK.slice(0, Math.min(6, SEEDEK.length));
+  const kTick = Math.min(TICKEK, 36000);
+  // Az űrkapu `kapu_szkenner`-hez kötött, azt viszont a kiegyensúlyozott
+  // 12. helyen kutatja — 30 nap alatt oda sem ér. Ezért kap SAJÁT
+  // viszonyítási alapot: ugyanaz a stratégia, ugyanúgy előrevett szkennerrel,
+  // csak űrkapu nélkül. Enélkül a szkenner ára az űrkapu számlájára menne.
+  const KORAI_SZKENNER = [
+    'kapu_hangolas', 'stabil_kapuk', 'kapu_szkenner', 'gyors_sorok',
+    'fejlett_boltok', 'kristaly_takarek', 'energia_halo', 'takaritorobot',
+    'auto_poggyasz', 'vip_ellatas', 'gyogyaszat', 'ido_kotes', 'legendas_kapu',
+  ];
+  const agak = [
+    ['alap (semmi extra)', {}, 0],
+    ['+ emelet (3 blokk + üzletek)', { emelet: true, emeletBlokk: 3, emeletTerv: AG_EMELET_TERV }, 0],
+    ['+ bérbeadás (mindent)', { berbead: () => true }, 0],
+    // A mosdónak és a seprűparkolónak NINCS személyzete: ott a bérbeadás
+    // 58 %-ot ad oda a semmiért. Ez a sor azt méri, mennyit ér a válogatás.
+    ['+ bérbeadás (csak személyzetes)', { berbead: (k) => epuletTipus(k).szemelyzet > 0 }, 0],
+    ['+ vasútállomás', { csatorna: ['vasut'] }, 0],
+    ['+ léghajó (emelettel)', { emelet: true, emeletBlokk: 2, csatorna: ['leghajo'] }, 0],
+    ['mind együtt', {
+      emelet: true, emeletBlokk: 3, emeletTerv: AG_EMELET_TERV,
+      berbead: () => true, csatorna: ['vasut', 'leghajo', 'urkapu'],
+      kutatas: KORAI_SZKENNER,
+    }, 7],
+    ['alap, korai szkenner (kontroll)', { kutatas: KORAI_SZKENNER }, 7],
+    ['+ űrkapu (korai szkennerrel)', { csatorna: ['urkapu'], kutatas: KORAI_SZKENNER }, 7],
+  ];
+  for (const [cimke, opciok, alapIdx] of agak) {
+    const l = [];
+    for (const seed of kSeedek) l.push(futas('ag', () => kiegyensulyozott(opciok), seed, kTick));
+    agKiserlet.push({
+      cimke,
+      alapIdx,
+      vagyon: atl(l, (e) => e.vagyon),
+      eszkoz: atl(l, (e) => e.eszkozErtek),
+      napiVeg: atl(l, (e) => e.napiBevetelVeg),
+      penz: atl(l, (e) => e.penzVeg),
+      bevetel: atl(l, (e) => e.osszBevetel),
+      koltseg: atl(l, (e) => e.osszKoltseg),
+      utas: atl(l, (e) => e.kapuUtas + e.csatornaUtas),
+      hirnev: atl(l, (e) => e.hirnevVeg),
+      elegedett: atl(l, (e) => e.elegedettArany),
+      fejezet: atl(l, (e) => e.fejezet + 1),
+      gyozelem: l.filter((e) => e.gyoztel).length,
+      korszak: atl(l, (e) => e.korszak),
+      epulet: atl(l, (e) => e.epuletDb),
+      emeletEpulet: atl(l, (e) => e.emeletEpulet),
+      berbeadDb: atl(l, (e) => e.berbeadDb),
+      csatornaUtas: atl(l, (e) => e.csatornaUtas),
+      dolgozo: atl(l, (e) => e.dolgozoDb),
+    });
+    process.stdout.write('.');
+  }
+  process.stdout.write('\n');
+  tabla(['ág', 'nettó vagyon', 'vagyon-Δ', 'ebből eszköz', 'napi bev. (vég)', 'napi bev.-Δ', 'győz', 'korszak', 'utas', 'épület', 'emeleten', 'bérelt', 'dolgozó', 'hírnév', 'elég.%', 'megérte?'],
+    agKiserlet.map((a) => {
+      const b = agKiserlet[a.alapIdx];
+      return [
+        a.cimke, sz1(a.vagyon), a === b ? '—' : sz1(a.vagyon - b.vagyon), sz1(a.eszkoz),
+        sz1(a.napiVeg), a === b ? '—' : sz1(a.napiVeg - b.napiVeg),
+        `${a.gyozelem}/${kSeedek.length}`, p1(a.korszak), sz1(a.utas),
+        p1(a.epulet), p1(a.emeletEpulet), p1(a.berbeadDb), p1(a.dolgozo), p1(a.hirnev), szaz(a.elegedett),
+        a === b ? 'alap' : (a.vagyon > b.vagyon ? 'IGEN' : 'nem'),
+      ];
+    }));
+  sor(`  (${kSeedek.length} seed × ${kTick} tick, kiegyensúlyozott stratégia, normál nehézség)`);
+  sor('  NETTÓ VAGYON = készpénz + a felépített épületek katalógus-ára. A puszta készpénz');
+  sor('  növekedési szakaszban félrevezet: aki beépíti a pénzét, attól szegényebbnek látszik.');
+  sor('  ⚠️ A léghajó sora az EMELETI PADLÓ árát is viseli — a kikötő csak emeleten épülhet.');
+  sor('  ⚠️ Az űrkapu sorának SAJÁT alapja van (korai szkenner), mert a `kapu_szkenner`');
+  sor('     kutatás nélkül meg sem építhető — az ő ára nem az űrkapué.');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  GÉPI KIMENET
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -561,8 +850,15 @@ const ki = {
   futasok: eredmenyek,
   dijKiserlet,
   techKiserlet,
+  agKiserlet,
+  nehezsegek: NEHEZSEGEK.map((n) => ({ ...n })),
+  nehezsegMeres: nehezsegMeres.map((m) => ({
+    strategia: m.strategia,
+    nehezseg: m.nehezseg,
+    futasok: m.futasok.map((e) => ({ ...e, napiSor: undefined })),
+  })),
   spiral,
 };
 mkdirSync(join(GYOKER, 'qa'), { recursive: true });
 writeFileSync(join(GYOKER, 'qa', 'egyensuly.json'), JSON.stringify(ki, null, 1));
-console.log(`\n  → portal/qa/egyensuly.json (${eredmenyek.length} fő futás + ${dijKiserlet.length} díj- + ${techKiserlet.length} technológia-mérés)\n`);
+console.log(`\n  → portal/qa/egyensuly.json (${eredmenyek.length} fő + ${nehezsegMeres.reduce((n, m) => n + m.futasok.length, 0)} nehézség- + ${agKiserlet.length} ág- + ${dijKiserlet.length} díj- + ${techKiserlet.length} technológia-mérés)\n`);
