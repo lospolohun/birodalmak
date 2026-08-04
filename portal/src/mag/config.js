@@ -11,7 +11,7 @@
 // az AoC-nál már megégettük magunkat azzal, hogy két helyen állt verziószám.
 
 /** A játék verziója. EZ az igazság, nem a package.json. */
-export const VERZIO = '0.1.0';
+export const VERZIO = '0.4.0';
 export const JATEK_NEV = 'PORTAL HUB TYCOON';
 
 // ── IDŐ ───────────────────────────────────────────────────────────────────
@@ -65,7 +65,11 @@ export const ARAMSZUNET_HATEKONYSAG = 0.4;
 
 // ── UTASOK ────────────────────────────────────────────────────────────────
 /** Egyszerre ennyi utas lehet az állomáson. A tömbök ekkorára foglalódnak. */
-export const MAX_UTAS = 1200;
+// 1200 → 1600. Mérve: 48 futásból 29 a 15. nap környékén a PLAFONON ült, és
+// onnantól a stratégiák közti különbség eltűnt — a plafon maga lett a játék.
+// A hírnév-görbe javítása ezt magától kitolja, a nagyobb keret pedig teret ad
+// a jól vezetett állomásnak. (Mérve 0,137 ms/tick 1200 utasnál — van hely.)
+export const MAX_UTAS = 1600;
 /** Alap türelem tickben (kb. 2,5 perc valós idő). Fajonként szorzódik. */
 export const ALAP_TURELEM = 3000;
 /** Sorban állás közben ennyi hangulat vész el tickenként (ezred-egységben). */
@@ -103,7 +107,10 @@ export const INSTABIL_NOVEKEDES = 8;
 /** …és minden áthaladó utas ennyivel told rajta egyet (ezred). */
 export const INSTABIL_UTASONKENT = 25;
 /** Egy karbantartó műhely + mérnök ennyit farag le tickenként (ezred). */
-export const INSTABIL_KARBANTARTAS = 40;
+// 40 → 14: mérve, 48 játszásból 40-ben NULLA kapuösszeomlás volt. Egyetlen
+// mérnök az egész hálózatot elvitte, tehát az instabilitás — a játék egyik
+// fő nyomása — gyakorlatilag nem létezett.
+export const INSTABIL_KARBANTARTAS = 14;
 /** Ennél az instabilitásnál omlik össze a kapu (ezred → 1000 = 100 %). */
 export const INSTABIL_HATAR = 1000;
 /** Összeomlás után ennyi tickig áll a kapu. */

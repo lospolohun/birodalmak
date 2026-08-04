@@ -17,10 +17,14 @@
 export const ESEMENYEK = [
   {
     kod: 'instabil_kapu', nev: 'Instabil kapu', ikon: '🌀', suly: 10, hossz: 900,
-    feltetel: (s) => s.nyitottDimenziok().length > 0,
+    // ⚠️ `nyitottKapuk()`, NEM `nyitottDimenziok()`. Az utóbbi a csatornákat
+    // is visszaadja, és a szonda 9. vizsgálata pontosan ezt kapta el: a
+    // léghajójáratok „instabillá váltak", pedig a csatorna ígérete épp az,
+    // hogy nincs mit karbantartani rajta.
+    feltetel: (s) => s.nyitottKapuk().length > 0,
     leiras: 'Az egyik kapu remegni kezdett. Az instabilitása háromszoros ütemben nő, amíg le nem csillapodik.',
     indit(s, e) {
-      const lista = s.nyitottDimenziok();
+      const lista = s.nyitottKapuk();
       e.dim = lista[Math.floor(s.rnd() * lista.length)].idx;
       e.cim = `Instabil kapu: ${s.dimenzioNev(e.dim)}`;
     },

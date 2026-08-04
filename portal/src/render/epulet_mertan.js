@@ -502,6 +502,112 @@ const TERVEK = new Map([
       k.henger(0.44, 0.44, 0.05, 10, 0, 0.78, 0),
     ],
   })],
+
+  // ── A V0.4 ÉRKEZÉSI CSATORNÁI ────────────────────────────────────────────
+  // A három csatorna-épület a legnagyobb és legdrágább a katalógusban, tehát
+  // ezek a látvány TÁJÉKOZÓDÁSI PONTJAI: nem elég, hogy egymástól
+  // különböznek, a saját közlekedési módjukat is el kell mondaniuk egy
+  // pillantásból. Ezért mindhárom kap egy olyan formát, amit a játékos a
+  // valóságból hoz magával — sín, léghajó, parabolatányér.
+
+  // Peronos csarnok: hosszú íves üvegtető oszlopokon, alatta sínpár.
+  //
+  // A sínek és a talpfák NEM díszek a szó „el is hagyható" értelmében: a
+  // játékos ferdén FELÜLRŐL néz, és onnan a tető eltakarja a csarnok belsejét
+  // — a két párhuzamos csík viszont kilátszik az ívek között, és az az
+  // egyetlen jel, amitől ez vasút lesz, nem pedig egy hosszú piaccsarnok.
+  // Ezért a sín a DÍSZ-be (világosabb szín → megcsillan), a talpfa a TEST-be
+  // (sötét) került: a kontraszt maga a felismerés.
+  ['vasut', (k) => {
+    const test = [
+      k.doboz(1.0, 0.06, 0.66, 0, 0.03, 0),          // csarnokpadló
+      k.doboz(1.0, 0.16, 0.28, 0, 0.14, -0.18),      // megemelt peron
+      k.doboz(1.0, 0.05, 0.32, 0, 0.085, 0.12),      // sínágy (ballaszt)
+      k.doboz(0.26, 0.28, 0.22, -0.16, 0.36, -0.2),  // forgalmi bódé a peronon
+    ];
+    // Hat oszlop tartja a tetőt: három-három a peron és a vágány két oldalán.
+    // Páratlan szám lenne olcsóbb, de a szimmetrikus pár adja a „csarnok"-ot;
+    // egy sor oszlop csak előtető volna.
+    for (const x of [-0.36, 0, 0.36]) {
+      for (const z of [-0.3, 0.3]) test.push(k.doboz(0.07, 0.5, 0.07, x, 0.37, z));
+    }
+    // Talpfák: keresztben állnak, tehát felülnézetből létraként olvashatók.
+    for (let i = 0; i < 5; i++) {
+      test.push(k.doboz(0.1, 0.035, 0.34, -0.4 + i * 0.2, 0.1175, 0.12));
+    }
+    return {
+      test,
+      disz: [
+        k.ponyva(0.36, 1.0, 10, 0, 0.62, 0, 0, 0, PI * 0.5),  // íves üvegtető
+        k.doboz(1.0, 0.04, 0.09, 0, 0.98, 0),                 // tetőgerinc
+        k.doboz(1.0, 0.035, 0.05, 0, 0.152, 0.0),             // sín
+        k.doboz(1.0, 0.035, 0.05, 0, 0.152, 0.24),            // sín
+        k.doboz(1.0, 0.03, 0.06, 0, 0.235, -0.06),            // peronszegély
+      ],
+    };
+  }],
+
+  // Kikötőtorony kinyúló dokkolókarral, fölötte a léghajó teste.
+  //
+  // Ez az egyetlen típus, ami CSAK EMELETEN épülhet — a játékos tehát
+  // rendszerint MAGASBÓL, felülről néz rá, nem oldalról. A felülnézeti
+  // sziluettet ezért a hosszú, orros test és a farokvezérsík KERESZTJE adja:
+  // mindkettő akkor is olvasható, amikor a torony maga eltűnik a hajótest
+  // alatt. A test a DÍSZ-be került, mert világosabb színnel lebegőnek látszik,
+  // a sötét torony pedig a földhöz köti.
+  ['leghajo', (k) => ({
+    test: [
+      k.henger(0.3, 0.36, 0.1, 8, -0.08, 0.05, 0),      // kikötő talapzat
+      k.henger(0.13, 0.24, 0.56, 8, -0.08, 0.33, 0),    // szűkülő torony
+      k.doboz(0.56, 0.07, 0.13, 0.18, 0.62, 0),         // kinyúló dokkolókar
+      k.kup(0.07, 0.2, 6, 0.44, 0.74, 0),               // kikötőcsúcs az orrnak
+      k.doboz(0.05, 0.34, 0.05, 0.2, 0.44, 0, 0, 0, -0.6), // ferde támasz
+      k.doboz(0.26, 0.08, 0.11, -0.06, 0.68, 0),        // gondola
+    ],
+    disz: [
+      k.henger(0.17, 0.17, 0.48, 8, -0.04, 0.88, 0, 0, 0, PI * 0.5),  // hajótest
+      k.kup(0.17, 0.3, 8, 0.35, 0.88, 0, 0, 0, -PI * 0.5),            // orr
+      k.kup(0.17, 0.28, 8, -0.42, 0.88, 0, 0, 0, PI * 0.5),           // far
+      k.doboz(0.12, 0.3, 0.03, -0.46, 0.88, 0),         // függőleges vezérsík
+      k.doboz(0.12, 0.03, 0.3, -0.46, 0.88, 0),         // vízszintes vezérsík
+      k.okta(0.05, 0.44, 0.87, 0),                      // kikötőfény
+    ],
+  })],
+
+  // Ferde parabolatányér állványon, körülötte műszeres talapzatok.
+  //
+  // ⚠️ SZÁNDÉKOSAN NEM GYŰRŰ. A dimenziókapu forgó gyűrűje az `allomas3d.js`
+  // saját objektuma és a játék arca; ha az űrkapu is gyűrűt kapna, a játékos a
+  // kettőt ugyanannak olvasná, és a legdrágább épületét keresné a portálok
+  // között. Ezért az űrkapu VEVŐ, nem átjáró: a megdöntött tányér az égre néz,
+  // és a besugárzófej a legmagasabb pontja — a sziluett a rádiócsillagászatot
+  // idézi, nem a teleportot.
+  ['urkapu', (k) => {
+    const test = [
+      k.henger(0.42, 0.46, 0.12, 8, 0, 0.06, 0),     // körbejárható talapzat
+      k.henger(0.1, 0.16, 0.44, 8, 0, 0.34, 0),      // állványoszlop
+      k.doboz(0.52, 0.05, 0.08, 0, 0.145, 0.3),      // kábelcsatorna
+    ];
+    // Villa: a tányér az X tengely körül billen, tehát a két kar ±x-en áll.
+    for (const x of [-0.2, 0.2]) test.push(k.doboz(0.05, 0.28, 0.05, x, 0.62, -0.02));
+    // Három műszerdoboz a talapzat peremén: az aszimmetrikus elhelyezés
+    // elárulja a tányér nézési irányát is (a két hátsó közt fut a kábel).
+    for (const [x, z] of [[-0.34, 0.3], [0.34, 0.3], [0, -0.4]]) {
+      test.push(k.doboz(0.13, 0.16, 0.13, x, 0.2, z));
+    }
+    // A tányér és minden rátétje UGYANAZZAL a −0,55 rad billentéssel készül,
+    // különben a perem és a besugárzó lecsúszna a tálról.
+    const dolt = -0.55;
+    return {
+      test,
+      disz: [
+        k.henger(0.38, 0.13, 0.12, 12, 0, 0.86, -0.02, dolt),   // tál
+        k.henger(0.4, 0.4, 0.03, 10, 0, 0.911, -0.051, dolt),   // perem
+        k.henger(0.02, 0.02, 0.3, 4, 0, 0.988, -0.098, dolt),   // besugárzó rúd
+        k.okta(0.06, 0, 1.116, -0.177),                         // besugárzófej
+      ],
+    };
+  }],
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════

@@ -12,6 +12,7 @@
 //   6. MŰKÖDÉS — csinál-e egyáltalán valamit a gazdaság
 //   7. SZINTEK — a többszintes állomás minden ága lefut-e, és HASZNÁLJÁK-e
 //   8. GAZDASÁGI DÖNTÉSEK — bérbeadás és nehézségi fokozat
+//   9. CSATORNÁK — vasút, léghajó, űrkapu: megépülnek-e és hoznak-e utast
 //
 // ⚠️ A 6. VIZSGÁLAT NEM DÍSZ. A determinizmus-kapu nem működés-kapu: a
 // semmittevés is tökéletesen reprodukálható. Az AoC-nál a v0.3 mind a hat
@@ -27,7 +28,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
-import { v01Uj, v02Uj, v03Uj } from './forgatokonyv.mjs';
+import { v01Uj, v02Uj, v03Uj, v04Uj } from './forgatokonyv.mjs';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.env.PHT_TICK || 24000);
@@ -300,10 +301,46 @@ cim('8. GAZDASÁGI DÖNTÉSEK — bérbeadás, nehézségi fokozat');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  9. ÉRKEZÉSI CSATORNÁK — vasút, léghajó, űrkapu
+// ══════════════════════════════════════════════════════════════════════════
+
+cim('9. CSATORNÁK — vasút, léghajó-kikötő, űrkapu');
+{
+  const I = futas(555, 26000, false, v04Uj);
+  const J = futas(555, 26000, false, v04Uj);
+  if (I.zaro === J.zaro) ok('26 000 tick a csatorna-forgatókönyvvel — két futás azonos');
+  else rossz(`a csatorna-forgatókönyv szétcsúszott: ${I.zaro} ≠ ${J.zaro}`);
+
+  const s = I.sim;
+  const csat = ['vasut', 'leghajo', 'urkapu'].map((k) => {
+    const i = s.dimIdxKod(k);
+    return { k, all: i >= 0 ? s.dimenziok[i] : null };
+  });
+  for (const c of csat) {
+    info(`${c.k}: ${c.all && c.all.nyitva ? 'bekötve' : 'nincs'} · utas ${c.all ? c.all.osszUtas : 0} · bevétel ${Math.round(c.all ? c.all.bevetel : 0)}`);
+  }
+  const nyitott = csat.filter((c) => c.all && c.all.nyitva);
+  if (nyitott.length >= 2) ok(`${nyitott.length} csatorna üzemel`);
+  else rossz(`csak ${nyitott.length} csatorna épült meg — a v0.4 fő ága kimaradt`);
+  if (csat.some((c) => c.all && c.all.osszUtas > 50)) ok('a csatornákon tényleg érkeznek utasok');
+  else rossz('a csatornák be vannak kötve, de nem hoznak utast');
+
+  // A csatorna ÍGÉRETE: nulla instabilitás. Ha ez nem igaz, akkor a
+  // „nyugodt bevételi ág" hazugság, és a játékos rossz döntést hoz miatta.
+  const romlo = csat.filter((c) => c.all && c.all.instabilitas > 0);
+  if (romlo.length === 0) ok('a csatornák instabilitása nulla maradt — az ígéret áll');
+  else rossz(`csatorna romlik: ${romlo.map((c) => c.k).join(', ')}`);
+
+  const leghajoEp = s.epuletek.find((e) => e && e.kod === 'leghajo');
+  if (leghajoEp && leghajoEp.z >= 1) ok(`a léghajó-kikötő a ${leghajoEp.z}. emeleten áll`);
+  else rossz('a léghajó-kikötő nem emeleten van (vagy meg sem épült)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 
 console.log('');
 if (hiba === 0) {
-  console.log('\x1b[42m\x1b[30m  MIND A NYOLC VIZSGÁLAT ZÖLD  \x1b[0m\n');
+  console.log('\x1b[42m\x1b[30m  MIND A KILENC VIZSGÁLAT ZÖLD  \x1b[0m\n');
   process.exit(0);
 } else {
   console.log(`\x1b[41m\x1b[37m  ${hiba} HIBA  \x1b[0m\n`);

@@ -106,7 +106,10 @@ export const EPULETEK = [
   {
     kod: 'info', nev: 'Információs pult', ikon: 'ℹ️', sz: 2, m: 1,
     ar: 340, energia: 8, szemelyzet: 1, fajta: 'infodemon',
-    igeny: 'info', kapacitas: 2, ido: 35, dij: 0,
+    // Mérve: EZ a legnagyobb áteresztésű épület. Egy pult mellett 195-203 fős
+    // sor állt, öt pult mellett 11 — és a hiány-számláló közben semmit nem
+    // jelzett, mert az épület LÉTEZETT, csak nem győzte.
+    igeny: 'info', kapacitas: 4, ido: 35, dij: 0,
     szin: 0x50b6e0, magas: 1.3, kutatas: null,
     leiras: 'Az eltévedt utasok itt kapnak irányt: a közelben mindenki gyorsabban dönt.',
   },
@@ -170,8 +173,11 @@ export const EPULETEK = [
   },
   {
     kod: 'vip', nev: 'VIP Lounge', ikon: '👑', sz: 3, m: 3,
-    ar: 3200, energia: 35, szemelyzet: 3, fajta: 'pincer',
-    igeny: 'vip', kapacitas: 4, ido: 220, dij: 285,
+    ar: 3200, energia: 35, szemelyzet: 2, fajta: 'pincer',
+    // Mérve: a VIP megtérülése 12,1× volt a bolt 50,3×-ához képest — a
+    // legendás vendég kiszolgálása papíron nagy pénz, de olyan lassú és
+    // annyi emberrel, hogy sosem érte meg. Rövidebb kiszolgálás, kevesebb fő.
+    igeny: 'vip', kapacitas: 4, ido: 130, dij: 285,
     szin: 0xffd257, magas: 2.1, kutatas: 'vip_ellatas',
     leiras: 'A legendás vendégek ide jönnek. Egy sárkány egyetlen látogatása kifizet egy éttermet.',
   },
@@ -191,6 +197,30 @@ export const EPULETEK = [
     // A `atjaroIdo` a szintváltás hossza tickben — a lift ezért drága: azonnal visz.
     atjaro: true, atjaroIdo: 8,
     leiras: 'Két szintet köt össze azonnal, és a környékén mindenki gyorsabban közlekedik. Kell alá és fölé kiépített padló.',
+  },
+  {
+    kod: 'vasut', nev: 'Vasútállomás', ikon: '🚂', sz: 5, m: 3,
+    ar: 3200, energia: 26, szemelyzet: 1, fajta: 'poggyaszos',
+    igeny: null, kapacitas: 0, ido: 0, dij: 0,
+    szin: 0x8a7a5c, magas: 2.2, kutatas: null,
+    csatorna: 'vasut', csatornaUtem: 90,
+    leiras: 'Helyi vasúti forgalom: sok olcsó utas, karbantartás és kristály nélkül. Az állomás stabil alapzaja.',
+  },
+  {
+    kod: 'leghajo', nev: 'Léghajó-kikötő', ikon: '🎈', sz: 4, m: 4,
+    ar: 5200, energia: 34, szemelyzet: 2, fajta: 'szerelo',
+    igeny: null, kapacitas: 0, ido: 0, dij: 0,
+    szin: 0xff9ad2, magas: 2.8, kutatas: null,
+    csatorna: 'leghajo', csatornaUtem: 150, minSzint: 1,
+    leiras: 'Csak EMELETEN építhető: a léghajók nem szállnak le a földszintre. Jómódú, ráérős utasokat hoz.',
+  },
+  {
+    kod: 'urkapu', nev: 'Űrkapu', ikon: '🛰️', sz: 4, m: 4,
+    ar: 9000, energia: 70, szemelyzet: 2, fajta: 'mernok',
+    igeny: null, kapacitas: 0, ido: 0, dij: 0,
+    szin: 0x8de0ff, magas: 3.4, kutatas: 'kapu_szkenner',
+    csatorna: 'urkapu', csatornaUtem: 320,
+    leiras: 'A csillagok közti forgalom fogadóállomása. Kevés utas, óriási díj — és időnként egy sárkány.',
   },
   {
     kod: 'lepcso', nev: 'Mozgólépcső', ikon: '🪜', sz: 2, m: 3,

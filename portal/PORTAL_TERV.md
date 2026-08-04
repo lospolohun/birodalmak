@@ -17,12 +17,15 @@ egyetlen fájljához sem nyúl. A két játék három npm-scripten kívül semmi
 oszt meg:
 
 ```bash
-npm run portal:dev        # fejlesztői kiszolgáló (5274)
-npm run portal:build      # dist/
-npm run portal:det        # determinizmus-szonda — EZ A FŐ KAPU
-npm run portal:bongeszo   # böngésző-szonda (indul-e, működik-e)
-npm run portal:kep 14000  # képernyőkép egy felépített állomásról
-npm run portal:szonda     # det + build + böngésző egyben
+npm run portal:dev         # fejlesztői kiszolgáló (5274)
+npm run portal:build       # dist/
+npm run portal:det         # determinizmus-szonda — EZ A FŐ KAPU (9 vizsgálat)
+npm run portal:mertan      # a 3D-mértan kerete és sziluett-ujjlenyomata
+npm run portal:hang        # hangrendszer (katalógus + böngésző + jelszint)
+npm run portal:bongeszo    # böngésző-szonda (indul-e, működik-e, ment-e)
+npm run portal:kep 16000   # képernyőkép egy felépített állomásról
+npm run portal:szonda      # mind egyben
+node portal/tools/egyensuly.mjs 60000 8   # egyensúly-mérés (percek)
 ```
 
 ---
@@ -51,7 +54,7 @@ következménye van, és mindhármat használjuk:
 
 ---
 
-## 3. Ami KÉSZ (v0.1)
+## 3. Ami KÉSZ (v0.4)
 
 ### Szimuláció
 - **Rács** 64×48, padló / épület / hő- / hidegzóna / tömeg rétegekkel.
@@ -86,9 +89,37 @@ következménye van, és mindhármat használjuk:
 ### Felület
 - Felső sáv hat számmal, mindegyikre van válaszlépés.
 - Fejezet-kártya haladásjelzővel.
-- Építés-sáv hat kategóriával; a kapuk dimenziónként külön gombbal.
-- Hat panel: dimenziók, kutatás, dolgozók, statisztika, napló, súgó.
+- Építés-sáv nyolc kategóriával; a kapuk dimenziónként külön gombbal.
+- Nyolc panel: dimenziók, kutatás, dolgozók, **bestiárium**, statisztika,
+  napló, **mentés/beállítások**, súgó.
 - Modális ablakok: fejezet, döntés, esemény, vég.
+
+### v0.2 — mentés, bestiárium
+- **Mentés = seed + parancsnapló.** Betöltéskor a világ ÚJRAJÁTSZÓDIK,
+  darabokban, folyamatjelzővel. Automata mentés naponta + 3 kézi hely.
+  A böngésző-szonda méri, hogy a betöltött világ BITRE azonos a mentettel.
+- **Bestiárium**: a fajok állandó tulajdonságai ÉS az élő helyzetkép
+  (ki van bent, milyen a hangulatuk, honnan jöttek).
+- **Hang**: procedurális WebAudio, nulla hangfájl. A portálzúgás színe az
+  instabilitást követi, a tömegzaj az utasszámot.
+- **Egyedi sziluett** minden épülettípusnak és minden fajnak.
+
+### v0.3 — a többszintes állomás
+- A rács három dimenziós (64×48×3). A `z` a világ állapota, nem nézet.
+- **Mozgólépcső** (olcsó, lassú) és **teleport lift** (drága, azonnali) mint
+  átjáró; a szintváltás IDŐBE kerül.
+- Alátámasztás: emeleti padló csak padló fölé. Az átjáró cellája JÁRHATÓ.
+- A szellem átmegy a FALON, de nem a PADLÓN — neki is átjáró kell.
+- Szintválasztó a felső sávban (R/F): a fölötte lévő emeletek eltűnnek.
+
+### v0.4 — a hálózat
+- **Nehézségi fokozatok** (könnyű / normál / kemény) szorzókkal. A fokozat a
+  világ állapota: a mentés viszi, az ellenőrző-összeg tartalmazza.
+- **Bérbeadás**: a bolt, étterem, könyvesbolt és VIP kiadható — nincs
+  személyzeti gond, napi fix díj, cserébe a bevétel 42 %-a.
+- **Érkezési csatornák**: Vasútállomás, Léghajó-kikötő (csak EMELETEN!),
+  Űrkapu. Nincs instabilitásuk és nem fogyasztanak kristályt — ez a
+  „nyugodt" bevételi ág a kapuk mellett.
 
 ---
 
@@ -96,11 +127,16 @@ következménye van, és mindhármat használjuk:
 
 | mérés | érték |
 |---|---|
-| determinizmus-szonda | mind a 6 vizsgálat zöld |
+| determinizmus-szonda | mind a **9** vizsgálat zöld |
+| mértan-szonda | 23 épülettípus, 23 különböző sziluett, keret alatt |
+| hang-szonda | üres állomás 0,028 → nyüzsgő+instabil 0,427 jelszint |
+| böngésző-szonda | 8 vizsgálat zöld, a betöltés bitre azonos |
 | ms/tick 1200 utasnál | **0,137 ms** (node, felhő) |
-| rajzolási hívás | 12 |
-| csúcsforgalom a szondában | 1200 egyszerre jelenlévő utas |
-| build | 599 kB / 162 kB gzip |
+| rajzolási hívás | 14 |
+| build | 844 kB / 231 kB gzip (ebből a three.js a nagyobb rész) |
+
+A részletes egyensúly-mérés (6 stratégia × több seed × 50 játéknap) a
+[`qa/EGYENSULY.md`](qa/EGYENSULY.md)-ben van.
 
 ⚠️ **A tick-idő két futás között NEM összehasonlítható** — a felhő-gép osztott
 CPU-n fut. A/B-t egy munkameneten belül mérj (`git stash`).
@@ -111,24 +147,24 @@ nem. Az FPS-mérés az iMac dolga.
 
 ---
 
-## 5. Ami NINCS kész (v0.2+ ötlettár)
+## 5. Ami NINCS kész (v0.5+ ötlettár)
 
 Sorrend nagyjából fontosság szerint.
 
-1. **Mentés/betöltés.** A gépezet kész (seed + parancsnapló), a felület nincs.
-   Egy `localStorage`-ba írt napló + „Folytatás" gomb elég lenne.
-2. **Hang.** Jelenleg néma. Portálzúgás, tömegzaj, kassza, riasztás.
-3. **Több szint.** A leírásban szereplő „többszintes állomás": a rácsnak
-   `szint` dimenziót kellene kapnia, a teleport lift pedig valódi átjáró lenne.
-4. **Bestiárium-panel.** A fajok viselkedése ma csak a kódban olvasható; egy
-   panel, ami megmutatja, ki mit akar, sokat segítene a tervezésben.
-5. **Épület-sziluettek.** Ma minden épület doboz + tetődísz. Típusonkénti
-   egyedi mértan (kupola, oszlopok, ponyva) sokat adna a hangulathoz.
-6. **Vasút, léghajó, űrkapu** — a leírás hosszú távú céljai; mindegyik egy-egy
-   új épülettípus + egy új érkezési csatorna.
-7. **Nehézségi fokozatok** és **végtelen mód** a VII. fejezet után.
-8. **Bérleti szerződések**: a boltokat ne mi üzemeltessük, hanem adjuk bérbe —
-   ez egy második, passzív bevételi ág lenne.
+1. **Végtelen mód a VII. fejezet után.** Ma a győzelem után a történet elfogy,
+   a játék viszont megy tovább cél nélkül.
+2. **A gépi stratégiák újrahangolása.** A `tools/jatekosok.mjs` botjai a v0.1
+   gazdaságához vannak igazítva; a v0.4 hangolása után az eredményeik részben
+   mérési műtermékek. Amíg ez nincs meg, az egyensúly-számokat óvatosan kell
+   olvasni.
+3. **A könnyű/kemény fokozat és a bérbeadás egyensúlya méretlen.** Kell hozzá
+   egy-egy külön stratégia a mérőeszközbe.
+4. **Negyedik-ötödik szint**, és emeletenként eltérő bérleti díj.
+5. **Utas-részletek**: poggyász mint látható tárgy, csoportok (család,
+   küldöttség), VIP-kíséret.
+6. **Az emeleti látvány**: ma a fölső szintek egyszerűen eltűnnek. Egy
+   áttetsző „szellemszint" olvashatóbb lenne.
+7. **Több nyelv.** Ma minden magyar, a kód is.
 
 ---
 

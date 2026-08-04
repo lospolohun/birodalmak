@@ -70,6 +70,37 @@ export const DIMENZIOK = [
     kezdo: false,
     leiras: 'A jégóriások pereme. Hűtés nélkül ne is nyisd meg.',
   },
+  // ── CSATORNÁK ───────────────────────────────────────────────────────────
+  // Ezek NEM dimenziók a szó szoros értelmében: nem kapun jönnek, hanem a
+  // saját világ közlekedési hálózatáról. Mégis dimenzióként tartjuk őket
+  // nyilván, mert az utas-AI, a statisztika, a továbbutazás és a vám mind a
+  // `dimIdx`-re épül — egy külön „utasforrás" fogalom bevezetése ugyanazt a
+  // kódot duplázná meg, csak más néven.
+  //
+  // A különbség egyetlen zászló: `csatorna`. Ami ebből következik: nincs
+  // instabilitás (nem kell karbantartani), nincs kristályfogyasztás, és nem
+  // a „Kapuk" fülön nyílik meg, hanem egy megépített ÉPÜLET hozza magával.
+  {
+    kod: 'vasut', nev: 'Vasúthálózat', ikon: '🚂', szin: 0x8a7a5c,
+    dij: 22, vamKoteles: false, veszely: 0, nyitasAr: 0, csatorna: true,
+    fajok: [{ kod: 'kobold', suly: 6 }, { kod: 'troll', suly: 3 }, { kod: 'mimik', suly: 1 }],
+    kezdo: false,
+    leiras: 'A helyi vasút. Sok kis utas, alacsony díj, nulla karbantartás — ez a stabil alapforgalom.',
+  },
+  {
+    kod: 'leghajo', nev: 'Léghajójáratok', ikon: '🎈', szin: 0xff9ad2,
+    dij: 74, vamKoteles: false, veszely: 0, nyitasAr: 0, csatorna: true,
+    fajok: [{ kod: 'boszorkany', suly: 4 }, { kod: 'meduza', suly: 4 }, { kod: 'elokonyv', suly: 2 }],
+    kezdo: false,
+    leiras: 'Ráérős, jómódú utasok a felhők közül. A kikötő csak EMELETEN épülhet meg.',
+  },
+  {
+    kod: 'urkapu', nev: 'Űrkapu-hálózat', ikon: '🛰️', szin: 0x8de0ff,
+    dij: 190, vamKoteles: true, veszely: 0, nyitasAr: 0, csatorna: true,
+    fajok: [{ kod: 'demon', suly: 3 }, { kod: 'jegorias', suly: 3 }, { kod: 'szellem', suly: 2 }, { kod: 'sarkany', suly: 1 }],
+    kezdo: false,
+    leiras: 'A csillagok közti forgalom. Kevés utas, óriási díj, vámkötelesek — és néha sárkány.',
+  },
   {
     kod: 'sarkanytronus', nev: 'Sárkánytrónus', ikon: '🐉', szin: 0xffb347,
     dij: 240, vamKoteles: true, veszely: 1.9, nyitasAr: 12000,
@@ -126,6 +157,8 @@ export function dimenzioDij(all) {
  */
 export function dijVonzero(all) {
   const s = all.dijSzorzo;
-  // 0,5-nél 1,35×, 1,0-nél 1,0×, 1,5-nél 0,55× forgalom.
-  return s <= 1 ? 1 + (1 - s) * 0.7 : 1 - (s - 1) * 0.9;
+  // Mérve: a régi görbe 0,5 és 1,3 között gyakorlatilag LAPOS volt, tehát a
+  // csúszka nem döntés volt, hanem díszlet — a magas díj mindig nyert.
+  // Az új: 0,5-nél 1,75×, 1,0-nél 1,0×, 1,5-nél 0,625× forgalom.
+  return s <= 1 ? 1 + (1 - s) * 1.5 : 1 - (s - 1) * 0.75;
 }

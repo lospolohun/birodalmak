@@ -69,6 +69,7 @@ export class Sim {
     /** igénykód → épület-azonosítók tömbje (az utas-AI ezt olvassa). */
     this.igenyLista = new Map();
     this.portalok = [];
+    this.csatornak = [];
     this.liftek = [];
     this._peronVerzio = -1;
     this._zonaVerzio = -1;
@@ -250,6 +251,17 @@ export class Sim {
     const z = p.z | 0;
     if (t.kutatas && !this.keszTechek.has(t.kutatas)) return this._elutasit('előbb kutasd ki');
     if (!this.racs.szabadTerulet(p.x, p.y, t.sz, t.m, z)) return this._elutasit('nincs itt hely (padló kell, épület nélkül)');
+    // A léghajó-kikötő nem szállhat le a földszintre. A korlát nem
+    // szeszély: enélkül az emeletek megépítése soha nem lenne KÖTELEZŐ,
+    // csak kényelmes — a legjobb tartalom pedig ne opcionális legyen.
+    if (t.minSzint !== undefined && z < t.minSzint) {
+      return this._elutasit(`ez csak a(z) ${t.minSzint}. emelettől építhető`);
+    }
+    // Egy csatornából egy is elég: a második ugyanazt a hálózatot kötné be.
+    if (t.csatorna) {
+      const di = DIMENZIO_INDEX.get(t.csatorna);
+      if (di !== undefined && this.dimenziok[di].nyitva) return this._elutasit('ez a hálózat már be van kötve');
+    }
     // Az átjáró KÉT szintet foglal: a fölötte lévő emeletnek is állnia kell.
     if (t.atjaro) {
       if (z + 1 >= this.racs.szintek) return this._elutasit('nincs fölötte szint');
@@ -280,6 +292,15 @@ export class Sim {
     if (!ep) return this._elutasit('nem sikerült lerakni');
     this.koltseg(ar, 'építkezés');
     if (dimIdx >= 0) this._dimenziotKapuhozKot(ep, dimIdx, false);
+    // A csatorna magával hozza a saját „dimenzióját": nem kell külön
+    // megnyitni, a megépített épület MAGA a kapcsolat.
+    if (t.csatorna) {
+      const di = DIMENZIO_INDEX.get(t.csatorna);
+      if (di !== undefined) {
+        this.dimenziok[di].felfedezve = true;
+        this._dimenziotKapuhozKot(ep, di, false);
+      }
+    }
     return this._rendben();
   }
 
@@ -410,12 +431,15 @@ export class Sim {
     const d = this.dimenziok[i];
     if (!d.nyitva) return this._elutasit('nincs nyitva ez a kapu');
     if (d.szint >= 5) return this._elutasit('már a legmagasabb szinten');
-    const ar = Math.round(1800 * d.szint * (1 + DIMENZIOK[i].veszely * 0.3));
+    // 1800-ról 6000-re: a mérés szerint MINDEN kapu 5/5-ös lett minden
+    // stratégiánál (átlag 5,0) — vagyis ez nem volt döntés, csak adminisztráció.
+    const ar = Math.round(6000 * d.szint * (1 + DIMENZIOK[i].veszely * 0.3));
     if (this.penz < ar) return this._elutasit('nincs elég pénz');
     this.koltseg(ar, 'kapufejlesztés');
     d.szint++;
     // A fejlesztés meg is rázza a kaput: nagyobb átjáró, nagyobb feszültség.
-    d.instabilitas = Math.min(INSTABIL_HATAR - 1, d.instabilitas + 60);
+    // Csatornánál nincs mit megrázni — ott a fejlesztés csak sínt és járatot ad.
+    if (!DIMENZIOK[i].csatorna) d.instabilitas = Math.min(INSTABIL_HATAR - 1, d.instabilitas + 60);
     return this._rendben();
   }
 
@@ -513,6 +537,14 @@ export class Sim {
       d.nyitva = false;
       d.portalAzon = -1;
     }
+    // Csatorna-épület bontása egyben a hálózat lekapcsolása is.
+    {
+      const t = EPULETEK[ep.tipusIdx];
+      if (t.csatorna) {
+        const di = DIMENZIO_INDEX.get(t.csatorna);
+        if (di !== undefined) { this.dimenziok[di].nyitva = false; this.dimenziok[di].portalAzon = -1; }
+      }
+    }
     this.racs.torol(ep.x, ep.y, ep.sz, ep.m, ep.z);
     if (ep.szintek > 1) this.racs.torol(ep.x, ep.y, ep.sz, ep.m, ep.z + 1);
     this.epuletek[ep.azon] = null;
@@ -524,6 +556,7 @@ export class Sim {
   _listakUjra() {
     this.igenyLista.clear();
     this.portalok.length = 0;
+    this.csatornak.length = 0;
     this.liftek.length = 0;
     this.hoForrasok = [];
     for (let a = 0; a < this.epuletek.length; a++) {
@@ -536,6 +569,7 @@ export class Sim {
         l.push(ep.azon);
       }
       if (ep.kod === 'portal') this.portalok.push(ep.azon);
+      if (t.csatorna) this.csatornak.push(ep.azon);
       if (ep.kod === 'teleportlift') this.liftek.push(ep.azon);
       if (t.zona) {
         this.hoForrasok.push({ x: ep.x, y: ep.y, z: ep.z, sz: ep.sz, m: ep.m, ho: t.zona.ho, hideg: t.zona.hideg, sugar: t.zona.sugar });
@@ -617,7 +651,8 @@ export class Sim {
     this.utkereso.ujTick();
     this._energiaSzamol();           // 3. mit tud ma az állomás
     this._tomegSzamol();             // 4. hol áll a tömeg (a mozgás ezt olvassa)
-    this._portalokLep();             // 5. érkezések
+    this._portalokLep();             // 5. érkezések a kapukon
+    this._csatornakLep();            // 5b. …és a vasúton / léghajón / űrkapun
     this._utasokLep();               // 6. az AI
     this._epuletekLep();             // 7. sorok, kiszolgálás, fizetés
     this._dolgozokLep();             // 8. karbantartás, takarítás, mozgás
@@ -689,13 +724,20 @@ export class Sim {
     const kapuHangolas = this.kesz('kapu_hangolas') ? 1.25 : 1;
     const terjeszkedes = this.tortenetJelzok.has('terjeszkedes') ? 1.2 : 1;
     const mindetTartom = this.tortenetJelzok.has('mindet_tartom') ? 1.25 : 1;
-    const hirnevSzorzo = 0.45 + this.hirnev / 100 * 1.1;
+    // A hírnév alsó padlója 0,45 volt — vagyis egy NULLA hírnevű, mindenkit
+    // elkergető állomás is megkapta a forgalom 45 %-át. Mérve: a
+    // „terjeszkedő" stratégia 0,3-as hírnévvel, 97 %-ban dühös vendégekkel is
+    // a jó játékos vagyonának 59 %-át hozta, a „nemtörődöm" kontroll pedig
+    // napi ~375 tallért KERESETT egy üres állomáson. A jutalom megvolt, a
+    // büntetés nem. Az új görbe 0-nál 0,12, 100-nál 1,57 — a hírnév végre számít.
+    const hirnevSzorzo = 0.12 + this.hirnev / 100 * 1.45;
 
     for (let i = 0; i < this.portalok.length; i++) {
       const ep = this.epuletek[this.portalok[i]];
       if (!ep || ep.dimenzio < 0 || ep.kikapcsolva) continue;
       const d = this.dimenziok[ep.dimenzio];
       if (!d.nyitva) continue;
+      if (DIMENZIOK[d.idx].csatorna) continue;   // azt a `_csatornakLep()` viszi
 
       // ── INSTABILITÁS ────────────────────────────────────────────────────
       if (d.szunet > 0) { d.szunet--; if (d.szunet === 0) this.naplo(`${DIMENZIOK[d.idx].nev}: a kapu újra működik.`, 'jo'); continue; }
@@ -715,9 +757,9 @@ export class Sim {
       if (ep.visszaszamlalo > 0) continue;
 
       const utem = ERKEZES_ALAP_TICK / this.nehezseg.erkezes
-        / (d.szint * 0.75 + 0.25)
+        / (d.szint * 0.35 + 0.65)
         / (kapuHangolas * terjeszkedes * mindetTartom)
-        / Math.max(0.25, hirnevSzorzo * dijVonzero(d) * this.erkezesSzorzoDim[d.idx])
+        / Math.max(0.08, hirnevSzorzo * dijVonzero(d) * this.erkezesSzorzoDim[d.idx])
         / Math.max(0.4, ep.hatekonysag);
       // ±25 % szórás, hogy ne óramű-pontosan érkezzenek.
       ep.visszaszamlalo = Math.max(4, Math.round(utem * (0.75 + this.rnd() * 0.5)));
@@ -726,7 +768,43 @@ export class Sim {
     }
   }
 
+  /**
+   * Vasút, léghajó, űrkapu. Ugyanaz az érkezés, három különbséggel: nincs
+   * instabilitás, nincs kristályfogyasztás, és az ütemet az ÉPÜLET adja, nem
+   * a dimenzió szintje. Ettől lesz a csatorna a „nyugodt" bevételi ág: kevés
+   * gond, kiszámítható pénz — cserébe nincs benne a történet.
+   */
+  _csatornakLep() {
+    const hirnevSzorzo = 0.12 + this.hirnev / 100 * 1.45;
+    for (let i = 0; i < this.csatornak.length; i++) {
+      const ep = this.epuletek[this.csatornak[i]];
+      if (!ep || ep.kikapcsolva || ep.peron.length === 0) continue;
+      const t = EPULETEK[ep.tipusIdx];
+      const di = DIMENZIO_INDEX.get(t.csatorna);
+      if (di === undefined) continue;
+      const d = this.dimenziok[di];
+      if (!d.nyitva) continue;
+      if (this.szabadDb === 0) continue;
+      ep.visszaszamlalo--;
+      if (ep.visszaszamlalo > 0) continue;
+      const utem = t.csatornaUtem / this.nehezseg.erkezes
+        / (d.szint * 0.6 + 0.4)
+        / Math.max(0.1, hirnevSzorzo * dijVonzero(d))
+        / Math.max(0.4, ep.hatekonysag);
+      ep.visszaszamlalo = Math.max(5, Math.round(utem * (0.75 + this.rnd() * 0.5)));
+      this._utastErkeztet(ep, d, -1);
+    }
+  }
+
   _utastErkeztet(ep, d, fajKenyszer = -1) {
+    // ⚠️ A CSATORNASÁG A DIMENZIÓBÓL JÖN, NEM PARAMÉTERBŐL. Az első változat
+    // zászlóként adta át, és a `sarkanytIndit()` — ami a legmagasabb díjú
+    // nyitott kaput választja — elfelejtette átadni. A léghajó díja (74)
+    // magasabb a kezdő kapukénál, tehát a sárkány a LÉGHAJÓ-kikötőn érkezett
+    // be, és instabilitást írt egy olyan hálózatra, aminek definíció szerint
+    // nincs. A szonda 9. vizsgálata kapta el („csatorna romlik: leghajo").
+    // Egy igazságot egy helyen kell tárolni; ez itt a katalógus.
+    const csatorna = !!DIMENZIOK[d.idx].csatorna;
     if (this.szabadDb === 0) return null;
     const cella = ep.peron[(d.osszUtas + ep.azon) % ep.peron.length];
     const x = this.racs.cellaX(cella) + 0.5;
@@ -744,11 +822,13 @@ export class Sim {
     const dij = dimenzioDij(d);
     this.bevetel(dij, 'portáldíj');
     d.bevetel += dij;
-    const takarek = this.kesz('kristaly_takarek') ? 0.6 : 1;
-    const magusok = this.dolgozoSzamTipus('magus');
-    const kristaly = KRISTALY_AR * this.kristalyArSzorzo * KRISTALY_UTASONKENT * takarek / (1 + magusok * 0.12);
-    this.koltseg(kristaly, 'kristály');
-    d.instabilitas += INSTABIL_UTASONKENT * 0.01 * DIMENZIOK[d.idx].veszely;
+    if (!csatorna) {
+      const takarek = this.kesz('kristaly_takarek') ? 0.6 : 1;
+      const magusok = this.dolgozoSzamTipus('magus');
+      const kristaly = KRISTALY_AR * this.kristalyArSzorzo * KRISTALY_UTASONKENT * takarek / (1 + magusok * 0.12);
+      this.koltseg(kristaly, 'kristály');
+      d.instabilitas += INSTABIL_UTASONKENT * 0.01 * DIMENZIOK[d.idx].veszely;
+    }
     return u;
   }
 
@@ -779,7 +859,18 @@ export class Sim {
     // A hírnév a TÁVOZÓK hangulatából épül, nem a jelenlévőkéből. Aki még
     // bent van, még megnyugodhat — az ítéletet a kijárat mondja ki.
     const cel = u.hangulat / 10;
-    this.hirnev += (cel - this.hirnev) * HIRNEV_TEHETETLENSEG;
+    // ── A HÍRNÉV LENDÜLETE AZ ÁLLOMÁS MÉRETÉTŐL FÜGG ──────────────────────
+    // A hírnév a távozók hangulatából épül, tehát KEVÉS távozó = lassú
+    // mozgás. Ez egy fix léptékkel halálspirált csinál: mérve, kilenc olyan
+    // futásból, ahol a hírnév 20 alá esett, EGY jött vissza 40 fölé. Aki
+    // egyszer elrontotta, annak nem volt visszaút — csak egy hosszú,
+    // reménytelen lejtő.
+    //
+    // A javítás nem ajándék, hanem realizmus: egy kis állomás híre
+    // MINDKÉT irányban gyorsabban mozog, mert kevesebb vendég emléke van
+    // benne. Nullánál négyszeres, ötszáz utasnál alig másfélszeres lépés.
+    const lendulet = HIRNEV_TEHETETLENSEG * (1 + 60 / (20 + this.utasSzam));
+    this.hirnev += (cel - this.hirnev) * lendulet;
     if (this.hirnev < 0) this.hirnev = 0;
     if (this.hirnev > 100) this.hirnev = 100;
     this.osszTavozo++;
@@ -1035,8 +1126,12 @@ export class Sim {
     for (let a = 0; a < this.epuletek.length; a++) {
       const ep = this.epuletek[a];
       if (!ep) continue;
-      uzemeltetes += EPULETEK[ep.tipusIdx].ar * 0.012;
+      uzemeltetes += EPULETEK[ep.tipusIdx].ar * 0.028;
     }
+    // …plusz forgalom-arányos rész: takarítás, kopás, felügyelet. Enélkül a
+    // költség az épületek SZÁMÁTÓL függött, a forgalomtól nem — így a
+    // nagyra hízott állomás fenntartása gyakorlatilag ingyen volt.
+    uzemeltetes += this.utasSzam * 0.35;
     if (uzemeltetes > 0) this.koltseg(Math.round(uzemeltetes), 'üzemeltetés');
 
     this.elozoNap = { bevetel: this.napiBevetel, koltseg: this.napiKoltseg, tetelek: new Map(this.tetelek) };
@@ -1113,6 +1208,21 @@ export class Sim {
     for (let i = 0; i < this.dimenziok.length; i++) {
       const d = this.dimenziok[i];
       if (d.nyitva && d.szunet === 0) ki.push(d);
+    }
+    return ki;
+  }
+
+  /**
+   * Csak a VALÓDI kapuk (a csatornák nélkül). Minden olyan hatásnak ezt kell
+   * kérnie, aminek köze van az instabilitáshoz — a vasútnak és a léghajónak
+   * definíció szerint nincs romló kapuja, tehát az „instabil kapu" esemény
+   * nem is találhatja el őket.
+   */
+  nyitottKapuk() {
+    const ki = [];
+    for (let i = 0; i < this.dimenziok.length; i++) {
+      const d = this.dimenziok[i];
+      if (d.nyitva && d.szunet === 0 && !DIMENZIOK[i].csatorna) ki.push(d);
     }
     return ki;
   }
@@ -1214,11 +1324,29 @@ export class Sim {
       : `${DIMENZIOK[idx].nev}: a kapu bezárt.`, vegleg ? 'baj' : 'gond');
   }
 
+  /**
+   * A legkevesebb bevételt hozó nyitott kapu — a VI. fejezet döntése ezt
+   * zárja le VÉGLEG.
+   *
+   * ⚠️ KÉT KIVÉTEL, ÉS MINDKETTŐ EGY MEGTALÁLT HIBA MIATT VAN ITT.
+   *
+   * 1. A SÁRKÁNYTRÓNUS SOHA. Az egyensúly-mérés nyolc „kiegyensúlyozott"
+   *    játszásból NÉGYBEN azt kapta, hogy a frissen megnyitott Sárkánytrónus
+   *    volt a legkisebb bevételű — épp mert frissen nyílt —, tehát a döntés
+   *    azt zárta le. A VII. fejezet viszont pontosan azt a kaput kéri: a
+   *    játszás CSENDBEN megnyerhetetlenné vált, 70 fölötti hírnévvel,
+   *    mindenféle visszajelzés nélkül. Ez nem egyensúly-kérdés, hanem hiba.
+   * 2. A CSATORNÁK SOHA. A vasút és a léghajó nem kapu: nincs instabilitása,
+   *    tehát a „hálózat tehermentesítése" indok se áll rá. A történet
+   *    döntése ne bontsa le a játékos vasútállomását.
+   */
   legrosszabbNyitottDimenzio() {
     let legrosszabb = null;
     for (let i = 0; i < this.dimenziok.length; i++) {
       const d = this.dimenziok[i];
       if (!d.nyitva) continue;
+      if (DIMENZIOK[i].csatorna) continue;
+      if (DIMENZIOK[i].kod === 'sarkanytronus') continue;
       if (!legrosszabb || d.bevetel < legrosszabb.bevetel) legrosszabb = d;
     }
     return legrosszabb;

@@ -25,6 +25,7 @@ const KATEGORIAK = [
   { kod: 'kenyelem', nev: '🪑 Kényelem', epuletek: ['varo', 'wc', 'info', 'seprupark', 'hoforras', 'jegkamra'] },
   { kod: 'bevetel', nev: '💰 Bevétel', epuletek: ['etterem', 'bolt', 'konyvesbolt', 'reklam', 'vip'] },
   { kod: 'szint', nev: '🪜 Szintek', epuletek: ['lepcso', 'teleportlift'] },
+  { kod: 'csatorna', nev: '🚂 Csatornák', epuletek: ['vasut', 'leghajo', 'urkapu'] },
   { kod: 'uzem', nev: '⚙️ Üzem', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos'] },
 ];
 
@@ -111,6 +112,9 @@ export class EpitesSav {
     for (let i = 0; i < DIMENZIOK.length; i++) {
       const d = DIMENZIOK[i];
       const all = sim.dimenziok[i];
+      // A csatornák (vasút, léghajó, űrkapu) NEM ide tartoznak: azokat nem
+      // megnyitni kell, hanem megépíteni — a saját fülükön.
+      if (d.csatorna) continue;
       if (!all.felfedezve || all.lezarva || all.nyitva) continue;
       const portalAr = EPULETEK.find((x) => x.kod === 'portal').ar;
       let nyitas = d.nyitasAr;

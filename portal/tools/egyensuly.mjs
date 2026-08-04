@@ -449,7 +449,7 @@ if (!GYORS) {
 let techKiserlet = [];
 if (!GYORS) {
   cim('9. TECHNOLÓGIA-ABLÁCIÓ — mit ér egyetlen technológia (+ előfeltételei)');
-  const kSeedek = SEEDEK.slice(0, Math.min(3, SEEDEK.length));
+  const kSeedek = SEEDEK.slice(0, Math.min(4, SEEDEK.length));
   const kTick = Math.min(TICKEK, 30000);
   const meres = (kutatasSor) => {
     const l = [];
@@ -484,6 +484,69 @@ if (!GYORS) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  HALÁLSPIRÁL ÉS FORDULÓPONT
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A „van-e olyan állapot, ahonnan nincs visszaút" kérdésre nem elég ránézni a
+// képletekre: meg kell számolni, hányszor fordult elő a gödör, és hányszor
+// jött ki belőle a stratégia. Ugyanez a fordulópontra: ha a 30. napi eredményt
+// már az 5. nap eldönti, akkor a játék többi része díszlet.
+
+cim('10. HALÁLSPIRÁL — kijön-e valaki a gödörből?');
+const spiral = { hirnevGodor: 0, hirnevKijott: 0, penzGodor: 0, penzKijott: 0, reszletek: [] };
+for (const e of eredmenyek) {
+  const n = e.napiSor;
+  const hi = n.findIndex((x) => x.hirnev < 20);
+  if (hi >= 0) {
+    spiral.hirnevGodor++;
+    const kijott = n.slice(hi + 1).some((x) => x.hirnev > 40);
+    if (kijott) spiral.hirnevKijott++;
+    spiral.reszletek.push({ strategia: e.strategia, seed: e.seed, fajta: 'hirnev', nap: n[hi].nap, kijott });
+  }
+  const pi = n.findIndex((x) => x.penz < 0);
+  if (pi >= 0) {
+    spiral.penzGodor++;
+    const kijott = n.slice(pi + 1).some((x) => x.penz > 5000);
+    if (kijott) spiral.penzKijott++;
+    spiral.reszletek.push({ strategia: e.strategia, seed: e.seed, fajta: 'penz', nap: n[pi].nap, kijott });
+  }
+}
+sor(`  hírnév < 20 előfordult: ${spiral.hirnevGodor}/${eredmenyek.length} futásban — ebből 40 fölé jutott vissza: ${spiral.hirnevKijott}`);
+sor(`  pénz  < 0  előfordult: ${spiral.penzGodor}/${eredmenyek.length} futásban — ebből 5000 fölé jutott vissza: ${spiral.penzKijott}`);
+{
+  const l = spiral.reszletek.filter((r) => r.fajta === 'hirnev');
+  if (l.length) tabla(['stratégia', 'seed', 'első nap hírnév<20 alatt', 'visszajött 40 fölé?'],
+    l.map((r) => [r.strategia, r.seed, r.nap, r.kijott ? 'IGEN' : 'NEM']));
+}
+
+cim('11. FORDULÓPONT — mennyire dönti el a korai állapot a végeredményt');
+{
+  const korr = (xs, ys) => {
+    const n = xs.length;
+    if (n < 3) return NaN;
+    const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+    return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : NaN;
+  };
+  const napok = [3, 5, 8, 12, 16, 20, 30, 40];
+  const rows = [];
+  for (const nap of napok) {
+    const l = eredmenyek.filter((e) => e.napiSor.some((x) => x.nap === nap));
+    if (l.length < 3) continue;
+    const penzN = l.map((e) => e.napiSor.find((x) => x.nap === nap).penz);
+    const utasN = l.map((e) => e.napiSor.find((x) => x.nap === nap).utas);
+    rows.push([nap, l.length,
+      p1(korr(penzN, l.map((e) => e.penzVeg))),
+      p1(korr(penzN, l.map((e) => e.fejezet))),
+      p1(korr(utasN, l.map((e) => e.penzVeg))),
+      p1(korr(utasN, l.map((e) => e.fejezet)))]);
+  }
+  tabla(['nap', 'futás', 'pénz→végpénz', 'pénz→fejezet', 'utas→végpénz', 'utas→fejezet'], rows);
+  sor('  (Pearson-korreláció az összes futáson. 1,0 = a nap már eldöntötte a végét.)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  GÉPI KIMENET
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -498,6 +561,7 @@ const ki = {
   futasok: eredmenyek,
   dijKiserlet,
   techKiserlet,
+  spiral,
 };
 mkdirSync(join(GYOKER, 'qa'), { recursive: true });
 writeFileSync(join(GYOKER, 'qa', 'egyensuly.json'), JSON.stringify(ki, null, 1));

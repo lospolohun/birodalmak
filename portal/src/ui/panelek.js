@@ -108,6 +108,7 @@ export class Panelek {
       const fej = el('div', 'fej');
       be(fej, el('span', null, d.ikon), el('b', null, d.nev),
         el('span', null, all.lezarva ? '⛔ VÉGLEG LEZÁRVA' : (all.nyitva ? (all.szunet > 0 ? '⚠️ omlás után' : '✅ nyitva') : '· zárva')));
+      if (d.csatorna) be(t, el('div', 'sorok', '🚉 Csatorna — nincs instabilitás és nem fogyaszt kristályt.'));
       be(t, fej, el('p', null, d.leiras));
 
       if (all.nyitva) {
@@ -115,7 +116,7 @@ export class Panelek {
         const sorok = el('div', 'sorok');
         sorok.innerHTML =
           `szint <b>${all.szint}/5</b> · díj <b>${dimenzioDij(all)}</b> · ` +
-          `instabilitás <b style="color:${inst > 70 ? '#ff5d73' : inst > 40 ? '#ffc247' : '#63d68a'}">${inst.toFixed(0)}%</b> · ` +
+          (d.csatorna ? '' : `instabilitás <b style="color:${inst > 70 ? '#ff5d73' : inst > 40 ? '#ffc247' : '#63d68a'}">${inst.toFixed(0)}%</b> · `) +
           `utas <b>${all.osszUtas}</b> · bevétel <b>${szam(all.bevetel)}</b>`;
         be(t, sorok);
 
@@ -140,19 +141,23 @@ export class Panelek {
         const fejleszt = el('button', 'mini', all.szint >= 5 ? 'Maximum szint' : `Szint ${all.szint + 1} — ${szam(ar)} 💎`);
         fejleszt.disabled = all.szint >= 5 || sim.penz < ar;
         fejleszt.onclick = () => this._parancs({ fajta: 'dim_szint', kod: d.kod });
-        const bezar = el('button', 'mini', 'Kapu bezárása');
+        const bezar = el('button', 'mini', d.csatorna ? 'Hálózat lekapcsolása' : 'Kapu bezárása');
         bezar.onclick = () => this._parancs({ fajta: 'dim_zar', kod: d.kod, vegleg: false });
-        const vegleg = el('button', 'mini vesz', 'VÉGLEG lezár');
-        vegleg.title = 'Visszafordíthatatlan. Ez a világ soha többé nem nyílik meg ebben a játszásban.';
-        vegleg.onclick = () => {
-          if (confirm(`${d.nev} VÉGLEG lezárul. Ez visszafordíthatatlan. Biztos?`)) {
-            this._parancs({ fajta: 'dim_zar', kod: d.kod, vegleg: true });
-          }
-        };
+        const vegleg = d.csatorna ? null : el('button', 'mini vesz', 'VÉGLEG lezár');
+        if (vegleg) {
+          vegleg.title = 'Visszafordíthatatlan. Ez a világ soha többé nem nyílik meg ebben a játszásban.';
+          vegleg.onclick = () => {
+            if (confirm(`${d.nev} VÉGLEG lezárul. Ez visszafordíthatatlan. Biztos?`)) {
+              this._parancs({ fajta: 'dim_zar', kod: d.kod, vegleg: true });
+            }
+          };
+        }
         be(gombok, fejleszt, bezar, vegleg);
         be(t, gombok);
       } else if (!all.lezarva) {
-        be(t, el('div', 'sorok', 'Nyisd meg az építés-sáv „🌀 Kapuk" fülén.'));
+        be(t, el('div', 'sorok', d.csatorna
+          ? 'Építsd meg az építés-sáv „🚂 Csatornák" fülén.'
+          : 'Nyisd meg az építés-sáv „🌀 Kapuk" fülén.'));
       }
       p.appendChild(t);
     }

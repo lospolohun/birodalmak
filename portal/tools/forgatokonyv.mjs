@@ -364,3 +364,76 @@ export function v03Uj() {
     }
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  v0.4 — ÉRKEZÉSI CSATORNÁK (vasút, léghajó, űrkapu)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A csatornák a kapuk mellé húzódó, MÁSIK gazdasági ág: nincs instabilitás,
+// nincs kristály, viszont fix épületár és emeletkényszer. Külön forgatókönyv
+// kell hozzájuk, mert a `_csatornakLep()` egy teljesen új tick-ág — és mert a
+// léghajó-kikötő az EGYETLEN épület, ami emelet nélkül nem is építhető meg,
+// vagyis a szintekkel együtt kell mérni.
+
+/**
+ * v0.4 — csatornák. Emeletet is épít, mert a léghajó-kikötő megköveteli.
+ * @returns {(sim: object, t: number) => void}
+ */
+export function v04Uj() {
+  let utolsoFelvetel = -999;
+  const megtett = new Set();
+  const egyszer = (kulcs, felt, tenni) => {
+    if (megtett.has(kulcs) || !felt()) return;
+    megtett.add(kulcs); tenni();
+  };
+  return function v04(sim, t) {
+    const kx = sim.kezdoX, ky = sim.kezdoY;
+    if (t === 5) sim.parancs({ fajta: 'epit', tipus: 'biztonsag', x: kx + 8, y: ky + 2 });
+    if (t === 9) sim.parancs({ fajta: 'epit', tipus: 'wc', x: kx + 8, y: ky + 6 });
+    if (t === 13) sim.parancs({ fajta: 'epit', tipus: 'etterem', x: kx + 12, y: ky + 2 });
+    if (t === 17) sim.parancs({ fajta: 'epit', tipus: 'bolt', x: kx + 12, y: ky + 6 });
+    if (t === 21) sim.parancs({ fajta: 'epit', tipus: 'takarito', x: kx + 2, y: ky + 12 });
+    if (t === 40) sim.parancs({ fajta: 'padlo', x: kx + 22, y: ky, sz: 10, m: 16 });
+
+    // ── VASÚT: az olcsó alapforgalom ──────────────────────────────────────
+    egyszer('vasut', () => t > 300 && sim.penz > 6000,
+      () => sim.parancs({ fajta: 'epit', tipus: 'vasut', x: kx + 24, y: ky + 2 }));
+
+    // ── EMELET + LÉGHAJÓ ──────────────────────────────────────────────────
+    // A kikötő földszinten ELUTASÍTÁSBA fut — ezt szándékosan meg is
+    // próbáljuk, hogy a `minSzint` ága is le legyen mérve.
+    egyszer('leghajo_foldszint', () => t > 900,
+      () => sim.parancs({ fajta: 'epit', tipus: 'leghajo', x: kx + 24, y: ky + 8, z: 0 }));
+    egyszer('emelet', () => t > 1000 && sim.penz > 3000,
+      () => sim.parancs({ fajta: 'padlo', x: kx + 22, y: ky, sz: 10, m: 12, z: 1 }));
+    egyszer('lepcso', () => t > 1200 && sim.penz > 4000 && sim.racs.vanPadlo(kx + 24, ky + 1, 1),
+      () => sim.parancs({ fajta: 'epit', tipus: 'lepcso', x: kx + 23, y: ky + 8, z: 0 }));
+    egyszer('leghajo', () => t > 1600 && sim.penz > 9000 && sim.racs.vanPadlo(kx + 24, ky + 1, 1),
+      () => sim.parancs({ fajta: 'epit', tipus: 'leghajo', x: kx + 24, y: ky + 1, z: 1 }));
+
+    // ── ŰRKAPU: kutatáshoz kötött ─────────────────────────────────────────
+    if (!sim.aktivKutatas && sim.penz > 12000) {
+      for (const kod of ['kapu_hangolas', 'stabil_kapuk', 'kapu_szkenner']) {
+        if (sim.kutathato(kod)) { sim.parancs({ fajta: 'kutat', kod }); break; }
+      }
+    }
+    egyszer('urkapu', () => sim.kesz('kapu_szkenner') && sim.penz > 16000,
+      () => sim.parancs({ fajta: 'epit', tipus: 'urkapu', x: kx + 24, y: ky + 6, z: 1 }));
+
+    if (t - utolsoFelvetel > 45 && sim.penz > 3000) {
+      const hiany = hianyzoSzakma(sim);
+      if (hiany) { sim.parancs({ fajta: 'felvesz', tipus: hiany }); utolsoFelvetel = t; }
+    }
+    if (t > 600 && t % 300 === 0 && sim.aramszunet && sim.penz > 4000) {
+      const n = sim.epuletSzam('energiamag');
+      if (n < 4) sim.parancs({ fajta: 'epit', tipus: 'energiamag', x: kx + 18 + (n - 1) * 3, y: ky + 12 });
+    }
+    if (t % 20 === 0) {
+      if (sim.tortenet.allapot === 'bevezeto') sim.parancs({ fajta: 'fejezet_tovabb' });
+      else if (sim.tortenet.allapot === 'dontes') sim.parancs({ fajta: 'dontes', valasz: 0 });
+      for (let i = 0; i < sim.varakozoValaszok.length; i++) {
+        sim.parancs({ fajta: 'esemeny_valasz', azon: sim.varakozoValaszok[i].azon, valasz: 1 });
+      }
+    }
+  };
+}
