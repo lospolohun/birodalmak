@@ -51,12 +51,67 @@
 // ad. Ezért a szonda nem csak azt vizsgálja, hogy két egyező futás egyezőnek
 // LÁTSZIK-e, hanem SZÁNDÉKOSAN el is rontja az egyik oldalt, és megköveteli,
 // hogy a detektor kiszúrja.
+//
+// ── ADAPTÍV KÖRHOSSZ (v0.8/4) ─────────────────────────────────────────────
+// Rossz vonalon a fix körhossz elviselhetetlen: a lockstep körönként megáll,
+// és a játék szaggat. A kézenfekvő ötlet — „növeljük a bemenet-késleltetést" —
+// viszont NEM JÁRHATÓ:
+//
+//   ⚠️ A BEMENET-KÉSLELTETÉS AZT SZABJA MEG, MELYIK KÖRBEN HAJTÓDIK VÉGRE EGY
+//   PARANCS. Ha az egyik gép 2-vel, a másik 3-mal számolna, ugyanaz a
+//   kattintás MÁS KÖRBEN futna le a két gépen — vagyis azonnali desync. Ez nem
+//   „ritkán jelentkező hiba", hanem szükségszerű.
+//
+// Ezért nem a késleltetés-SZÁM változik, hanem a KÖR HOSSZA tickben. Ugyanaz a
+// két kör késleltetés hosszabb körökkel több valós időt fed le, tehát a
+// csomagnak több ideje van megérkezni — a parancs viszont MINDEN GÉPEN
+// ugyanabban a körben hajtódik végre.
+//
+// A megegyezés menete, és miért determinisztikus:
+//
+//   1. Minden csomag viszi a küldő KÉRT körhosszát (a saját megállásaiból).
+//   2. A `K`. kör végrehajtásakor mindenkinek a kezében van az ÖSSZES játékos
+//      `K`-ra szóló csomagja — különben nem is léphetne. Mindenki ugyanabból
+//      az adatból veszi a MAXIMUMOT: aki a legrosszabb vonalon ül, az szabja
+//      meg a tempót.
+//   3. A döntés a `K + VALTAS_LEAD`. körre szól. Ez azért kell, mert a `K`.
+//      kör végrehajtásakor a `K + KESLELTETES_KOR`. körre szóló csomag ÉPP
+//      MOST megy ki — az arra a körre vonatkozó hossznak tehát már eldöntöttnek
+//      kell lennie. A `KESLELTETES_KOR + 1` az első kör, amiről még senki nem
+//      küldött.
+//
+// A körhossz így nem gépenkénti beállítás, hanem a MECCS állapota — ezért a
+// kör első tickjét futó összegként tartjuk (`kovetkezoTick`), nem
+// `kor * KOR_TICK`-ként.
 
 import { KESLELTETES } from '../sim/sim.js';
 import { mentes, betoltes } from '../sim/mentes.js';
 
-/** Hány tick egy kör. 20 Hz-en 4 tick = 5 kör másodpercenként. */
+/**
+ * A kör ALAP hossza tickben. 20 Hz-en 4 tick = 5 kör másodpercenként.
+ *
+ * ⚠️ A v0.8/4 ÓTA EZ CSAK A KIINDULÁS. A kör hossza a hálózat minőségéhez
+ * igazodik — lásd a fájl végi „ADAPTÍV KÖRHOSSZ" bekezdést.
+ */
 export const KOR_TICK = 4;
+
+/** A kör hossza soha nem megy ez alá / fölé. */
+export const KOR_TICK_MIN = 4;
+export const KOR_TICK_MAX = 16;
+
+/**
+ * Ennyi körönként értékeljük újra, hogy jó-e a mostani körhossz. Elég ritkán
+ * ahhoz, hogy a mérés ne egyetlen zökkenőre ugorjon, és elég sűrűn ahhoz, hogy
+ * egy romló vonalra másodperceken belül reagáljon.
+ */
+const MERES_ABLAK = 20;
+
+/**
+ * A körhossz-változás ennyi körrel KÉSŐBB lép életbe, mint amikor eldőlt.
+ * `KESLELTETES_KOR + 1`, és ez a legkisebb biztonságos érték — lásd az
+ * indoklást a fájl végi bekezdésben.
+ */
+const VALTAS_LEAD = 3;
 
 /**
  * Hány körrel későbbre szól a most kiadott parancs.
@@ -107,6 +162,19 @@ export class Lockstep {
 
     /** A KÖVETKEZŐ végrehajtandó kör sorszáma. */
     this.kor = 0;
+    /**
+     * A KÖVETKEZŐ kör ELSŐ TICKJE. Futó összeg, nem `kor * KOR_TICK`: a
+     * körhossz változhat (v0.8/4), tehát a szorzás hazudna.
+     */
+    this.kovetkezoTick = 0;
+    /** A MOSTANI körhossz, és a jövőre már eldöntött változások. */
+    this.korHossz = KOR_TICK;
+    this._korHosszTerv = new Map();
+    /** Amit MI kérünk. A társak ugyanígy kérnek; a maximum nyer. */
+    this._kertKorHossz = KOR_TICK;
+    /** Megállások a mostani mérési ablakban. */
+    this._ablakVarakozas = 0;
+    this._ablakKor = 0;
     /** A helyben gyűjtött parancsok a KIADÁS alatt álló körre. */
     this._helyi = [];
     /**
@@ -140,6 +208,8 @@ export class Lockstep {
     this.varakozasDb = 0;
     /** Hányszor álltunk vissza pillanatképből (v0.8/3). */
     this.ujracsatlakozasDb = 0;
+    /** Hányszor változott a körhossz (v0.8/4) — a szonda működés-száma. */
+    this.korHosszValtas = 0;
     /** A desync körszáma, vagy -1. */
     this.desyncKor = -1;
     this.desyncMienk = 0;
@@ -208,7 +278,22 @@ export class Lockstep {
     // a hálózat érkezési sorrendjét tükrözi, ami gépenként más — a visszatérő
     // viszont ugyanazt az állapotot kell kapja, akárki adta a pillanatképet.
     csomagok.sort((a, b) => (a.kor - b.kor) || (a.jatekos - b.jatekos));
-    return { kor: this.kor, kovetkezoTick: this.sim.tick, mentes: mentes(this.sim), csomagok };
+    // ⚠️ A KÖRHOSSZ ÉS A MÁR ELDÖNTÖTT MENETREND IS ÁLLAPOT (v0.8/4). A
+    // visszatérő különben az ALAP hosszal folytatná, miközben a többiek egy
+    // megegyezett, hosszabb körrel futnak — és a kör HOSSZA szabja meg, melyik
+    // tickre esnek a parancsok. Ez ugyanaz a hiba-osztály, mint a bemenet-
+    // késleltetés gépenkénti eltérése: azonnali desync.
+    const terv = [];
+    for (const [k, h] of this._korHosszTerv) terv.push([k, h]);
+    terv.sort((a, b) => a[0] - b[0]);
+    return {
+      kor: this.kor,
+      kovetkezoTick: this.kovetkezoTick,
+      korHossz: this.korHossz,
+      korHosszTerv: terv,
+      mentes: mentes(this.sim),
+      csomagok,
+    };
   }
 
   /**
@@ -220,6 +305,13 @@ export class Lockstep {
     const e = betoltes(this.sim, p.mentes);
     if (!e.ok) return e;
     this.kor = p.kor | 0;
+    this.kovetkezoTick = p.kovetkezoTick === undefined ? this.sim.tick : (p.kovetkezoTick | 0);
+    this.korHossz = p.korHossz === undefined ? KOR_TICK : (p.korHossz | 0);
+    this._korHosszTerv.clear();
+    if (p.korHosszTerv) for (const [k, h] of p.korHosszTerv) this._korHosszTerv.set(k | 0, h | 0);
+    this._kertKorHossz = this.korHossz;
+    this._ablakKor = 0;
+    this._ablakVarakozas = 0;
     this._csomagok.clear();
     this._hashek.clear();
     this._sajatHash.clear();
@@ -260,6 +352,12 @@ export class Lockstep {
     // parancsait cserélhetné le — a többi gépen viszont a régi futott le.
     if (sor[j] !== null) return;
     sor[j] = uzenet.parancsok || [];
+    // A KÉRT KÖRHOSSZ a csomag mellékterméke. A `sor` tömbre akasztjuk, hogy a
+    // `lep()` egyetlen helyről olvashassa mindenkiét — külön `Map` csak még egy
+    // ürítendő tárolót jelentene.
+    if (!sor.kertKorHossz) sor.kertKorHossz = KOR_TICK_MIN;
+    const kk = uzenet.kertKorHossz | 0;
+    if (kk > sor.kertKorHossz) sor.kertKorHossz = kk;
     this.fogadottCsomag++;
 
     if (uzenet.hashKor !== undefined && uzenet.hashKor >= 0) {
@@ -285,17 +383,29 @@ export class Lockstep {
     if (!sor || !this._teljes(sor)) {
       this.allapot = ALLAPOT.VAR;
       this.varakozasDb++;
+      this._ablakVarakozas++;
       if (++this._varakozas > TURELEM_KOR) this.allapot = ALLAPOT.KIESETT;
       return 0;
     }
     this._varakozas = 0;
     this.allapot = ALLAPOT.FUT;
 
+    // ── A KÖRHOSSZ MEGEGYEZÉSE (v0.8/4) ────────────────────────────────
+    // A mostani kör hosszát egy KORÁBBI kör döntötte el; ha nincs rá terv, az
+    // eddigi marad. A tervet innen már senki nem írhatja felül — ezért lehet
+    // biztos benne minden gép, hogy ugyanannyi ticket futtat.
+    if (this._korHosszTerv.has(this.kor)) {
+      const uj = this._korHosszTerv.get(this.kor);
+      this._korHosszTerv.delete(this.kor);
+      if (uj !== this.korHossz) { this.korHossz = uj; this.korHosszValtas++; }
+    }
+    const hossz = this.korHossz;
+
     // ── A PARANCSOK BEADÁSA ────────────────────────────────────────────
     // ⚠️ JÁTÉKOS-SORREND SZERINT, NÖVEKVŐ INDEXSZEL. A csomagok érkezési
     // sorrendje gépenként MÁS — az a hálózat dolga —, a végrehajtás sorrendje
     // viszont nem lehet az. Ez a ciklus az egyetlen hely, ahol ez eldől.
-    const elsoTick = this.kor * KOR_TICK;
+    const elsoTick = this.kovetkezoTick;
     for (let j = 0; j < this.jatekosDb; j++) {
       const lista = sor[j];
       for (let i = 0; i < lista.length; i++) {
@@ -303,8 +413,23 @@ export class Lockstep {
       }
     }
 
+    // ── A JÖVŐ KÖRHOSSZÁNAK ELDÖNTÉSE ──────────────────────────────────
+    // MINDENKI ugyanebből az adatból számol: az összes játékos EBBEN a körben
+    // beérkezett csomagjából, a maximumot véve. A legrosszabb vonalon ülő
+    // szabja meg a tempót — ez a lockstep alaptermészete, nem külön szabály.
+    // ⚠️ A MAXIMUM A SOR-OBJEKTUMON ÜL, NEM A JÁTÉKOSONKÉNTI ELEMEKEN. Első
+    // nekifutásra `sor[j].kertKorHossz`-t olvastam — csakhogy `sor[j]` az
+    // adott játékos PARANCS-LISTÁJA, azon nincs ilyen mező. A `fogad` a `sor`
+    // tömbre teszi, és menet közben már maximumot is képez belőle (a maximum
+    // sorrendfüggetlen, tehát az érkezési sorrend nem számít). A hiba csendes
+    // volt: a kért hossz szabályosan felment 16-ra, a megegyezés viszont végig
+    // a 4-es alapértéket adta vissza, és a kör sosem nyúlt meg.
+    const kert = sor.kertKorHossz || KOR_TICK_MIN;
+    this._korHosszTerv.set(this.kor + VALTAS_LEAD, kert);
+
     // ── A TICKEK ───────────────────────────────────────────────────────
-    for (let t = 0; t < KOR_TICK; t++) this.sim.lep();
+    for (let t = 0; t < hossz; t++) this.sim.lep();
+    this.kovetkezoTick += hossz;
 
     // A kör UTÁNI állapot ujjlenyomata. Ezt küldjük majd `HASH_LEMARADAS`
     // körrel később, és ehhez hasonlítjuk a többiekét.
@@ -317,9 +442,39 @@ export class Lockstep {
     this._csomagok.delete(this.kor);
     this.kor++;
     this.vegrehajtottKor++;
+    this._merestZar();
     // A most kiadott parancsok a `KESLELTETES_KOR`-ral későbbi körbe mennek.
     this._csomagKuld(this.kor + KESLELTETES_KOR - 1);
-    return KOR_TICK;
+    return hossz;
+  }
+
+  /**
+   * A MÉRÉSI ABLAK LEZÁRÁSA — mit kérjünk a következő ablakra?
+   *
+   * A jelzés a MEGÁLLÁSOK ARÁNYA: hányszor kellett várnunk a lefutott körökhöz
+   * képest. Nem valós időt mérünk, és ez tudatos — az óra a v0.8-ban is a
+   * hálózaté, nem a szimulációé, és egy `performance.now()` alapú szabályozó
+   * gépenként MÁS körhosszt kérne. A megállás-szám viszont a saját hurkunk
+   * megfigyelése, tehát mindenki a maga vonaláról nyilatkozik, és a
+   * MEGEGYEZÉS (maximum) hozza össze őket.
+   *
+   * A lépés egyszerre EGY fokozat. A hirtelen ugrás oda-vissza lengene: egy
+   * hosszabb kör kevesebb megállást ad, amitől azonnal vissza akarnánk rövidre,
+   * amitől megint megállnánk.
+   */
+  _merestZar() {
+    if (++this._ablakKor < MERES_ABLAK) return;
+    const megallas = this._ablakVarakozas;
+    this._ablakKor = 0;
+    this._ablakVarakozas = 0;
+
+    // Küszöbök: az ablak negyedénél többször megállni már szaggatás; a
+    // huszada alatt viszont pazarlás a hosszú kör (fölösleges késleltetés).
+    if (megallas > MERES_ABLAK / 4) {
+      this._kertKorHossz = Math.min(KOR_TICK_MAX, this._kertKorHossz + 2);
+    } else if (megallas < MERES_ABLAK / 20) {
+      this._kertKorHossz = Math.max(KOR_TICK_MIN, this._kertKorHossz - 1);
+    }
   }
 
   /** Megvan-e minden játékos csomagja erre a körre? */
@@ -341,6 +496,7 @@ export class Lockstep {
       parancsok: this._helyi,
       hashKor: this._sajatHash.has(hashKor) ? hashKor : -1,
       hash: this._sajatHash.has(hashKor) ? this._sajatHash.get(hashKor) : 0,
+      kertKorHossz: this._kertKorHossz,
     };
     this._helyi = [];
     this.kuldottCsomag++;
@@ -407,6 +563,9 @@ export class Lockstep {
       hashVizsgalat: this.hashVizsgalat,
       varakozas: this.varakozasDb,
       ujracsatlakozas: this.ujracsatlakozasDb,
+      korHossz: this.korHossz,
+      korHosszValtas: this.korHosszValtas,
+      kertKorHossz: this._kertKorHossz,
       desyncKor: this.desyncKor,
       desyncJatekos: this.desyncJatekos,
       desyncMienk: this.desyncMienk,

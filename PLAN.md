@@ -15,7 +15,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
-| **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **folyamatban** — lásd alább |
+| **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **kész** — lásd alább |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
 | v0.10 | Térkép-presetek, kampány | |
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
@@ -332,7 +332,7 @@ külön „emlékezett épületek" állapotot igényel, ami a v0.11 UI-körébe 
 | v0.8/1 | lockstep mag, hurok-szállítás, desync-detektor | **kész** |
 | v0.8/2 | WebSocket relay (szerver + kliens) | **kész** |
 | v0.8/3 | újracsatlakozás a mentésből | **kész** |
-| v0.8/4 | késleltetés-simítás (adaptív körhossz) | hátravan |
+| v0.8/4 | késleltetés-simítás (adaptív körhossz) | **kész** |
 
 **A hálózat nem világállapotot küld.** Nem pozíciókat, nem életerőt, nem
 nyersanyagot — egyetlen dolgot: ki mit parancsolt, és melyik körre. Minden gép
@@ -440,6 +440,51 @@ változtatás nélkül elég volt hozzá.
 
 Mérve: a B kliens kiesett a 200. körnél, pillanatképből visszatért, mindkét
 kliens elfutott a 260. körig, és a két szimuláció **bitre azonos**.
+
+### v0.8/4 — nem a késleltetés nyúlik, hanem a kör
+
+Rossz vonalon a fix körhossz elviselhetetlen: a lockstep körönként megáll, és a
+játék szaggat. A kézenfekvő ötlet — „növeljük a bemenet-késleltetést" —
+viszont **nem járható**:
+
+⚠️ **A bemenet-késleltetés azt szabja meg, melyik körben hajtódik végre egy
+parancs.** Ha az egyik gép 2-vel, a másik 3-mal számolna, ugyanaz a kattintás
+más körben futna le a két gépen — vagyis azonnali desync. Nem „ritkán
+jelentkező hiba", hanem szükségszerű.
+
+Ezért nem a késleltetés-**szám** változik, hanem a **kör hossza tickben**.
+Ugyanaz a két kör késleltetés hosszabb körökkel több valós időt fed le, tehát a
+csomagnak több ideje van megérkezni — a parancs viszont minden gépen ugyanabban
+a körben hajtódik végre.
+
+A megegyezés menete, és miért determinisztikus:
+
+1. Minden csomag viszi a küldő **kért** körhosszát (a saját megállásaiból).
+2. A `K`. kör végrehajtásakor mindenkinek a kezében van az összes játékos
+   `K`-ra szóló csomagja — különben nem is léphetne. Mindenki ugyanabból az
+   adatból veszi a **maximumot**: aki a legrosszabb vonalon ül, az szabja meg a
+   tempót.
+3. A döntés a `K + 3`. körre szól, mert a `K + 2`. körre szóló csomag épp most
+   megy ki — az első kör, amiről még senki nem küldött, a `KESLELTETES_KOR + 1`.
+
+A szabályozó jelzése a **megállások aránya**, nem a valós idő. Ez tudatos: egy
+`performance.now()` alapú szabályozó gépenként más hosszt kérne. A megállás-szám
+viszont a saját hurkunk megfigyelése — mindenki a maga vonaláról nyilatkozik, és
+a megegyezés (maximum) hozza össze őket.
+
+A kör első tickje futó összeg (`kovetkezoTick`), nem `kor * KOR_TICK` — változó
+hossz mellett a szorzás hazudna. A körhossz és a már eldöntött menetrend a
+**pillanatképbe is bekerült**: a visszatérő különben az alap hosszal folytatná,
+miközben a többiek megegyezett, hosszabb körrel futnak.
+
+**Egy csendes hiba, amit a gát fogott meg:** a kért hosszat
+`sor[j].kertKorHossz`-ról olvastam, csakhogy `sor[j]` az adott játékos
+*parancs-listája* — azon nincs ilyen mező. A kért hossz szabályosan felment
+16-ra, a megegyezés viszont végig a 4-es alapértéket adta, és a kör sosem nyúlt
+meg. A hash végig zöld volt.
+
+Mérve: gyors hálózaton 4 tick, lassún (5 kör késés) 16 tick, hat változással —
+és a két gép **bitre azonos** mindkét esetben.
 
 ## A záró lépcsők (v0.11–v0.13)
 

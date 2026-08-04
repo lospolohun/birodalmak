@@ -1470,6 +1470,34 @@ let lockstepBukas = bukas;
   const lh0 = L.gepek[0].sim.allapotHash(), lh1 = L.gepek[1].sim.allapotHash();
   sor('lassú hálózat (5 kör)', l0.vegrehajtottKor + ' / ' + l1.vegrehajtottKor + ' kör',
     'megállás: ' + l0.varakozas + ' / ' + l1.varakozas);
+  // v0.8/4 — ADAPTÍV KÖRHOSSZ. A rossz vonalon a körnek MEG KELL NYÚLNIA,
+  // különben a lockstep körönként megáll és a játék szaggat. A gyorson viszont
+  // maradjon rövid — a hosszú kör fölösleges bemenet-késleltetés.
+  sor('körhossz', a0.korHossz + ' tick (gyors) → ' + l0.korHossz + ' tick (lassú)',
+    'változás: ' + a0.korHosszValtas + ' / ' + l0.korHosszValtas + ' · kért: '
+    + l0.kertKorHossz + ' / ' + l1.kertKorHossz);
+  if (l0.korHossz !== l1.korHossz) {
+    console.log('\n  \u26d4 A KÉT GÉP MÁS KÖRHOSSZAT HASZNÁL (' + l0.korHossz + ' / '
+      + l1.korHossz + ').');
+    console.log('     A körhossz szabja meg, MELYIK TICKRE esnek a parancsok — ha ez');
+    console.log('     gépenként eltér, az azonnali desync. A megegyezésnek MINDENKI');
+    console.log('     ugyanabból a csomag-halmazból kell kijönnie (`_korHosszTerv`).');
+    bukas++;
+  }
+  if (l0.korHossz <= a0.korHossz) {
+    console.log('\n  \u26d4 A LASSÚ HÁLÓZATON NEM NYÚLT MEG A KÖR (' + l0.korHossz
+      + ' tick, ugyanannyi mint a gyorson).');
+    console.log('     Az adaptív körhossz ága néma: vagy a mérési ablak nem zárul, vagy');
+    console.log('     a kért hossz nem jut át a csomagban, vagy a menetrend nem hat.');
+    bukas++;
+  }
+  if (a0.korHossz > 6) {
+    // Fordított irányú gát: a JÓ vonalon a hosszú kör tiszta veszteség.
+    console.log('\n  \u26d4 A GYORS HÁLÓZATON IS MEGNYÚLT A KÖR (' + a0.korHossz + ' tick).');
+    console.log('     Ez fölösleges bemenet-késleltetés: a szabályozó akkor is emel,');
+    console.log('     amikor nincs miért.');
+    bukas++;
+  }
   if (l0.varakozas === 0 && l1.varakozas === 0) {
     console.log('\n  \u26d4 A LOCKSTEP EGYSZER SEM ÁLLT MEG öt kör késés mellett sem.');
     console.log('     Vagy a hurok nem késleltet, vagy a `_teljes()` mindig igazat ad —');
