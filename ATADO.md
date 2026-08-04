@@ -1,25 +1,72 @@
 # ÁTADÓ — AGE OF THE CRYSTALS
 
-> **A felhős fejlesztés itt LEZÁRVA.** Minden fel van tolva, minden kapu zöld.
-> A folytatás a te gépeden, Claude appból, localhost-teszttel. A 2. és a 6.
-> pont az, amivel kezdeni érdemes.
+> **Minden fel van tolva, minden kapu zöld.** A folytatás másik gépen, Claude
+> appból, localhost-teszttel. A 2. és a 6. pont az, amivel kezdeni érdemes.
 
-## 0. Az utolsó menet — amit a kiadás-ellenőrző talált
+⚠️ **AZ ÁG MEGVÁLTOZOTT.** A munka mostantól a
+`claude/telepesek-jatek-agenssel-zby6gq` ágon van, NEM a korábbi
+`claude/age-of-crystals-w73aoj`-n. Ez a doksi sokáig a régit mondta — ha
+tegnapról emlékszel az ágnévre, az elavult.
 
-Az új `npm run kiadas` (61 elvárás, statikus, 0,2 mp) **három valódi hibát
-fogott meg az első futásán**, mindet olyat, amire a determinizmus-kapu elvből
-vak, mert **minden gépen egyformán rossz**:
+## 0. Az utolsó menet — P0/1: a meccset végre meg lehet nyerni
+
+**Ez volt a projekt legnagyobb hiányzó darabja, és egyetlen verzió-sorban sem
+szerepelt.** Tíz verzión át nem volt a simben győztes: a `gyoztes`, `vegeTick`,
+`vereseg` azonosítókra nulla találat volt a `src/` alatt. A meccs technikailag
+örökké tartott — mérve is: a v0.9-es körben a 0. csapat a **12 444.** tickre az
+utolsó egységéig elfogyott, a szimuláció mégis pörgött tovább 40 000-ig.
+
+Új réteg: **`src/sim/gyozelem.js`** (a részletes indoklás a fájl fejlécében).
+A három döntés, amit meg kellett hozni:
+
+| kérdés | döntés | miért |
+|---|---|---|
+| mi a vereség | nincs élő **központ** ÉS nincs élő **munkás** | ez a pár zárja be a gazdasági kört: a munkást csak a központ képzi (`KEPEZ[KOZPONT]`), gyűjteni csak a munkás tud. A fal és a torony ettől még állhat |
+| van-e feladás | van, és **parancs** (`fajta: 'feladas'`) | kliens-oldali gombként a másik gép nem tudná meg → azonnali kettéválás |
+| mi lesz a meccs után | a sim **tovább lép**, a `vegeTick` **latch** | a `lep()` korai kilépése rossz: a lockstep körei (`KOR_TICK`) a tick-számlálóra épülnek. A megállás a KLIENS dolga |
+
+A csapda, amire a `TODO.md` figyelmeztetett, zárva: `gyoztes`, `vegeTick`,
+`vereseg`, `veresegTick`, `veresegOk`, `feladott` **mind benne van az
+`allapotHash()`-ben ÉS a mentésben** (`MENTES_VERZIO` 4 → 5).
+
+**Új 14. vizsgálat a determinizmus-szondában**, négy irányból — és mind a négy
+ki lett próbálva szabotázzsal:
+
+| mit néz | mért eredmény |
+|---|---|
+| valódi gépi meccs (v0.9 felállás, azonos nehézség) | az 1. csapat nyer a **11 223.** ticken, kiirtással |
+| feladás-kör (új parancsfajta, saját forgatókönyv) | győztes a **751.** ticken; a latch 1000 tick után is tartja |
+| kontroll-meccs, ahol senki nem hal meg | `vegeTick = -1` — a gát nem kiált vakon győztest |
+| hash-szabotázs | a hat mezőt egyenként elrontva a hash **mind a hatszor** változik |
+| befejezett meccs mentése | átjött, a hash bitre egyezik |
+
+Az utolsó előtti a legfontosabb: ha a `vegeTick` kimaradt volna a hashből,
+**minden más lámpa zölden égne** — két azonos futás úgyis azonos —, a lockstep
+viszont két gépen MÁS TICKRE tenné a meccs végét, és a desync-jelentés a
+mozgásra mutatna, nem a valódi okra.
+
+**A kapuk mostani állása:** `npm run det` **14/14**, `npm run halo`,
+`npm run civ`, `npm run menu`, `npm run hang`, `npm run kiadas` (0 bukás,
+ugyanaz az 5 régi figyelmeztetés — újat ez a menet nem hozott),
+`npx vite build` — mind zöld. `npm run fps` **továbbra sem futott**.
+
+⏱️ A `npm run det` teljes köre most **~6 perc** (felhő-gépen mérve, tájékoztató
+szám — lásd az 5. pont mérési csapdáit). Füstteszthez: `--v09tick=4000`.
+
+<details>
+<summary>Az azelőtti menet — amit a kiadás-ellenőrző talált (történet)</summary>
+
+Az `npm run kiadas` (61 elvárás, statikus) **három valódi hibát fogott meg az
+első futásán**, mindet olyat, amire a determinizmus-kapu elvből vak, mert
+**minden gépen egyformán rossz**:
 
 1. **Három `TIPUS`-indexelt tábla rövid maradt** a v0.9/2-ből: `LATOTAV` és
    `ELENGED` (`parancsallapot.js`), `LATOTAV_EGYSEG` (`kod.js`) — mind 5 elemű
    6 helyett. Következmény: `LATOTAV[TIPUS.EGYEDI]` → `undefined`, a
    `d <= undefined` pedig MINDIG hamis, tehát **a nyolc nép saját egysége soha
-   nem szerzett magától célpontot** (csak külön parancsra harcolt), és a
-   hadi ködben **vak volt** — nem fedett fel semmit. Két verzión át,
-   tökéletesen determinisztikusan, zöld kapu mellett. Ez pontosan az a csapda,
-   amit az `egyedi.js` saját fejléce leír — és mégis belefutottunk.
-   **Javítva**; mérve: az egyedi egység most 253 mintavételnél `HARCOL`
-   állapotban, korábban egynél sem.
+   nem szerzett magától célpontot**, és a hadi ködben **vak volt**. Két verzión
+   át, tökéletesen determinisztikusan, zöld kapu mellett. **Javítva**; mérve: az
+   egyedi egység most 253 mintavételnél `HARCOL` állapotban, korábban egynél sem.
 2. **`maxEgyseg`** mentődött, de a `betoltes()` sosem olvasta: nagyobb
    kapacitású mentés kisebb simbe töltve csendben levágta volna a sereget.
    **Javítva** — most elutasítja.
@@ -27,32 +74,27 @@ vak, mert **minden gépen egyformán rossz**:
    gyakorlatban soha nem futott le. **Javítva**, és mellé bekerült a `menu`,
    `hang`, `kiadas` parancs is.
 
-Maradt **5 figyelmeztetés** (nem buktatnak, a `qa/KIADAS_ELVARASOK.md` sorolja):
-elavult verzió-példa az `INTERFACES.md`-ben, a `vite.config.js` `base`-e és a
-`PLAN.md` kirakási kikötése nem ér össze, két fejléc nem az idióma szerinti, és
-a `src/audio/` még nincs lefedve az ellenőrzőben.
+</details>
 
-**A kapuk mostani állása:** `npm run det` **14/14**, `npm run halo`,
-`npm run civ`, `npm run menu`, `npm run hang`, `npm run kiadas`,
-`npx vite build` — mind zöld. `npm run fps` **továbbra sem futott**.
-
-
-Ez a dokumentum egyetlen célt szolgál: **hogy a saját gépeden fel tudd venni a
+Ez a dokumentum egyetlen célt szolgál: **hogy egy másik gépen fel tudd venni a
 fonalat** ott, ahol a felhőben abbamaradt. Nem összefoglaló és nem dicsekvés —
 azt írja le, mi van kész, mi NINCS ellenőrizve, és mit érdemes elsőnek
 megnézned.
 
 - **Repó:** `lospolohun/birodalmak`
-- **Ág:** `claude/age-of-crystals-w73aoj`
-- **Verzió:** `src/core/config.js` → `VERZIO` (a `package.json` verziója NEM ez)
+- **Ág:** `claude/telepesek-jatek-agenssel-zby6gq`
+- **Verzió:** `src/core/config.js` → `VERZIO` (a `package.json` verziója NEM ez).
+  A P0/1 **nem emelte** — a győzelemnek nincs verzió-slotja a `PLAN.md`
+  táblázatában, a kiadás-ellenőrző pedig a `VERZIO`-t a PLAN utolsó „kész"
+  sorához köti. Ha új slotot nyitsz neki, a kettőt EGYÜTT kell mozgatni.
 
 ---
 
-## 1. Indítás a gépeden
+## 1. Indítás egy másik gépen
 
 ```bash
 git clone <repo> birodalmak && cd birodalmak
-git checkout claude/age-of-crystals-w73aoj
+git checkout claude/telepesek-jatek-agenssel-zby6gq
 npm install
 npm run dev            # localhost — ITT indul a játék
 ```
@@ -70,7 +112,7 @@ npm run relay          # másik terminálban
 | `npm run det` | determinizmus-szonda, 14 vizsgálat | ✅ **14/14 zöld** |
 | `npm run halo` | végpontok közti lockstep valódi socketen | ✅ zöld |
 | `npm run fps` | FPS-mérés | ❌ **SOHA nem futott** |
-| `npm run szonda` | mind a négy egyben | ❌ (az FPS miatt) |
+| `npm run szonda` | mind a nyolc egyben (det, halo, civ, menu, hang, kiadas, build, fps) | ❌ (az FPS miatt) |
 
 macOS 12 / Intel iMac esetén az `npx playwright install chromium` bukik. A
 rendszer-Chrome-ot kell megadni — ez egyben valódi GPU-t is ad:
@@ -144,12 +186,13 @@ Részletek verziónként a `PLAN.md`-ben, „A v0.X állása" szakaszokban. Azok
 összefoglalók: minden szakasz leírja, **melyik hiba hogyan bújt el**, és melyik
 gát fogja meg legközelebb.
 
-**A táblázaton kívül: P0/1 — a meccset meg lehet nyerni. Kész.** Ez a tétel egy
-verzió-sorban sem szerepelt, mégis ez volt a legnagyobb hiányzó darab: tíz
-verzión át nem volt a simben győztes, a meccs technikailag örökké tartott. Az új
-réteg a `src/sim/gyozelem.js`, a determinizmus-szonda 14. vizsgálata őrzi. A
-döntések indoklása a fájl fejlécében és a `PLAN.md` „Győzelem és vereség"
-szakaszában; a mért számok a `TODO.md`-ben.
+**A táblázaton kívül: P0/1 — a meccset meg lehet nyerni. Kész** (lásd a 0.
+pontot). A `PLAN.md` „Győzelem és vereség" szakasza arról is szól, hogy ez a
+tétel MIÉRT csúszott ki a verzió-tervből — szerintem az a tanulságosabb rész: a
+terv rétegekben gondolkodott („harc", „gazdaság", „netcode"), és a rétegeket
+hibátlanul le is szállította. Ami kimaradt, az nem egy réteg volt, hanem a
+köztük lévő **záró kérdés**. Érdemes minden további lépcsőnél megkérdezni: ennek
+a funkciónak van-e kimondatlan feltétele, amit senki nem kér számon?
 
 ### Amit a v0.9–v0.10 alatt még nem kötöttünk be
 
@@ -211,15 +254,25 @@ reggel, 0,88 ms este. A tick-idő EGY FUTÁSON BELÜL összehasonlítható
    render-réteg mérés nélkül van.
 2. **A három kész UI/hang-réteg bekötése a `main.js`-be** — enélkül a v0.11 és a
    v0.12 papíron kész, gyakorlatban nem létezik.
-3. **v0.9/2b: az egyedi egység saját 3D-alakja** — ma lándzsás-figurát kap.
-4. **A játékos nem tudja kiválasztani az egyedi egységét.** A `C` gyorsbillentyű
+3. **A győzelem nem LÁTSZIK.** A sim-oldal kész és kapun belül van, de a
+   játékos ma semmit nem vesz észre belőle: nincs „győztél / vesztettél"
+   képernyő, és nincs feladás-gomb. Két apró munka, `ui` sávban:
+   a `gyozelem.osszesites(cs)` készen áll a HUD-nak, a feladás pedig egyetlen
+   `sim.parancs({ fajta: 'feladas', csapat })` hívás a `bevitel.js`-ből.
+   ⚠️ A kliensnek kell eldöntenie, mikor nem kér több ticket — **a sim
+   szándékosan nem áll meg magától** (lásd a 0. pont táblázatát).
+4. **v0.9/2b: az egyedi egység saját 3D-alakja** — ma lándzsás-figurát kap.
+5. **A játékos nem tudja kiválasztani az egyedi egységét.** A `C` gyorsbillentyű
    egy parancsot ad, és az alapegységet rendeli. Típus-választó felület kell —
    a v0.11 menüjének a dolga.
-5. **v0.10/2 kampány.**
-6. **Balansz.** A szonda v0.9-es körében a Hegyi bányász azonos nehézségen is
+6. **v0.10/2 kampány.** A P0/1 megvan, tehát ez már elkezdhető: a kampány-cél
+   („pusztítsd el X-et", „élj túl N percet") a győzelmi feltétel általánosítása,
+   és a `src/sim/gyozelem.js` a kész minta hozzá — ugyanaz a szerkezet kell
+   (latch, hash, mentés, szonda-gát), csak a `_vizsgal()` helyén egy cél-táblával.
+7. **Balansz.** A szonda v0.9-es körében a Hegyi bányász azonos nehézségen is
    alulmarad a Folyami kereskedővel szemben (2050 vs 6885 összegyűjtött
    nyersanyag). Ez nem hiba, hanem hangolatlan matchup — a v0.13 dolga.
-7. **A gépi gazdaság étel-szűkös.** 12 000 tick után 15 étel áll raktáron 2767 fa,
+8. **A gépi gazdaság étel-szűkös.** 12 000 tick után 15 étel áll raktáron 2767 fa,
    555 kő és 460 kristály mellett. Ez a v0.6 AI-jának tulajdonsága, nem a v0.9-é,
    de az egyedi egységek árazását már ez kényszerítette a stratégiai
    nyersanyagokra.
