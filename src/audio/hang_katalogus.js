@@ -262,7 +262,18 @@ export const HANG = {
 };
 export const HANG_DB = 24;
 
-/** Hangonként ennyi szólam szólhat egyszerre — a `plafon` ennél nem lehet nagyobb. */
+/**
+ * Hangonként ennyi szólam szólhat egyszerre — a `plafon` ennél nem lehet nagyobb.
+ *
+ * ⚠️ A `plafon` ÉS AZ `ismetlesKoz` NEM FÜGGETLEN. Mivel az ismétlési köz gátja
+ * FUT ELŐBB (lásd a fejlécet: előbb az O(1) gátak), egy hangból legfeljebb
+ * `floor(hossz / ismetlesKoz) + 1` szólam lehet egyszerre. Ha a `plafon` ennél
+ * NAGYOBB, akkor soha nem fog: halott beállítás, ami azt hazudja, hogy védve
+ * vagyunk. Ezért a szonda külön gátja ellenőrzi a kettő összhangját, és ezért
+ * van minden bejegyzésnél a plafon pontosan erre az elérhető maximumra állítva
+ * — így az érték IGAZAT mond, és egy ütem-hangolás után azonnal kiderül, ha
+ * újra kell gondolni.
+ */
 export const MAX_PLAFON = 6;
 
 /** @type {Array<object>} `HANG.*` szerint indexelve. */
@@ -284,7 +295,7 @@ _be(HANG.KIJELOLES, {
   esemeny: ESEMENY.KIJELOLES,
   busz: BUSZ.UI,
   hely: HELY.HALLGATO,
-  hangero: 0.22, prioritas: 1, plafon: 2, ismetlesKoz: 70, hangolas: 4,
+  hangero: 0.22, prioritas: 1, plafon: 1, ismetlesKoz: 70, hangolas: 4,
   retegek: [
     { hullam: 'triangle', f0: 880, f1: 1180, hossz: 0.055, tamadas: 0.004, hangero: 0.7, szuro: null },
   ],
@@ -339,7 +350,7 @@ _be(HANG.KARDCSAPAS, {
   esemeny: ESEMENY.CSAPAS,
   busz: BUSZ.SFX,
   hely: HELY.HARC,
-  hangero: 0.34, prioritas: 1, plafon: 4, ismetlesKoz: 45, hangolas: 12,
+  hangero: 0.34, prioritas: 1, plafon: 2, ismetlesKoz: 45, hangolas: 12,
   retegek: [
     { hullam: 'zaj', f0: 5200, f1: 1400, hossz: 0.075, tamadas: 0.002, hangero: 0.6,
       szuro: { tipus: 'bandpass', f: 2600, q: 1.1 } },
@@ -353,7 +364,7 @@ _be(HANG.SEBZODES, {
   esemeny: ESEMENY.SEBZODES,
   busz: BUSZ.SFX,
   hely: HELY.HARC,
-  hangero: 0.30, prioritas: 2, plafon: 3, ismetlesKoz: 55, hangolas: 10,
+  hangero: 0.30, prioritas: 2, plafon: 2, ismetlesKoz: 55, hangolas: 10,
   retegek: [
     { hullam: 'zaj', f0: 1600, f1: 420, hossz: 0.10, tamadas: 0.003, hangero: 0.55,
       szuro: { tipus: 'lowpass', f: 1100, q: 0.9 } },
@@ -366,7 +377,7 @@ _be(HANG.IJHUR, {
   esemeny: ESEMENY.NYIL_KILOVES,
   busz: BUSZ.SFX,
   hely: HELY.HARC,
-  hangero: 0.24, prioritas: 0, plafon: 4, ismetlesKoz: 40, hangolas: 14,
+  hangero: 0.24, prioritas: 0, plafon: 2, ismetlesKoz: 40, hangolas: 14,
   retegek: [
     { hullam: 'zaj', f0: 3400, f1: 1100, hossz: 0.05, tamadas: 0.001, hangero: 0.5,
       szuro: { tipus: 'highpass', f: 1200, q: 0.8 } },
@@ -378,7 +389,7 @@ _be(HANG.NYIL_BECSAPODAS, {
   esemeny: ESEMENY.NYIL_BECSAPODAS,
   busz: BUSZ.SFX,
   hely: HELY.HARC,
-  hangero: 0.26, prioritas: 1, plafon: 4, ismetlesKoz: 50, hangolas: 12,
+  hangero: 0.26, prioritas: 1, plafon: 2, ismetlesKoz: 50, hangolas: 12,
   retegek: [
     { hullam: 'zaj', f0: 2600, f1: 700, hossz: 0.06, tamadas: 0.001, hangero: 0.5,
       szuro: { tipus: 'bandpass', f: 1400, q: 1.6 } },
@@ -391,7 +402,7 @@ _be(HANG.TORONY_SORTUZ, {
   esemeny: ESEMENY.TORONY_SORTUZ,
   busz: BUSZ.SFX,
   hely: HELY.BAZIS,
-  hangero: 0.32, prioritas: 2, plafon: 2, ismetlesKoz: 220, hangolas: 6,
+  hangero: 0.32, prioritas: 2, plafon: 1, ismetlesKoz: 220, hangolas: 6,
   retegek: [
     { hullam: 'zaj', f0: 3000, f1: 900, hossz: 0.14, tamadas: 0.004, hangero: 0.5,
       szuro: { tipus: 'bandpass', f: 1700, q: 0.9 } },
@@ -419,7 +430,7 @@ _be(HANG.HALAL_OK, {
   esemeny: ESEMENY.HALAL_OK,
   busz: BUSZ.SFX,
   hely: HELY.HARC,
-  hangero: 0.24, prioritas: 0, plafon: 3, ismetlesKoz: 130, hangolas: 8,
+  hangero: 0.24, prioritas: 0, plafon: 2, ismetlesKoz: 130, hangolas: 8,
   retegek: [
     { hullam: 'triangle', f0: 340, f1: 150, hossz: 0.20, tamadas: 0.005, hangero: 0.4,
       szuro: { tipus: 'lowpass', f: 1400, q: 0.8 } },
@@ -474,7 +485,7 @@ _be(HANG.EPITES_INDUL, {
   esemeny: ESEMENY.EPITES_INDUL,
   busz: BUSZ.SFX,
   hely: HELY.BAZIS,
-  hangero: 0.30, prioritas: 1, plafon: 2, ismetlesKoz: 150, hangolas: 8,
+  hangero: 0.30, prioritas: 1, plafon: 1, ismetlesKoz: 150, hangolas: 8,
   retegek: [
     { hullam: 'zaj', f0: 1800, f1: 500, hossz: 0.12, tamadas: 0.003, hangero: 0.45,
       szuro: { tipus: 'bandpass', f: 900, q: 1.2 } },
@@ -499,7 +510,7 @@ _be(HANG.EGYSEG_KESZ, {
   esemeny: ESEMENY.EGYSEG_KESZ,
   busz: BUSZ.UI,
   hely: HELY.BAZIS,
-  hangero: 0.26, prioritas: 1, plafon: 2, ismetlesKoz: 200, hangolas: 4,
+  hangero: 0.26, prioritas: 1, plafon: 1, ismetlesKoz: 200, hangolas: 4,
   retegek: [
     { hullam: 'sine', f0: 660, f1: 880, hossz: 0.12, tamadas: 0.005, hangero: 0.55, szuro: null },
   ],
@@ -527,7 +538,7 @@ _be(HANG.GYUJTES_ETEL, {
   esemeny: ESEMENY.GYUJTES_ETEL,
   busz: BUSZ.SFX,
   hely: HELY.MUNKA,
-  hangero: 0.18, prioritas: 0, plafon: 2, ismetlesKoz: 260, hangolas: 10,
+  hangero: 0.18, prioritas: 0, plafon: 1, ismetlesKoz: 260, hangolas: 10,
   retegek: [
     { hullam: 'zaj', f0: 1400, f1: 600, hossz: 0.07, tamadas: 0.003, hangero: 0.4,
       szuro: { tipus: 'bandpass', f: 700, q: 1.0 } },
@@ -539,7 +550,7 @@ _be(HANG.FEJSZE, {
   esemeny: ESEMENY.GYUJTES_FA,
   busz: BUSZ.SFX,
   hely: HELY.MUNKA,
-  hangero: 0.22, prioritas: 0, plafon: 3, ismetlesKoz: 300, hangolas: 12,
+  hangero: 0.22, prioritas: 0, plafon: 1, ismetlesKoz: 300, hangolas: 12,
   retegek: [
     { hullam: 'zaj', f0: 2200, f1: 500, hossz: 0.09, tamadas: 0.002, hangero: 0.45,
       szuro: { tipus: 'bandpass', f: 1100, q: 1.3 } },
@@ -552,7 +563,7 @@ _be(HANG.CSAKANY, {
   esemeny: ESEMENY.GYUJTES_KO,
   busz: BUSZ.SFX,
   hely: HELY.MUNKA,
-  hangero: 0.22, prioritas: 0, plafon: 3, ismetlesKoz: 300, hangolas: 12,
+  hangero: 0.22, prioritas: 0, plafon: 1, ismetlesKoz: 300, hangolas: 12,
   retegek: [
     { hullam: 'zaj', f0: 4200, f1: 1600, hossz: 0.07, tamadas: 0.001, hangero: 0.45,
       szuro: { tipus: 'highpass', f: 1800, q: 1.0 } },
@@ -566,7 +577,7 @@ _be(HANG.KRISTALY_CSENDULES, {
   esemeny: ESEMENY.GYUJTES_KRISTALY,
   busz: BUSZ.SFX,
   hely: HELY.MUNKA,
-  hangero: 0.24, prioritas: 1, plafon: 2, ismetlesKoz: 340, hangolas: 8,
+  hangero: 0.24, prioritas: 1, plafon: 1, ismetlesKoz: 340, hangolas: 8,
   retegek: [
     { hullam: 'sine', f0: 1320, f1: 1320, hossz: 0.22, tamadas: 0.002, hangero: 0.4, szuro: null },
     { hullam: 'sine', f0: 1980, f1: 1980, hossz: 0.16, tamadas: 0.002, hangero: 0.22, szuro: null },
@@ -578,7 +589,7 @@ _be(HANG.PIACI_CSERE, {
   esemeny: ESEMENY.PIACI_CSERE,
   busz: BUSZ.UI,
   hely: HELY.BAZIS,
-  hangero: 0.26, prioritas: 1, plafon: 2, ismetlesKoz: 350, hangolas: 6,
+  hangero: 0.26, prioritas: 1, plafon: 1, ismetlesKoz: 350, hangolas: 6,
   retegek: [
     { hullam: 'triangle', f0: 990, f1: 990, hossz: 0.09, tamadas: 0.002, hangero: 0.4, szuro: null },
     { hullam: 'triangle', f0: 740, f1: 740, hossz: 0.13, tamadas: 0.002, hangero: 0.32, szuro: null },
@@ -778,6 +789,9 @@ export class Kevero {
     s.bejovo = 0; s.kimeno = 0; s.eldobIsmetles = 0; s.eldobPlafon = 0;
     s.eldobOsszPlafon = 0; s.eldobTavolsag = 0; s.eldobIsmeretlen = 0;
   }
+
+  /** Mikor indult utoljára ez a hang? (ms; `-1e9`, ha még soha) — a szondának. */
+  utoljara(hang) { return this._utolso[hang]; }
 
   /**
    * Kérés egy hangra.

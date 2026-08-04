@@ -311,6 +311,14 @@ export function betoltes(sim, m) {
   if ((m.terkep | 0) !== sim.terkep) {
     return { ok: false, hiba: 'más térkép-preset: a terep nem egyezne' };
   }
+  // ⚠️ A `maxEgyseg`-ET A MENTÉS KIÍRTA, DE SENKI NEM OLVASTA. A kiadás-
+  // ellenőrző 49. elvárása fogta meg. Nem ártalmatlan: egy 2000-es sereggel
+  // mentett meccs egy 200-as korlátú simbe töltve CSENDBEN levágódna — a
+  // `be()` a rövidebb tömbig másol, a maradék egység egyszerűen nem lenne ott.
+  // A többi fejléc-mezőhöz hasonlóan tehát elutasítjuk, nem igazítunk.
+  if ((m.maxEgyseg | 0) !== sim.maxEgyseg) {
+    return { ok: false, hiba: 'más egység-korlát: a sereg egy része levágódna' };
+  }
 
   sim.tick = m.tick | 0;
   sim.rng.beallit(m.rng | 0);

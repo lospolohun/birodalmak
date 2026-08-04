@@ -499,11 +499,13 @@ export class Menu {
       return;
     }
 
-    // A MEZŐ-ÉRTÉK EGÉSZ. A `<input>` szöveget ad, és a `Number('12abc')` NaN-t
-    // — a nem-egészet itt fogjuk meg, hogy az adatréteg NÉVVEL utasíthassa el.
+    // A MEZŐ-ÉRTÉK EGÉSZ. A `<input>` viszont SZÖVEGET ad, és ami nem egész
+    // szám alakú, azt NYERSEN adjuk tovább — így az adatréteg hibaüzenete a
+    // beírt szöveget mutatja („ez meg »nyolc«"), nem egy `NaN`-t, amiről a
+    // játékos nem tudja, honnan jött.
     const nyers = String(elem.value).trim();
-    const szam = /^-?\d+$/.test(nyers) ? Number(nyers) : NaN;
-    const e = this.allapot.beallit(mezo, szam);
+    const ertek = /^-?\d+$/.test(nyers) ? Number(nyers) : nyers;
+    const e = this.allapot.beallit(mezo, ertek);
     if (!e.ok) this._hibakKiir([{ mezo, ertek: nyers, hiba: e.hiba }]);
     else this._frissit();
   }

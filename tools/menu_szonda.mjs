@@ -270,7 +270,18 @@ for (let k = 0; k < KEPERNYO_DB; k++) {
     felkeszit(m);
     for (const lep of e.ut) { m.lep(lep); felkeszit(m); }
     const elotte = m.kepernyo;
-    const r = m.lep(a);
+    // A KIVÉTEL IS BUKÁS. Az ismeretlen lépésre a menü ELUTASÍTÁSSAL felel,
+    // nem dobással: a `menu.js` egyetlen kattintás-figyelője különben az első
+    // félreütésre elszállna, és onnantól a MENÜ EGÉSZE halott lenne.
+    let r;
+    try {
+      r = m.lep(a);
+    } catch (h) {
+      elfogadott++;
+      console.log('  ⛔ ' + KEPERNYO_NEV[k] + ': KIVÉTELT DOBOTT a(z) ' + String(a)
+        + ' lépésre — ' + h.message);
+      continue;
+    }
     if (r.ok || m.kepernyo !== elotte) {
       elfogadott++;
       console.log('  ⛔ ' + KEPERNYO_NEV[k] + ': elfogadta a(z) ' + String(a) + ' lépést → '

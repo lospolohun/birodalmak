@@ -10,8 +10,12 @@
     "preview": "vite preview",
     "det": "node tools/determinizmus_szonda.mjs",
     "fps": "node tools/fps_szonda.mjs",
-    "szonda": "npm run det && npm run halo && npm run build && npm run fps",
+    "szonda": "npm run det && npm run halo && npm run civ && npm run menu && npm run hang && npm run kiadas && npm run build && npm run fps",
     "halo": "node tools/halozat_szonda.mjs",
+    "civ": "node tools/civ_valaszto_szonda.mjs",
+    "menu": "node tools/menu_szonda.mjs",
+    "hang": "node tools/hang_szonda.mjs",
+    "kiadas": "node tools/kiadas_ellenorzo.mjs",
     "relay": "node server/relay.mjs"
   },
   "dependencies": {

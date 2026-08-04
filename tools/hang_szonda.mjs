@@ -14,7 +14,7 @@
 // hang hiányzik, és senki nem tudja, melyik.
 //
 // ── MIT MÉR — VAGYIS MI AZ A SZÁM, AMI ELÁRULJA, HOGY CSINÁL IS VALAMIT ───
-// Hét gát, mindegyik egy KONKRÉT hibát fog meg:
+// Nyolc vizsgálat, mindegyik egy KONKRÉT hibát fog meg:
 //
 //   1. PARAMÉTER-ÉPSÉG. Minden bejegyzés minden rétege: létező hullámforma,
 //      pozitív hossz, hallható sávban lévő frekvencia, értelmes burkoló és
@@ -32,12 +32,17 @@
 //      számpár ki van írva: bemenet → kimenet.
 //   5. AZ ISMÉTLÉSI KÖZ BETARTVA. Tízezer véletlen kérés után két azonos
 //      hang indítása között SOHA nincs kevesebb idő az előírtnál.
-//   6. AZ EGYIDEJŰSÉG-PLAFON BETARTVA, és a TÁVOLSÁGI VÁGÁS MONOTON — a
-//      távolabbi forrás sosem hangosabb, és a vágás nem is konstans (egy
-//      „mindig 1" függvény monoton lenne, de nem csinálna semmit).
+//   6. AZ EGYIDEJŰSÉG-PLAFON BETARTVA — hangonként és globálisan is —, ÉS NEM
+//      HALOTT BEÁLLÍTÁS (az ismétlési köz mellett elérhető is). Plusz a
+//      TÁVOLSÁGI VÁGÁS MONOTON: a távolabbi forrás sosem hangosabb, és a vágás
+//      nem konstans (egy „mindig 1" függvény monoton lenne, de nem vágna).
 //   7. AZ ESEMÉNYFOLYAM ÉL. Minden szabályra tényleg keletkezik esemény, ha a
-//      megfelelő számláló nő — a v0.3 tanulsága: a semmittevés is tökéletesen
-//      reprodukálható.
+//      megfelelő számláló mozdul — a v0.3 tanulsága: a semmittevés is
+//      tökéletesen reprodukálható. És a betöltés utáni ELSŐ képkocka NEM ad
+//      hangrobbanást.
+//   8. A `hang.js` NODE-BAN IS BETÖLTHETŐ, sim és `AudioContext` nélkül is
+//      elindul és némán fut. Enélkül a szonda csak a katalógust őrizné, a
+//      megszólaltató réteg meg büntetlenül szivárogtathatna DOM-függést.
 //
 // HASZNÁLAT:  node tools/hang_szonda.mjs
 // Kilépési kód: 0 = rendben, 1 = bukás.
@@ -60,7 +65,7 @@ const {
 } = K;
 
 let bukas = 0;
-const sor = (a, b, c) => console.log('  ' + String(a).padEnd(28) + String(b).padEnd(24) + (c ?? ''));
+const sor = (a, b, c) => console.log('  ' + String(a).padEnd(30) + String(b).padEnd(26) + (c ?? ''));
 const cim = (t) => console.log('\n' + t + '\n' + '─'.repeat(78));
 const gat = (all, szoveg, reszlet) => {
   if (all) return true;
@@ -381,6 +386,53 @@ cim('6. VIZSGÁLAT — egyidejűség-plafon és a távolság szerinti vágás');
 }
 
 {
+  // (a2) A PLAFON NE LEGYEN HALOTT BEÁLLÍTÁS. Az ismétlési köz gátja fut
+  //      előbb, ezért egy hangból legfeljebb `floor(hossz/köz)+1` szólam lehet
+  //      egyszerre. Ha a plafon ennél nagyobb, soha nem fog — csak azt
+  //      hazudja, hogy védve vagyunk.
+  let laza = 0;
+  for (let h = 0; h < HANG_DB; h++) {
+    const k = KATALOGUS[h];
+    if (!k) continue;
+    const elerheto = Math.floor(HANG_HOSSZ_MS[h] / k.ismetlesKoz) + 1;
+    if (k.plafon > elerheto) {
+      laza++;
+      console.log('  ⛔ ' + HANG_NEV[h] + ': plafon ' + k.plafon + ', de az ismétlési köz ('
+        + k.ismetlesKoz + ' ms) mellett legfeljebb ' + elerheto + ' szólam lehet egyszerre.');
+    }
+  }
+  sor('plafon ↔ ismétlési köz', laza === 0 ? 'összhangban' : laza + ' halott plafon',
+    laza === 0 ? 'egyik plafon sem elérhetetlen' : '⛔');
+  gat(laza === 0, laza + ' HANGNÁL A PLAFON SOSEM TUD BEFOGNI.',
+    'Az érték nem véd semmitől, viszont azt sugallja, hogy véd. Állítsd az '
+    + 'elérhető maximumra, vagy rövidítsd az ismétlési közt.');
+}
+
+{
+  // (a3) A GLOBÁLIS PLAFON TÉNYLEG BEFOG-E? Mind a 24 hang egyszerre — ennyi
+  //      szólamot a keverő nem engedhet ki, de a 3-as prioritásúaknak át kell
+  //      jutniuk (korszakváltás, riasztás, saját épület összeomlása).
+  const kev = new Kevero({ osszPlafon: 8 });
+  let ki = 0;
+  for (let h = 0; h < HANG_DB; h++) if (kev.ker(h, 5000, 0, 1)) ki++;
+  let fontosKi = 0, fontosDb = 0;
+  const kev2 = new Kevero({ osszPlafon: 8 });
+  for (let h = 0; h < HANG_DB; h++) kev2.ker(h, 5000, 0, 1);           // feltöltés
+  for (let h = 0; h < HANG_DB; h++) {
+    if (KATALOGUS[h].prioritas < 3) continue;
+    fontosDb++;
+    if (kev2.utoljara(h) === 5000) fontosKi++;
+  }
+  sor('mind a ' + HANG_DB + ' hang egyszerre', HANG_DB + ' → ' + ki,
+    'globális plafon: 8, eldobva: ' + kev.stat.eldobOsszPlafon);
+  sor('3-as prioritás', fontosKi + ' / ' + fontosDb, 'a plafon fölött is átjut');
+  gat(kev.stat.eldobOsszPlafon > 0, 'A GLOBÁLIS SZÓLAM-PLAFON SOSEM FOG BE.',
+    HANG_DB + ' egyidejű hangból ' + ki + ' jött ki 8-as plafon mellett — a gát halott.');
+  gat(fontosKi === fontosDb, 'A LEGFONTOSABB HANGOK IS KISZORULTAK A PLAFON MIATT.',
+    'A korszakváltásnak és a riasztásnak akkor is szólnia kell, ha ezer nyíl repül.');
+}
+
+{
   // (b) TÁVOLSÁG: monoton csökkenő, és tényleg VÁG (nem konstans).
   let nemMonoton = 0;
   let elozo = tavolsagHangero(0);
@@ -528,7 +580,7 @@ const HELY_NEV = ['hallgatónál', 'a harcnál', 'a munkánál', 'a bázisnál']
 for (const nev of Object.keys(csoport)) {
   console.log('\n  ' + nev.toUpperCase());
   for (const k of csoport[nev]) {
-    console.log('    · ' + k.nev.padEnd(28)
+    console.log('    · ' + k.nev.padEnd(30)
       + ('köz ' + k.ismetlesKoz + ' ms').padEnd(16)
       + ('plafon ' + k.plafon).padEnd(11)
       + HELY_NEV[k.hely]);
@@ -536,7 +588,7 @@ for (const nev of Object.keys(csoport)) {
 }
 console.log('\n  ZENE (korszakonként, generált — nincs hangfájl)');
 for (const z of ZENE_MIND) {
-  console.log('    · ' + z.nev.padEnd(28)
+  console.log('    · ' + z.nev.padEnd(30)
     + (z.alap + ' Hz').padEnd(16)
     + (z.skala.length + ' hangú').padEnd(11)
     + z.utemMs + ' ms ütem, ' + z.suru + ' % sűrűség');

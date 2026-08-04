@@ -833,13 +833,14 @@ elvar('minden szonda kilépési kóddal zár (process.exit)', () => {
 });
 
 elvar('a kiadás-ellenőrzőnek is van `npm run` parancsa', () => {
+  // A 31. pont logikája ÖNMAGÁRA IS vonatkozik: egy kapu, amit csak kézzel lehet
+  // elindítani, a gyakorlatban nem fut le. Ezért kemény gát, nem figyelmeztetés.
   const scriptek = Object.values(PKG.scripts || {}).join(' ; ');
   if (!scriptek.includes('kiadas_ellenorzo.mjs')) {
-    return rossz(['tools/kiadas_ellenorzo.mjs — nincs `npm run` parancs '
-      + '(a package.json-t ez az ellenőrző NEM írja; a sávok diszjunktak)']);
+    return rossz(['tools/kiadas_ellenorzo.mjs — nincs `npm run` parancs']);
   }
   return jo();
-}, true);
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 cim('G) TÁBLA-TELJESSÉG — a rövid tábla CSENDBEN a 0. sort adja vissza');

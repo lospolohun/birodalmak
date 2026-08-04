@@ -1,5 +1,42 @@
 # ÁTADÓ — AGE OF THE CRYSTALS
 
+> **A felhős fejlesztés itt LEZÁRVA.** Minden fel van tolva, minden kapu zöld.
+> A folytatás a te gépeden, Claude appból, localhost-teszttel. A 2. és a 6.
+> pont az, amivel kezdeni érdemes.
+
+## 0. Az utolsó menet — amit a kiadás-ellenőrző talált
+
+Az új `npm run kiadas` (61 elvárás, statikus, 0,2 mp) **három valódi hibát
+fogott meg az első futásán**, mindet olyat, amire a determinizmus-kapu elvből
+vak, mert **minden gépen egyformán rossz**:
+
+1. **Három `TIPUS`-indexelt tábla rövid maradt** a v0.9/2-ből: `LATOTAV` és
+   `ELENGED` (`parancsallapot.js`), `LATOTAV_EGYSEG` (`kod.js`) — mind 5 elemű
+   6 helyett. Következmény: `LATOTAV[TIPUS.EGYEDI]` → `undefined`, a
+   `d <= undefined` pedig MINDIG hamis, tehát **a nyolc nép saját egysége soha
+   nem szerzett magától célpontot** (csak külön parancsra harcolt), és a
+   hadi ködben **vak volt** — nem fedett fel semmit. Két verzión át,
+   tökéletesen determinisztikusan, zöld kapu mellett. Ez pontosan az a csapda,
+   amit az `egyedi.js` saját fejléce leír — és mégis belefutottunk.
+   **Javítva**; mérve: az egyedi egység most 253 mintavételnél `HARCOL`
+   állapotban, korábban egynél sem.
+2. **`maxEgyseg`** mentődött, de a `betoltes()` sosem olvasta: nagyobb
+   kapacitású mentés kisebb simbe töltve csendben levágta volna a sereget.
+   **Javítva** — most elutasítja.
+3. **A `civ_valaszto_szonda.mjs` nem volt a `package.json`-ban**, tehát a
+   gyakorlatban soha nem futott le. **Javítva**, és mellé bekerült a `menu`,
+   `hang`, `kiadas` parancs is.
+
+Maradt **5 figyelmeztetés** (nem buktatnak, a `qa/KIADAS_ELVARASOK.md` sorolja):
+elavult verzió-példa az `INTERFACES.md`-ben, a `vite.config.js` `base`-e és a
+`PLAN.md` kirakási kikötése nem ér össze, két fejléc nem az idióma szerinti, és
+a `src/audio/` még nincs lefedve az ellenőrzőben.
+
+**A kapuk mostani állása:** `npm run det` **13/13**, `npm run halo`,
+`npm run civ`, `npm run menu`, `npm run hang`, `npm run kiadas`,
+`npx vite build` — mind zöld. `npm run fps` **továbbra sem futott**.
+
+
 Ez a dokumentum egyetlen célt szolgál: **hogy a saját gépeden fel tudd venni a
 fonalat** ott, ahol a felhőben abbamaradt. Nem összefoglaló és nem dicsekvés —
 azt írja le, mi van kész, mi NINCS ellenőrizve, és mit érdemes elsőnek

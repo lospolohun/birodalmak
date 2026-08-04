@@ -54,7 +54,10 @@ const KOD_KOZ = 10;
  * LÁTÓTÁVOLSÁG világegységben, egységtípusonként.
  * Az íjász messzebb lát, mint amennyire lő — a felderítés így nem öngyilkosság.
  */
-const LATOTAV_EGYSEG = [8, 9, 12, 11, 7];
+// ⚠️ A 6. HELY (`TIPUS.EGYEDI`, v0.9/2) ITT IS KIMARADT. Az `undefined` sugár
+// azt jelentette, hogy a nép saját egysége SEMMIT nem fedett fel a ködből —
+// a saját sötétjében sétált, és a felderítéshez sem tett hozzá semmit.
+const LATOTAV_EGYSEG = [8, 9, 12, 11, 7, 9];
 /** Épületenként. A torony a legjobb figyelőpont — ez a védelmi értéke. */
 const LATOTAV_EPULET = [14, 9, 5, 5, 8, 11, 11, 11, 11, 18, 10];
 
