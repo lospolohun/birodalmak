@@ -720,8 +720,8 @@ export function epitEpuletGeometriak() {
   const haromszog = [];
   for (let t = 0; t < FORMA_TABLA.length; t++) {
     const geo = osszefuz(epitForma(t).reszek);
-    // A típus a GEOMETRIÁN utazik, mert a `Material.onBeforeRender` csak a
-    // geometriát és a hálót kapja meg — a réteg nyilvántartását nem látja.
+    // A típus a GEOMETRIÁN utazik: aki csak a hálót kapja meg (hibakereső
+    // eszköz, előnézet), a réteg nyilvántartása nélkül is tudja, mit lát.
     geo.userData.epTipus = t;
     tipus[t] = geo;
     haromszog[t] = geo.attributes.position.count / 3;
@@ -762,65 +762,6 @@ export function serulesFokozat(hp, maxHp) {
 }
 
 /**
- * Egy típus példány-állapotainak feltöltése. A `Material.onBeforeRender` hívja,
- * tehát pontosan azelőtt fut le, hogy az a háló kirajzolódna.
- *
- * ── MIÉRT ITT, ÉS MIÉRT NEM A RAJZOLÓ RÉTEGBEN ───────────────────────────
- * Ennek a helye természetesen a `gazdasag3d.js` példány-hurka volna: az úgyis
- * végigjárja az épületeket, és ott EGY sor volna. Az a fájl viszont MÁSIK AGENT
- * sávja, és a v0.16 tanulsága szerint a „majd valaki beköti" pont az, amitől a
- * kész rendszer kapun kívül marad. Ezért a réteg érintése nélkül is működik —
- * és ha a sáv gazdája beköti, ez az ág magától elnémul: elég a `simBead()`-et
- * meghívni, a puffer-írás pedig ugyanaz marad.
- *
- * ── A PÉLDÁNY-SORREND SZERZŐDÉS ──────────────────────────────────────────
- * ⚠️ A `k`-adik példány a `t` típus `k`-adik ÉLŐ épülete, `ep`-index szerint
- * növekvő sorrendben. Ez a `gazdasag3d.js` írási sorrendje; ha az megváltozik,
- * ITT is változnia kell, különben a sérülés jó épületről rossz épületre kerül.
- * A halott épületek kihagyása a közös pont — azokat a réteg sem rajzolja.
- *
- * NULLA allokáció: a puffer a geometriáé, a hurok csak egész-összehasonlításokat
- * végez, és a GPU-ra CSAK VÁLTOZÁSKOR küldünk (a `jel` ugyanaz a fogás, amit a
- * réteg a példány-mátrixokra használ).
- */
-function allapotIr(geo, targy, sim) {
-  const t = geo.userData.epTipus;
-  // Az ÁLLVÁNY ugyanezt az anyagot használja, tehát ide is befut — de nincs
-  // típusa, és nincs is állapota: az épülő ház még sértetlen, kapuja nincs.
-  if (t === undefined || !sim) return;
-  const db = targy.count | 0;
-  if (db <= 0) return;
-
-  let attr = geo.getAttribute('epAllapot');
-  const max = targy.instanceMatrix.count;
-  if (!attr || attr.count < max) {
-    // EGYSZER, az első kirajzoláskor. A hosszt a réteg példány-mátrixa mondja
-    // meg — az a `sim.epuletek.maxDb`, amit itt nem ismerünk, és nem is
-    // akarunk megtippelni: egy rövidebb puffer tartományon kívüli olvasás lenne.
-    attr = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2);
-    attr.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('epAllapot', attr);
-  }
-
-  const ep = sim.epuletek;
-  const arr = attr.array;
-  let k = 0, jel = 0;
-  for (let i = 0; i < ep.db && k < db; i++) {
-    if (ep.elo[i] === 0 || ep.tipus[i] !== t) continue;
-    const fok = serulesFokozat(ep.hp[i], ep.maxHp[i]);
-    const ny = ep.nyitva[i] ? 1 : 0;
-    arr[k * 2] = fok;
-    arr[k * 2 + 1] = ny;
-    jel = (Math.imul(jel, 31) + fok * 3 + ny + 1) | 0;
-    k++;
-  }
-  jel = (Math.imul(jel, 31) + k) | 0;
-  if (jel === geo.userData.epJel) return;
-  geo.userData.epJel = jel;
-  attr.needsUpdate = true;
-}
-
-/**
  * A közös épület-anyag. MINDEN típus ezt az EGY példányt kapja: azonos anyag +
  * azonos attribútum-készlet → a Three egyetlen shader-programot fordít, tehát a
  * tizenegy rajzhívás közt nincs program-váltás.
@@ -856,11 +797,10 @@ function allapotIr(geo, targy, sim) {
  * PONTOSAN a v0.16-os kép. A rendszer tehát nem tud „elromlani láthatatlanul":
  * hiba esetén a régi látvány jön vissza, nem egy üres épület.
  *
- * @param {{sim?: import('../sim/sim.js').Sim}} [opciok]
- * @returns {THREE.MeshLambertMaterial} `userData.ido` az idő-uniform,
- *   `userData.simBead(sim)` az állapot-forrás beadása.
+ * @returns {THREE.MeshLambertMaterial} `userData.ido` az idő-uniform.
+ *   Az `epAllapot` példány-puffert a `gazdasag3d.js` foglalja és tölti.
  */
-export function epuletAnyag(opciok = {}) {
+export function epuletAnyag() {
   const anyag = new THREE.MeshLambertMaterial({ toneMapped: false });
 
   // ── AZ ÓRA ───────────────────────────────────────────────────────────────
@@ -881,30 +821,18 @@ export function epuletAnyag(opciok = {}) {
   };
   anyag.userData.ido = ido;
 
-  // ── AZ ÁLLAPOT-FORRÁS ────────────────────────────────────────────────────
-  // Ugyanaz a három lépcső, mint a `core3d.js`-ben, és ugyanabból az okból: a
-  // hívó réteg másik agenté, tehát nem támaszkodhatunk arra, hogy átadja a
-  // simet. Beadható (`simBead`), különben a `window.__aoc.jatek.sim`-ből
-  // oldjuk fel — az az `INTERFACES.md`-ben DOKUMENTÁLT felület, tehát nem
-  // kerülőút. Csak OLVASSUK, és ritkítva keressük: a `Jatek` konstruktora alatt
-  // a globális hivatkozás még üres.
-  let sim = opciok.sim || null;
-  let keres = 1;
-  const simFelold = () => {
-    if (sim) return sim;
-    if (--keres > 0) return null;
-    keres = 30;
-    if (typeof window === 'undefined') return null;
-    const g = window.__aoc;
-    const s = g && g.jatek && g.jatek.sim;
-    if (s && s.epuletek) sim = s;
-    return sim;
-  };
-  anyag.userData.simBead = (s) => { if (s && s.epuletek) sim = s; };
+  // ── AZ ÁLLAPOT-PUFFER ALAPÉRTÉKE ─────────────────────────────────────────
+  // Az `epAllapot`-ot a RAJZOLÓ RÉTEG tölti (`gazdasag3d.js` példány-hurka);
+  // ez a fájl csak a formát és az alapértéket adja hozzá.
+  //
+  // ⚠️ A v0.17-ben volt itt egy `Material.onBeforeRender`-es KERÜLŐÚT, ami maga
+  // töltötte a puffert a `window.__aoc.jatek.sim`-ből — akkor még nem volt kinek
+  // átadnia. Amint a réteg átvette, a kettő UGYANARRA A PUFFERRE írt, és ez a
+  // fajta ütközés némán romlik el: két helyes írás közül a későbbi győz, tehát a
+  // hiba csak akkor látszik, ha a két forrás elkülönbözik (pl. egy szonda-előnézet
+  // MÁSIK simmel — a kerülőút a globális simet oldotta fel, nem a réteget). Ezért
+  // a kerülőút megszűnt: EGY írója van a puffernek.
   anyag.defaultAttributeValues = { epAllapot: [0, 0], allapotAdat: [0, 0] };
-  anyag.onBeforeRender = (renderer, jelenet, kamera, geo, targy) => {
-    allapotIr(geo, targy, simFelold());
-  };
 
   anyag.onBeforeCompile = (sh) => {
     sh.uniforms.aocIdo = ido;

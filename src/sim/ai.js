@@ -95,7 +95,7 @@ const HAZ_TARTALEK = [3, 8, 14];
  *
  * ⚠️ EZ MÁR CSAK A KIINDULÁS — a tényleges célt a `_celArany` számolja belőle,
  * a raktár állása szerint. Lásd ott a mérést: a fix arány pontosan azt a
- * hibát okozta, amiért a TODO „étel-szűkös gépi gazdaság"-ot ír.
+ * hibát okozta, amiért a teendő-lista „étel-szűkös gépi gazdaság"-ot ír.
  */
 const ARANY = [30, 45, 15, 10];
 
@@ -151,7 +151,7 @@ const SZUK_SULY = 165;
 
 // ── v0.16 BALANSZ: KORSZAKVÁLTÁS ─────────────────────────────────────────
 //
-// ⚠️ A GÉP EDDIG EGYETLEN SORT SEM ÍRT A KORSZAKRÓL. A TODO úgy fogalmaz, hogy
+// ⚠️ A GÉP EDDIG EGYETLEN SORT SEM ÍRT A KORSZAKRÓL. A teendő-lista szerint
 // „az ételt elköltik képzésre, mire az 500-as váltási ár összejönne" — a kód
 // olvasva ennél egyszerűbb a helyzet: `korszak` PARANCSFAJTA nem szerepelt az
 // `ai.js`-ben sehol. A gép nem elkésett a váltással, hanem SOSEM PRÓBÁLTA.

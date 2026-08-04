@@ -26,6 +26,7 @@
 //   { fajta:'beszallas',    egysegek:[…], epulet }           ← v0.4
 //   { fajta:'kiszallas',    csapat, epulet }                 ← v0.4
 //   { fajta:'kepzes',       csapat, epulet, egyseg }         ← v0.5
+//   { fajta:'kepzes_torles',csapat, epulet, index }          ← v0.18
 //   { fajta:'csere',        csapat, ad, kap, mennyiseg }     ← v0.5 (piac kell hozzá)
 //   { fajta:'kutatas',      csapat, tech, epulet }           ← v0.5/4
 //   { fajta:'feladas',      csapat }                         ← v0.17
@@ -92,6 +93,7 @@ export function vegrehajt(sim, p) {
     case 'beszallas': return beszallas(sim, p);
     case 'kiszallas': return kiszallas(sim, p);
     case 'kepzes': return kepzes(sim, p);
+    case 'kepzes_torles': return kepzesTorles(sim, p);
     case 'csere': return csere(sim, p);
     case 'kutatas': return kutatas(sim, p);
     case 'feladas': return feladas(sim, p);
@@ -327,6 +329,23 @@ function epit(sim, p) {
   const tipus = p.tipus | 0;
   if (tipus < 0 || tipus >= EP_AR.length) return;
   const csapat = p.csapat | 0;
+  // ── KORSZAK-KÖVETELMÉNY (v0.18) ─────────────────────────────────────
+  //
+  // ⚠️ MIÉRT A SIMBEN, ÉS MIÉRT NEM A PANELBEN. A v0.16-ban a követelmény csak
+  // a `panel_epites_adat.js`-ben létezett, KIKAPCSOLVA — és jó okkal: a sim
+  // `epit` ága nem nézett korszakot, a gépi ellenfél `BUILD_ORDER`-e sem,
+  // tehát egy UI-oldali gát CSAK AZ EMBERT büntette volna, a gépet nem. Ez a
+  // sor teszi a szabályt MINDKÉT félre érvényessé; a tábla a `epuletek.js`-ben
+  // van, hogy a panel is onnan olvashassa, és ne másolatból éljen.
+  //
+  // ⚠️ ELSŐKÉNT, MÉG A HELY ÉS A PÉNZ ELŐTT. Nem sorrendi ízlés: ez a
+  // legMARADANDÓBB tiltás (a hely egy kattintással, a pénz magától elmúlik, a
+  // korszak percekig nem), és a panel `RANGSOR`-a is így rangsorol. Ha a
+  // levonás elé nem kerülne, egy korszak-tiltott épület árát is levonnánk.
+  if (sim.gazdasag.korszak[csapat] < sim.epuletek.korszakKell(tipus)) {
+    sim.epuletek.korszakElutasitva[csapat & 1]++;
+    return;
+  }
   const m = EP_MERET[tipus];
   const bx = (p.x | 0) - (m >> 1);
   const by = (p.y | 0) - (m >> 1);
@@ -401,6 +420,26 @@ function kepzes(sim, p) {
   if (!sim.epuletek.kesz(ep)) return;
   if (sim.epuletek.csapat[ep] !== (p.csapat | 0)) return;
   sim.kepzes.sorba(ep, p.egyseg | 0);
+}
+
+/**
+ * KÉPZÉSI SOR TÖRLÉSE (v0.18). Egyetlen sor-elem, index szerint — a
+ * `Kepzes.torol()` dönt mindenről (él-e az épület, a MIÉNK-e, van-e ott elem).
+ *
+ * ⚠️ ITT SZÁNDÉKOSAN NINCS ELŐZETES SZŰRÉS, ugyanabból az okból, amiért a
+ * `kutatas` ágában sincs: egy helyen legyen a szabály. A `kepzes` ág azért
+ * szűr, mert ott a `sorba()` nem ismeri a parancsot kiadó csapatot; a törlés
+ * viszont MEGKAPJA, és a saját elutasítás-számlálóját is maga vezeti. Két
+ * ellenőrzés két helyen előbb-utóbb elcsúszik, és akkor az egyik gép töröl,
+ * a másik nem — az pedig azonnali desync.
+ *
+ * Az `index` a SORBELI HELY, nem egység-index: a panel a sor utolsó elemét
+ * (`db - 1`) küldi, de bármelyik hely törölhető.
+ *
+ * @param {{csapat:number, epulet:number, index:number}} p
+ */
+function kepzesTorles(sim, p) {
+  sim.kepzes.torol(p.epulet | 0, p.index | 0, p.csapat | 0);
 }
 
 /**

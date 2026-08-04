@@ -11,7 +11,7 @@
 // ez a lényege: ha a `src/sim/` node-ban fejen állva is lefut, akkor tényleg
 // nem szivárgott bele render-függőség.
 //
-// ── TIZENHÁROM VIZSGÁLAT ──────────────────────────────────────────────────
+// ── TIZENÖT VIZSGÁLAT ─────────────────────────────────────────────────────
 //   1. STATIKUS  — tiltott hívások keresése a `src/sim/` forrásában
 //   2. FUTÁSI    — két friss `Sim`, azonos seed, 10 000 tick, hash-egyezés
 //   3. KEVERT    — ugyanaz, de a tickek közé IDEGEN munkát ékelünk
@@ -22,6 +22,8 @@
 //   11. LOCKSTEP — két gép közös parancs-soron, késleltetéssel és desynccel
 //   12. CIVEK    — nyolc nép; a záró gát az, hogy civ NÉLKÜL más világ jön ki
 //   13. TÉRKÉPEK — hat preset; mind a hat JÁTSZHATÓ (bázistól bázisig van út)
+//   14. A MECCS VÉGE — győzelem, feladás, és a vég UTÁNI parancsok elutasítása
+//   15. v0.18 — képzési sor törlése és korszak-gát az építésnél
 //
 // ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
 // reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
@@ -75,6 +77,10 @@ const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
 const { SEED, CEL_EGYSEG } = await import(
   pathToFileURL(join(GYOKER, 'src', 'core', 'config.js')).href);
 const { NEHEZSEG_NEV } = await import(pathToFileURL(join(SIM_DIR, 'ai.js')).href);
+// v0.18 — a korszak-gát BEKAPCSOLT táblája. A `felallit` horognak a
+// forgatókönyv-táblában kell, tehát modul-szinten kérjük be, nem a körben.
+const { EPULET, EP_MERET, EP_KORSZAK, EP_KORSZAK_IGENY } = await import(
+  pathToFileURL(join(SIM_DIR, 'epuletek.js')).href);
 
 /**
  * A futás beállításai. Az ALAPÉRTELMEZÉS a teljes szerződés (10 000 tick),
@@ -338,6 +344,50 @@ const FORGATOKONYVEK = {
     egysegSzam: 60,
     fut: (sim, kor) => sim.szondaParancsV17Feladas(kor),
   },
+  // ── v0.18: SOR-TÖRLÉS ÉS KORSZAK-GÁT ────────────────────────────────
+  //
+  // EGY kör, KÉT új ág — és ez tudatos: a kettő ugyanabból a gazdaságból él.
+  // A törléshez SOR kell (tehát képzés, tehát népesség és nyersanyag), a
+  // korszak-gáthoz ÉPÍTÉSI KÍSÉRLET kell olyan épületre, amit a kor még nem
+  // enged. A v0.5 köre mindkettőt megtermeli, ezért annak a motorját hívjuk,
+  // és csak a két ÚJ parancsot tesszük mellé.
+  //
+  // ⚠️ A GÁT ITT BE VAN KAPCSOLVA (`felallit` → `korszakGat`), a JÁTÉKBAN NEM.
+  // Az `epuletek.js` fejléce mondja el, miért: a gépi ellenfél ma egyetlen
+  // korszakot sem vált, tehát élesen a gát nem visszafogná, hanem megszüntetné
+  // mint ellenfelet (mérve: 13 → 4 álló épület, 156 építési parancsból 4). A
+  // szabály ettől még KÉSZ, és a legrosszabb, amit tehetnénk, hogy a kapun
+  // kívül hagyjuk — egy ki nem próbált ág az élesítés napján derülne ki.
+  // Ezért járatja EZ a kör bekapcsolva, a saját sim-jén.
+  v18: {
+    nev: 'v0.18 képzési sor törlése + korszak-gát',
+    tickek: ervSzam('v18tick', 6000),
+    egysegSzam: 60,
+    felallit: (sim, db) => {
+      // Ugyanaz a felállás, mint a v0.5-é: a képzésnek népesség-fejtér kell,
+      // különben a sor MINDIG üres marad, és nem lesz mit törölni.
+      const n = sim.szondaFelallas(db, { munkasMinden: 2 });
+      sim.epuletek.korszakGat(EP_KORSZAK_IGENY);
+      // ⚠️ NYITÓ KÉSZLET, ÉS EZ IS MÉRÉS EREDMÉNYE. A kör NEM a gazdaságról
+      // szól — az a 6. és a 8. vizsgálat dolga —, hanem két parancs-ágról. A
+      // v0.5 nyitó készletével mérve 6000 tick alatt csapatonként 3 törlés
+      // futott le, mert a sor a NYERSANYAG hiányában sosem nőtt kettőre (a
+      // munkás 50 étel, a kör pedig az ételének a harmadát gyűjti). Egy
+      // háromnál álló működés-szám hullámzó kapu: elég egy apró balansz-
+      // mozdulat, és némán nullára esik — az ATADO 6. tanulsága szerint az
+      // ilyen kapu rosszabb a bukónál, mert újrafuttatásra tanít.
+      //
+      // A készlet BEÁLLÍTÁSA nem kerüli meg a parancs-sort: felállás-idejű, a
+      // két lockstep-futásban betűre ugyanaz, és a hash a 0. ticken már ezt
+      // látja. Ugyanaz a fajta beavatkozás, mint a `felallas: { ostrom: 8 }`.
+      for (let cs = 0; cs < 2; cs++) {
+        sim.gazdasag.keszlet[cs * 4 + 0] = 1500;   // étel — ebből lesz sor
+        sim.gazdasag.keszlet[cs * 4 + 1] = 1500;   // fa   — ebből lesz ház
+      }
+      return n;
+    },
+    fut: (sim, kor) => v18Kor(sim, kor),
+  },
   // ⚠️ 1100 ÉS NEM 1000, ÉS EZ NEM KEREKÍTÉS. A parancsok `PARANCS_KOZ`-önként
   // (250) mennek ki, tehát a 4. kör — a vég UTÁNI, ELUTASÍTANDÓ feladás — a
   // 1000. ticken kerül beadásra, és a `KESLELTETES` miatt a 1002.-on hajtódna
@@ -346,6 +396,100 @@ const FORGATOKONYVEK = {
   // Ha valaki a `--v17ftick` kapcsolóval 1002 alá viszi, ez az ág újra néma
   // lesz — a gát viszont szólni fog, nem hallgat.
 };
+
+/**
+ * A v0.18 KÖRE — egy parancs-forduló a sor-törlésre és a korszak-gátra.
+ *
+ * ⚠️ MIÉRT ITT VAN, ÉS NEM A `sim.js`-BEN, mint a többi forgatókönyv. A
+ * `szondaParancsV05` és társai a sim példány-metódusai; ez a kör szándékosan a
+ * MEGLÉVŐ felületből dolgozik (`szondaParancsV05` + nyers `sim.parancs()`),
+ * mert így egyetlen új sim-metódus nélkül járatja a két új ágat. Ha valaha
+ * `Sim.szondaParancsV18()` lesz belőle, ez a függvény egy sorra fogy — a
+ * forgatókönyv tartalma nem változik.
+ *
+ * @param {import('../src/sim/sim.js').Sim} sim
+ * @param {number} kor a hányadik parancs-forduló
+ */
+function v18Kor(sim, kor) {
+  // A gazdaság, az építkezés és a képzés motorja a v0.5 köre. Abból lesz SOR,
+  // amit törölni lehet, és abból lesz PIAC/TORONY-rendelés, amit a sötét korban
+  // a gát elutasít.
+  sim.szondaParancsV05(kor);
+
+  for (let cs = 0; cs < 2; cs++) {
+    const bx = (cs === 0 ? sim.n * 0.22 : sim.n * 0.78) | 0;
+    const by = (sim.n * 0.5) | 0;
+
+    // ⚠️ TÖBB HÁZ, MINT A v0.5 KÖRÉBEN — ÉS EZ MÉRÉS EREDMÉNYE. A törlés csak
+    // akkor tud lefutni, ha VAN legalább kételemű sor, a sor hosszát viszont a
+    // NÉPESSÉG szabja meg: a v0.5 négy házával mérve 6000 tick alatt összesen
+    // 2 törlés jött össze csapatonként, mert a képzés sorbaállásai a
+    // népesség-plafonon utasítódtak el (88 elutasítás 20 sikeres mellett). Négy
+    // további ház a plafont 40-nel emeli, és onnan a sor tényleg megnő.
+    //
+    // A fát ehhez ITT VAN MIBŐL fizetni: ebben a körben a gát BE VAN
+    // KAPCSOLVA, tehát a piac (175 fa) és a torony (50 fa + 125 kő) rendelése
+    // úgyis elutasításba fut — az a fa amúgy is a raktárban maradna.
+    for (let k = 0; k < 4; k++) {
+      sim.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.HAZ,
+        x: bx - 5 - k * 3, y: by - 8 });
+    }
+
+    // ⚠️ OSTROMMŰHELY MINDEN KÖRBEN — SZÁNDÉKOSAN A KORSZAK-GÁTNAK. A kör
+    // gazdaságával mérve mindkét csapat eljut a HAJNAL koráig (a piac és a
+    // torony onnantól már felépül), a KRISTÁLY koráig viszont nem — az 800
+    // étel + 200 kristály nagyságrenddel több. Ez a rendelés tehát az EGÉSZ
+    // futás alatt a gátba fut, és nem attól függ, milyen gyorsan gyűlik a
+    // nyersanyag: enélkül a működés-szám a korszakváltás pillanatában
+    // ELAPADNA, és egy gyorsuló gazdaság némán nullára vinné.
+    sim.parancs({ fajta: 'epit', csapat: cs, tipus: EPULET.OSTROMMUHELY,
+      x: bx + 12, y: by + 12 });
+
+    // KORSZAKVÁLTÁS MINDEN KÖRBEN. Enélkül a gát MINDIG igaz maradna, és egy
+    // örökké tiltó gát pont annyit bizonyít, mint egy örökké engedő: semmit.
+    // A `korszakIndit` magától elutasít, ha nem telik rá — vak parancs, de a
+    // v0.5 építési sora is így dolgozik, és pont ez a mintája.
+    sim.parancs({ fajta: 'korszak', csapat: cs });
+
+    // MINDEN saját sorból törlünk egyet, RÖGZÍTETT index-sorrendben — nem csak
+    // a leghosszabból. Nem bőség: a leghosszabb sorra szűkítve mérve 6000 tick
+    // alatt összesen 2 törlés futott le csapatonként, és egy KETTŐ-nél álló
+    // működés-szám a legrosszabb fajta gát: elég egy apró balansz-mozdulat
+    // (drágább lándzsás, szűkebb népesség), és némán nullára esik.
+    //
+    // ⚠️ CSAK KETTŐTŐL TÖRLÜNK, ÉS EZ NEM ÓVATOSSÁG. Ha minden körben az
+    // egyelemű sort is ürítenénk, a kör SOHA nem képezne ki egyetlen egységet
+    // sem — a törlés-ág zölden futna, közben a képzés-ág halna meg alatta, és
+    // a szonda pont azt nem venné észre, amiért van. Így a sor ELEJE végig
+    // dolgozik, a törlés pedig a mögötte állót viszi el.
+    let ep = -1;
+    for (let i = 0; i < sim.epuletek.db; i++) {
+      if (sim.epuletek.csapat[i] !== cs || !sim.epuletek.el(i)) continue;
+      const db = sim.kepzes.sorDb[i];
+      if (db < 2) continue;
+      ep = i;   // a legutolsó ilyen épület kell az érvénytelen próbákhoz is
+      sim.parancs({ fajta: 'kepzes_torles', csapat: cs, epulet: i, index: db - 1 });
+    }
+    if (ep < 0) {
+      // Ha egyetlen sor sem nőtt kettőre, a saját központ kell az érvénytelen
+      // törlésekhez — azoknak ATTÓL FÜGGETLENÜL le kell futniuk, hogy van-e mit
+      // törölni: pont az elutasító ágat vizsgálják.
+      for (let i = 0; i < sim.epuletek.db; i++) {
+        if (sim.epuletek.csapat[i] === cs && sim.epuletek.el(i)) { ep = i; break; }
+      }
+    }
+
+    // SZÁNDÉKOSAN ÉRVÉNYTELEN TÖRLÉSEK, negyedik körönként. Az elutasító ág a
+    // legveszélyesebb: ha az egyik gépen átmegy, amit a másik eldob, az azonnali
+    // desync — ugyanaz a fajta, mint a v0.17 vég utáni parancsainál.
+    if (ep >= 0 && (kor % 4) === 3) {
+      // (a) az ELLENFÉL sorára — ez ingyenes szabotázs lenne
+      sim.parancs({ fajta: 'kepzes_torles', csapat: 1 - cs, epulet: ep, index: 0 });
+      // (b) tartományon kívüli sor-index
+      sim.parancs({ fajta: 'kepzes_torles', csapat: cs, epulet: ep, index: 99 });
+    }
+  }
+}
 
 /** Friss sim, felállítva. A `Sim` konstruktora MINDENT újraépít (rács, mező). */
 function ujSim(fk) {
@@ -2300,6 +2444,288 @@ if (ketV17f.ok) {
 sor('lefutott', ((Date.now() - t14) / 1000).toFixed(1) + ' mp');
 vegeBukas = bukas - vegeBukas;
 
+// ════════════════════════════════════════════════════════════════════════════
+// 15) v0.18 — KÉPZÉSI SOR TÖRLÉSE ÉS KORSZAK-GÁT AZ ÉPÍTÉSNÉL
+// ════════════════════════════════════════════════════════════════════════════
+//
+// KÉT ÚJ ÁG, és mindkettő olyan, amit a determinizmus önmagában NEM igazol:
+//
+//   A) A SOR-TÖRLÉS EGYETLEN VESZÉLYE A NYERSANYAG-TEREMTÉS. A `kepzes.js`
+//      fejléce a v0.5 óta ezért nem adott törlést: az ár a SORBAÁLLÁSKOR megy
+//      le, tehát bármilyen visszatérítés egy `keszlet += …` ágat nyitna a
+//      képzésben, és a v0.3 óta a gazdaság szigorúan egyirányú. A döntés az
+//      lett, hogy a törlés INGYENES, de NEM AD VISSZA SEMMIT — és ezt itt
+//      MÉRJÜK is: rendelés–törlés körökben a készlet csak csökkenhet.
+//   B) A KORSZAK-GÁT KÉTFÉLEKÉPPEN LEHET HALOTT: ha sosem tilt, és ha MINDIG
+//      tilt. A kör ezért mindkét irányt bizonyítja — a sötét korban elutasít,
+//      a korszak megemelése után ugyanaz a parancs átmegy.
+//
+// ⚠️ A GÁT EBBEN A KÖRBEN BE VAN KAPCSOLVA, A JÁTÉKBAN NEM. Az indoklás és a
+// mért számok az `epuletek.js` `EP_KORSZAK` tábláját megelőző blokkban állnak:
+// élesen ma a gépi ellenfelet szüntetné meg, mert az egyetlen korszakot sem
+// vált. A kód viszont KÉSZ, tehát a kapun BELÜL a helye.
+cim('15) v0.18 SOR-TÖRLÉS ÉS KORSZAK-GÁT — a két új parancs-ág');
+const t15 = Date.now();
+let ujBukas = bukas;
+
+const ketV18 = ketFutas(FORGATOKONYVEK.v18);
+sor('forgatókönyv', FORGATOKONYVEK.v18.nev);
+sor('korszak-gát a körben', 'BEKAPCSOLVA', 'igény: ' + EP_KORSZAK_IGENY.join(','));
+sor('korszak-gát a játékban', EP_KORSZAK.some((x) => x > 0) ? 'BEKAPCSOLVA' : 'kikapcsolva',
+  'élő tábla: ' + EP_KORSZAK.join(','));
+let kevertV18 = { ok: true, tick: 0 };
+if (ketV18.ok) {
+  sor('két futás', 'AZONOS', (FORGATOKONYVEK.v18.tickek / HASH_KOZ) + ' ellenőrzőpont');
+  sor('záró hash', '0x' + ketV18.hashek.get(FORGATOKONYVEK.v18.tickek).toString(16).padStart(8, '0'));
+  kevertV18 = kevertFutas(ketV18.hashek, FORGATOKONYVEK.v18);
+  sor('kevert futás', kevertV18.ok ? 'AZONOS' : 'ELTÉRT (tick ' + kevertV18.tick + ')');
+  if (!kevertV18.ok) bukas++;
+} else {
+  console.log('\n  ⛔ A v0.18 KÖR SZÉTCSÚSZOTT a ' + ketV18.tick + '. ticken.');
+  console.log('     ELSŐNEK NÉZD MEG a `Kepzes.torol()` sor-léptetését: ha a `hatra`');
+  console.log('     csak az egyik gépen indul újra, a következő egység MÁS ticken');
+  console.log('     születik meg, és onnantól minden slot-kiosztás elcsúszik.');
+  bukas++;
+}
+
+// ── MŰKÖDÉS-VIZSGÁLAT ─────────────────────────────────────────────────────
+{
+  const { KORSZAK } = await import(pathToFileURL(join(SIM_DIR, 'gazdasag.js')).href);
+  const { TIPUS } = await import(pathToFileURL(join(SIM_DIR, 'units.js')).href);
+
+  // — 1. A FORGATÓKÖNYV SZÁMAI — ugyanannyi tick, mint a determinizmus-kör.
+  const fk = FORGATOKONYVEK.v18;
+  const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+  fk.felallit(s, fk.egysegSzam);
+  let kor = 0;
+  for (let t = 1; t <= fk.tickek; t++) {
+    if ((t % PARANCS_KOZ) === 0) { fk.fut(s, kor); kor++; }
+    s.lep();
+  }
+  const torolve = s.kepzes.torolve[0] + s.kepzes.torolve[1];
+  const torlesEl = s.kepzes.torlesElutasitva[0] + s.kepzes.torlesElutasitva[1];
+  const korszakEl = s.epuletek.korszakElutasitva[0] + s.epuletek.korszakElutasitva[1];
+  const keszult = s.kepzes.keszult[0] + s.kepzes.keszult[1];
+  console.log('');
+  sor('törölt sor-elem', s.kepzes.torolve[0] + ' / ' + s.kepzes.torolve[1],
+    'csapatonként, ' + fk.tickek + ' tick alatt');
+  sor('elutasított törlés', s.kepzes.torlesElutasitva[0] + ' / ' + s.kepzes.torlesElutasitva[1],
+    '(idegen sor vagy tartományon kívüli index)');
+  sor('korszak miatt elutasított épít', s.epuletek.korszakElutasitva[0] + ' / '
+    + s.epuletek.korszakElutasitva[1], 'a gát BEKAPCSOLVA fut ebben a körben');
+  sor('kiképzett egység', s.kepzes.keszult[0] + ' / ' + s.kepzes.keszult[1],
+    'a törlés MELLETT — a sor eleje végig dolgozott');
+  // A GÁT A FORGATÓKÖNYVBEN IS KINYÍLIK. A piac és a torony HAJNAL kora előtt
+  // tiltott; ha a kör végén áll belőlük, akkor a korszakváltás tényleg
+  // feloldotta őket — nem csak a 4. pont mesterséges korszak-emelésétől.
+  let kapunyilt = 0;
+  for (let i = 0; i < s.epuletek.db; i++) {
+    if (s.epuletek.elo[i] === 0) continue;
+    if (s.epuletek.tipus[i] === EPULET.PIAC || s.epuletek.tipus[i] === EPULET.TORONY) kapunyilt++;
+  }
+  sor('elért korszak', s.gazdasag.korszak[0] + ' / ' + s.gazdasag.korszak[1],
+    'álló épület: ' + s.epuletek.db + ' · ebből korszakhoz kötött: ' + kapunyilt);
+  if (s.gazdasag.korszak[0] === 0 && s.gazdasag.korszak[1] === 0) {
+    console.log('\n  ⛔ EGYIK CSAPAT SEM VÁLTOTT KORSZAKOT: a gát VÉGIG tiltott.');
+    console.log('     Egy mindig igaz gát ugyanolyan halott, mint egy sosem igaz.');
+    console.log('     A kör nyitó készlete (`felallit`) pont azért van, hogy a váltás');
+    console.log('     beleférjen — ha ez nulla, a `korszak` parancs vagy a `KORSZAK_AR`');
+    console.log('     mozdult el.');
+    bukas++;
+  } else if (kapunyilt === 0) {
+    console.log('\n  ⛔ A KORSZAKVÁLTÁS UTÁN SEM ÉPÜLT KORSZAKHOZ KÖTÖTT ÉPÜLET.');
+    console.log('     A csapat elérte a hajnal korát, a piac és a torony mégsem áll:');
+    console.log('     a gát a korszak emelése után is tilt, vagy a `korszakKell()`');
+    console.log('     mást olvas, mint amit az `epit` összehasonlít.');
+    bukas++;
+  }
+
+  if (torolve === 0) {
+    console.log('\n  ⛔ EGYETLEN SOR-ELEM SEM TÖRLŐDÖTT: a `kepzes_torles` ág NÉMA.');
+    console.log('     A determinizmus-kapu ettől zöld — egy soha le nem futó törlés is');
+    console.log('     bitre reprodukálható. Nézd meg, épül-e képző épület, áll-e valaki');
+    console.log('     sorban (`Kepzes.sorDb`), és hogy a `parancsok.js` ismeri-e a fajtát:');
+    console.log('     az ISMERETLEN `fajta` CSENDBEN elvész, hibaüzenet nélkül.');
+    bukas++;
+  }
+  if (torlesEl === 0) {
+    console.log('\n  ⛔ EGYETLEN ÉRVÉNYTELEN TÖRLÉS SEM LETT ELUTASÍTVA.');
+    console.log('     A kör szándékosan töröl az ELLENFÉL sorából és tartományon kívüli');
+    console.log('     indexszel. Ha ezek átmennek, egy kattintással üríthető a másik');
+    console.log('     játékos képzési sora — és két gép két különböző meccset lát.');
+    bukas++;
+  }
+  if (korszakEl === 0) {
+    console.log('\n  ⛔ A KORSZAK-GÁT EGYETLEN ÉPÍTÉST SEM UTASÍTOTT EL, PEDIG BE VAN KAPCSOLVA.');
+    console.log('     A v0.5 építési sora piacot és tornyot rendel a SÖTÉT KORBAN, tehát');
+    console.log('     a gátnak muszáj elsülnie. Nézd meg a `parancsok.js` `epit` ágát és');
+    console.log('     az `Epuletek.korszakKell()`-t.');
+    bukas++;
+  }
+  if (keszult === 0) {
+    console.log('\n  ⛔ NEM SZÜLETETT EGYSÉG, MIKÖZBEN A TÖRLÉS FUTOTT.');
+    console.log('     A törlés-ág megette a képzés-ágat: ha minden sor kiürül, a kör');
+    console.log('     zölden bizonyít egy halott képzést. A kör csak KÉT elemtől töröl,');
+    console.log('     tehát ha ez nulla, a sor sosem nőtt kettőre — az a képzés baja.');
+    bukas++;
+  }
+
+  // — 2. A TÖRLÉS NEM TEREMT NYERSANYAGOT —
+  //
+  // EZ A LEGFONTOSABB GÁT EBBEN A KÖRBEN. A `kepzes.js` fejléce a v0.5 óta
+  // ezért nem adott törlést; ha valaki egyszer „kényelmi okból" visszatérítést
+  // ír bele, itt bukik, nem fél évvel később egy balansz-vitában.
+  const s2 = new Sim({ seed: SEED, n: 128, maxEgyseg: 200 });
+  s2.szondaFelallas(8, { munkasMinden: 1 });
+  for (let f = 0; f < 4; f++) s2.gazdasag.keszlet[f] = 5000;
+  let kozp = -1;
+  for (let i = 0; i < s2.epuletek.db; i++) {
+    if (s2.epuletek.csapat[i] === 0 && s2.epuletek.tipus[i] === EPULET.KOZPONT) { kozp = i; break; }
+  }
+  const lepj = () => { for (let i = 0; i <= 3; i++) s2.lep(); };
+  const kezdo = s2.gazdasag.keszlet[0];
+  let novekedes = 0, csucs = kezdo;
+  for (let k = 0; k < 40; k++) {
+    s2.parancs({ fajta: 'kepzes', csapat: 0, epulet: kozp, egyseg: TIPUS.MUNKAS });
+    lepj();
+    const db = s2.kepzes.sorDb[kozp];
+    const elotte = s2.gazdasag.keszlet[0];
+    if (db > 0) {
+      s2.parancs({ fajta: 'kepzes_torles', csapat: 0, epulet: kozp, index: db - 1 });
+      lepj();
+    }
+    const utana = s2.gazdasag.keszlet[0];
+    if (utana > elotte) novekedes++;
+    if (utana > csucs) csucs = utana;
+  }
+  sor('40 rendelés–törlés kör', kezdo + '→' + s2.gazdasag.keszlet[0],
+    'étel · növekedés: ' + novekedes + ' · csúcs: ' + csucs);
+  if (novekedes > 0 || csucs > kezdo) {
+    console.log('\n  ⛔ A TÖRLÉS NYERSANYAGOT TEREMTETT: ' + novekedes + ' körben nőtt a készlet.');
+    console.log('     A gazdaság a v0.3 óta EGYIRÁNYÚ, és a rendelés–törlés kör így');
+    console.log('     végtelen nyersanyag-forrás. Ha visszatérítés kell, a KIFIZETETT');
+    console.log('     árat kell eltenni sor-elemenként — újraszámolni tilos.');
+    bukas++;
+  }
+  if (s2.kepzes.torolve[0] === 0) {
+    console.log('\n  ⛔ A 40 KÖRBŐL EGY TÖRLÉS SEM MENT ÁT — a fenti gát vak.');
+    bukas++;
+  }
+
+  // — 3. A TÖRLÉS FELSZABADÍTJA A NÉPESSÉGET —
+  // Ez a funkció EGYETLEN valódi haszna (visszatérítés nincs): a sorban álló
+  // egység foglalja a férőhelyet. Ha ez nem szabadul fel, a gomb dísz.
+  const sorbanElotte = s2.kepzes.sorbanNepesseg(0);
+  for (let k = 0; k < 3; k++) {
+    s2.parancs({ fajta: 'kepzes', csapat: 0, epulet: kozp, egyseg: TIPUS.MUNKAS });
+  }
+  lepj();
+  const sorbanTele = s2.kepzes.sorbanNepesseg(0);
+  while (s2.kepzes.sorDb[kozp] > 0) {
+    s2.parancs({ fajta: 'kepzes_torles', csapat: 0, epulet: kozp, index: 0 });
+    lepj();
+  }
+  const sorbanUtana = s2.kepzes.sorbanNepesseg(0);
+  sor('sorban álló népesség', sorbanElotte + ' → ' + sorbanTele + ' → ' + sorbanUtana,
+    'rendelés, majd a sor kiürítése');
+  if (sorbanTele <= sorbanElotte || sorbanUtana !== 0) {
+    console.log('\n  ⛔ A TÖRLÉS NEM ADJA VISSZA A NÉPESSÉG-HELYET (' + sorbanTele
+      + ' → ' + sorbanUtana + ').');
+    console.log('     Visszatérítés nincs, tehát a férőhely és a sor-hely a funkció');
+    console.log('     EGYETLEN haszna. Ha az sem szabadul fel, a ✕ gomb dísz.');
+    bukas++;
+  }
+  if (s2.kepzes.hatra[kozp] !== 0) {
+    console.log('\n  ⛔ ÜRES SOR MELLETT IS FUT A VISSZASZÁMLÁLÓ (hatra='
+      + s2.kepzes.hatra[kozp] + ').');
+    console.log('     A következő sorbaállás így azonnal késznek látszó egységet adna.');
+    bukas++;
+  }
+
+  // — 4. A KORSZAK-GÁT MINDKÉT IRÁNYBAN ELSÜL —
+  // Egy gát, ami mindig igaz, ugyanolyan halott, mint az, ami sosem az. Ezért
+  // UGYANAZT a parancsot adjuk be kétszer, csak a korszakot emeljük közben.
+  const s3 = new Sim({ seed: SEED, n: 128, maxEgyseg: 200 });
+  s3.szondaFelallas(8, { munkasMinden: 1 });
+  s3.epuletek.korszakGat(EP_KORSZAK_IGENY);
+  for (let f = 0; f < 4; f++) s3.gazdasag.keszlet[f] = 5000;
+  /**
+   * Az első szabad hely egy típusnak. ⚠️ MIÉRT KERESSÜK, ÉS MIÉRT NEM FIX
+   * PONTRA ÉPÍTÜNK: ha a hely véletlenül járhatatlan, a parancs a `lerakhato`
+   * miatt esne el, és a gát „elsütöttnek" látszana anélkül, hogy egyszer is
+   * lefutott volna. A cella-számítás betűre a `parancsok.js` `epit` ágáé.
+   */
+  const szabadHely = (tipus) => {
+    const meret = EP_MERET[tipus];
+    for (let y = 5; y < s3.n - 6; y++) {
+      for (let x = 5; x < s3.n - 6; x++) {
+        if (s3.epuletek.lerakhato(tipus, x - (meret >> 1), y - (meret >> 1))) {
+          return { x: x + 0.5, y: y + 0.5 };
+        }
+      }
+    }
+    return null;
+  };
+  const epitProba = (tipus) => {
+    const h = szabadHely(tipus);
+    if (!h) return false;
+    const db = s3.epuletek.db;
+    s3.parancs({ fajta: 'epit', csapat: 0, tipus, x: h.x, y: h.y });
+    for (let i = 0; i <= 3; i++) s3.lep();
+    return s3.epuletek.db > db;
+  };
+  const sotetPiac = epitProba(EPULET.PIAC);
+  const sotetHaz = epitProba(EPULET.HAZ);
+  s3.gazdasag.korszak[0] = KORSZAK.HAJNAL;
+  const hajnalPiac = epitProba(EPULET.PIAC);
+  const hajnalOstrom = epitProba(EPULET.OSTROMMUHELY);
+  s3.gazdasag.korszak[0] = KORSZAK.KRISTALY;
+  const kristalyOstrom = epitProba(EPULET.OSTROMMUHELY);
+  sor('piac sötét / hajnal korban', (sotetPiac ? 'FELÉPÜLT' : 'tiltva') + ' / '
+    + (hajnalPiac ? 'felépült' : 'TILTVA'), 'ugyanaz a parancs, más korszak');
+  sor('ostromműhely hajnal/kristály', (hajnalOstrom ? 'FELÉPÜLT' : 'tiltva') + ' / '
+    + (kristalyOstrom ? 'felépült' : 'TILTVA'), 'két korszakot kér');
+  sor('ház sötét korban', sotetHaz ? 'felépült' : 'TILTVA', 'nincs korszak-igénye');
+  if (sotetPiac || !hajnalPiac || hajnalOstrom || !kristalyOstrom || !sotetHaz) {
+    console.log('\n  ⛔ A KORSZAK-GÁT NEM MINDKÉT IRÁNYBAN SÜL EL.');
+    console.log('     Az elvárás: sötét korban tiltja a piacot, hajnalban engedi;');
+    console.log('     az ostromműhelyt hajnalban még tiltja, kristály korban engedi;');
+    console.log('     a házat pedig SOHA nem tiltja (nincs korszak-igénye). Ha valamelyik');
+    console.log('     nem így van, a tábla vagy az `epit` összehasonlítása csúszott el.');
+    bukas++;
+  }
+
+  // — 5. A GÁT NEM VONJA LE AZ ÁRAT —
+  // Az `epit` ágban a korszak-ellenőrzés a `gazdasag.levon()` ELŐTT áll. Ha
+  // valaha mögé kerülne, a tiltott épület árát is elvennénk, és a játékos
+  // fizetne azért, amit meg sem kapott — némán.
+  const s4 = new Sim({ seed: SEED, n: 128, maxEgyseg: 200 });
+  s4.szondaFelallas(8, { munkasMinden: 1 });
+  s4.epuletek.korszakGat(EP_KORSZAK_IGENY);
+  for (let f = 0; f < 4; f++) s4.gazdasag.keszlet[f] = 5000;
+  const elotteFa = s4.gazdasag.keszlet[1];
+  for (let k = 0; k < 5; k++) {
+    s4.parancs({ fajta: 'epit', csapat: 0, tipus: EPULET.PIAC, x: 40.5 + k * 4, y: 40.5 });
+    for (let i = 0; i <= 3; i++) s4.lep();
+  }
+  sor('tiltott építés ára', elotteFa + '→' + s4.gazdasag.keszlet[1],
+    'fa · elutasítva: ' + s4.epuletek.korszakElutasitva[0]);
+  if (s4.gazdasag.keszlet[1] !== elotteFa) {
+    console.log('\n  ⛔ A KORSZAK MIATT ELUTASÍTOTT ÉPÍTÉS ÁRA MÉGIS LEMENT.');
+    console.log('     A korszak-ellenőrzésnek a `gazdasag.levon()` ELŐTT a helye:');
+    console.log('     a játékos különben fizet azért, amit meg sem kapott — némán.');
+    bukas++;
+  }
+
+  if (bukas === ujBukas) {
+    console.log('\n  ✓ A sor-törlés determinisztikus, nem teremt nyersanyagot, viszont');
+    console.log('    felszabadítja a népesség- és a sor-helyet; a korszak-gát pedig');
+    console.log('    mindkét irányban elsül, és nem vonja le a tiltott épület árát.');
+  }
+}
+sor('lefutott', ((Date.now() - t15) / 1000).toFixed(1) + ' mp');
+ujBukas = bukas - ujBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -2331,6 +2757,10 @@ sor('14) v0.17 a meccs vége',
       ? (vegeBukas === 0 ? 'RENDBEN' : 'BUKOTT (működés)')
       : 'BUKOTT (kevert)')
     : 'BUKOTT (tick ' + (ketV17.ok ? ketV17f.tick : ketV17.tick) + ')');
+sor('15) v0.18 törlés + korszak-gát',
+  ketV18.ok
+    ? (kevertV18.ok ? (ujBukas === 0 ? 'RENDBEN' : 'BUKOTT (működés)') : 'BUKOTT (kevert)')
+    : 'BUKOTT (tick ' + ketV18.tick + ')');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

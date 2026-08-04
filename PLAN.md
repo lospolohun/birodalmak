@@ -22,7 +22,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
 | v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
 | v0.14 | **Nyelvek: magyar + angol** — teljes fordítás, nyelvválasztó a menüben | |
-| v0.15 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |
+| v0.15 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build (relatív `base`) | |
 | v1.0 | Kiadási kapu, PWA | |
 
 ## A v0.4 állása
@@ -708,10 +708,31 @@ ha egynyelvű maradna.
 A build STATIKUS (`vite build` → `dist/`), tehát a SkyNet PHP-s kiszolgálója
 tökéletesen elég hozzá — nem kell futó Node-processz.
 
-⚠️ **Az alkönyvtár a buktató.** A `vite.config.js`-ben `base: '/aotc/'` kell,
-különben a `dist/index.html` gyökérből (`/assets/…`) hivatkozza a JS-t és a
-CSS-t, a `/aotc/` alatt pedig az 404. Ez az a hiba, ami helyi `vite preview`-val
+⚠️ **Az alkönyvtár a buktató.** Alapértelmezett `base` (`'/'`) mellett a
+`dist/index.html` gyökérből (`/assets/…`) hivatkozza a JS-t és a CSS-t, a
+`/aotc/` alatt pedig az 404. Ez az a hiba, ami helyi `vite preview`-val
 SOSEM jön elő, csak élesben — a preview a gyökérből szolgál ki.
+
+**DÖNTÉS: `base: './'` (relatív).** Két jó megoldás van, és sokáig a terv az
+egyiket mondta, a `vite.config.js` a másikat — a kiadás-ellenőrző 57.
+figyelmeztetése épp ezt az ellentmondást jelezte. A választás a relatív:
+
+| | `base: '/aotc/'` | **`base: './'`** ← ez a terv |
+|---|---|---|
+| működik a `/aotc/` alatt | ✅ | ✅ |
+| működik más alkönyvtárból | ❌ fehér lap | ✅ |
+| működik `file://`-ról, másolt `dist/`-ből | ❌ | ✅ |
+| PWA service-worker scope (v1.0) | ✅ | ❌ kell majd abszolút |
+
+A relatív mellett az dönt, hogy ezt az ígéretet **már máshol is kimondtuk és
+be is tartjuk**: az `index.html` favicon-blokkja pont azzal az indoklással
+adat-URI, hogy „a `dist/` másolható bárhová", az `ikonok.js` fejléce pedig
+kiköti, hogy nincs képfájl és nincs külső betűtípus. Egy abszolút `base`
+ugyanazt a `dist/`-et egyetlen konkrét URL-hez kötné vissza.
+
+⚠️ **Ezt a v1.0 PWA-jánál újra kell gondolni:** a service worker SCOPE-ot kap,
+a manifest `start_url`-je útvonalat, és azok nem lehetnek relatívak. Ha a PWA
+bekerül, a `vite.config.js` fejlécét és ezt a szakaszt EGYÜTT kell átírni.
 
 ⚠️ **A v0.8 relay-szerver NEM fér el itt.** A netcode külön futó Node-processzt
 igényel (lásd „Őszinte kockázatok"), a SkyNet viszont PHP-t szolgál ki. A

@@ -26,6 +26,7 @@
 //
 //   bal gomb húzás    keret-kijelölés          (Shift: hozzáadás)
 //   bal gomb kattintás  egy egység kijelölése  (Shift: hozzáadás)
+//                       ha ott nincs egység: az ott álló ÉPÜLET     (v0.17)
 //   jobb gomb         menet a kattintott pontra
 //   Shift + jobb gomb támadó menet
 //   T                 a következő jobb kattintás támadó menet
@@ -67,14 +68,31 @@
 // ugyan kibírná, de egy elavult index csendben egy MÁSIK épületet mutatna a
 // betöltés utáni világban (ugyanaz a generációs csapda, mint a kijelölés-listánál).
 //
-// ⚠️ AMI MÉG HIÁNYZIK: A 3D-S ÉPÜLET-KATTINTÁS. Az a `src/render/` sávja (ott
-// van a sugárvetés az épület-példányokra), ezért itt csak a HELYE van kihagyva:
-// az `epuletKereso` horog. Ha a render-oldal beállítja, a bal kattintás — ha
-// egyetlen egységet sem talált — megkérdezi tőle, mi van a kurzor alatt.
-// Amíg nincs beállítva, a `V` billentyű választja ki a kurzorhoz legközelebbi
-// saját épületet, tehát az épület-nézet MOST is elérhető, nem csak papíron.
+// ⚠️ A MEZŐ NEM SAJÁT TÁROLÓ, hanem getter/setter a `kijeloles.epulet` fölött.
+// A kijelölés MODELLJE tartja — így a kijelölés-panel (`bevitel.kijeloltEpulet`)
+// és a 3D-s alapterület-keret (`jeloles_kontur.js` b) ága: `kijeloles.epulet`)
+// UGYANAZT az egy számot olvassa. Két külön mező előbb-utóbb elcsúszna, és a
+// panel más épületet mutatna, mint a keret a pályán.
+//
+// ── A 3D-S ÉPÜLET-KATTINTÁS (v0.17) ───────────────────────────────────────
+// A hiányzó darab elkészült, és a helyén van: a sugárvetés a `src/render/`
+// sávjában él (`gazdasag3d.js` → `epuletTalalat()`), mert ott van leírva,
+// mekkora egy épület és milyen magasra nő. Ez a fájl csak BEKÖTI az
+// `epuletKereso` horogra a konstruktorban.
+//
+// Miért innen, és nem a render-rétegből, ahogy az `INTERFACES.md` írja: a
+// `main.js` a `Gazdasag3D`-nek nem adja át a `bevitel`-t, a `Kijeloles3D`-nek
+// sem — az a fájl MÁSIK AGENT sávja. A választás tehát az volt, hogy vagy itt
+// egy import, vagy „majd valaki beköti". A v0.16 tizenhat sávjának tanulsága
+// szerint az utóbbi azt jelenti, hogy a kész rendszer kapun kívül marad. A
+// horog MEGMARAD: aki felülírja (mondjuk egy szondában vagy a render-oldalról),
+// az övé a válasz — itt csak ALAPÉRTELMEZÉS van, nem kényszer.
+//
+// A bal kattintás továbbra is CSAK AKKOR kérdez épületet, ha egyetlen egységet
+// sem talált: egységre kattintani gyakoribb, és a két kijelölés kizárja egymást.
 
 import { Kijeloles, talajPont, KERET_KUSZOB } from './kijeloles.js';
+import { epuletTalalat } from '../render/gazdasag3d.js';
 import { ALAKZAT, ALAKZAT_NEV } from '../sim/alakzat.js';
 import { ALLAS, ALLAS_NEV } from '../sim/parancsallapot.js';
 import { NYERS, NYERS_NEV } from '../sim/eroforras.js';
@@ -120,22 +138,20 @@ export class Bevitel {
     this.tamadoMod = false;
 
     /**
-     * A KIJELÖLT ÉPÜLET indexe a `sim.epuletek`-ben, vagy -1. A kijelölés-panel
-     * ezt a mezőt olvassa képkockánként (lásd a fejléc „ÉPÜLET-KIJELÖLÉS"
-     * szakaszát). Publikus, mert szerződés — ne írd közvetlenül, az
-     * `epuletKijelol()` / `epuletTorol()` ellenőriz is.
-     */
-    this.kijeloltEpulet = -1;
-
-    /**
-     * A HIÁNYZÓ RENDER-OLDALI DARAB HELYE: sugárvetés az épületekre.
-     * A render-sáv ezt állíthatja be (`bevitel.epuletKereso = fv`), és a bal
-     * kattintás — ha egyetlen egységet sem talált — megkérdezi.
+     * SUGÁRVETÉS AZ ÉPÜLETEKRE — a render-sáv válasza, alapértelmezésként
+     * bekötve (lásd a fejléc „A 3D-S ÉPÜLET-KATTINTÁS" szakaszát). Felülírható:
+     * `bevitel.epuletKereso = fv`. A bal kattintás CSAK AKKOR kérdezi, ha
+     * egyetlen egységet sem talált.
+     *
+     * A nyíl-függvény EGYSZER jön létre, a konstruktorban — a kattintás-út így
+     * nem allokál, és a `sim` mindig a mostani (a `Sim` példány nem cserélődik,
+     * az `ujraKot()` ugyanazt tölti újra).
      *
      * @type {?(kepX:number, kepY:number, szel:number, mag:number,
      *          kamera:object) => number}  épület-index vagy -1
      */
-    this.epuletKereso = null;
+    this.epuletKereso = (kepX, kepY, szel, mag, kam) =>
+      epuletTalalat(this.sim, kam, kepX, kepY, szel, mag);
 
     // ── Húzás-állapot ────────────────────────────────────────────────
     this._huz = false;
@@ -258,7 +274,15 @@ export class Bevitel {
     this._szinkron();
   }
 
-  // ── ÉPÜLET-KIJELÖLÉS (v0.16/2) ─────────────────────────────────────────
+  // ── ÉPÜLET-KIJELÖLÉS (v0.16/2, a kattintás v0.17) ──────────────────────
+
+  /**
+   * A KIJELÖLT ÉPÜLET indexe a `sim.epuletek`-ben, vagy -1 — a kijelölés-panel
+   * szerződése. A TÁROLÁS a kijelölés modelljében van (`kijeloles.epulet`),
+   * lásd a fejlécet: onnan olvassa a 3D-s alapterület-keret is.
+   */
+  get kijeloltEpulet() { return this.kijeloles.epulet; }
+  set kijeloltEpulet(v) { this.kijeloles.epulet = v | 0; }
 
   /**
    * Épület kijelölése. A panel szerződése szerint az index a `sim.epuletek`-be
@@ -272,9 +296,11 @@ export class Bevitel {
     const i = index | 0;
     const ep = this.sim.epuletek;
     if (!ep || !ep.el(i)) return false;
-    this.kijeloltEpulet = i;
-    // A kettő kizárja egymást — lásd a `_kattintasKijelol()` indoklását.
+    // ELŐBB az ürítés, UTÁNA a beállítás. Fordítva működne ma is (az `urit()`
+    // szándékosan nem nyúl az `epulet` mezőhöz), de akkor a helyes sorrend
+    // egy MÁSIK fájl egy kommentjén múlna.
     this.kijeloles.urit();
+    this.kijeloltEpulet = i;
     this._uzenet = EPULET_NEV[ep.tipus[i]] + ' kijelölve';
     return true;
   }
@@ -288,17 +314,20 @@ export class Bevitel {
   /**
    * Bal kattintás, ami egyetlen egységet sem talált: van-e ott épület?
    *
-   * A KÉRDÉST NEM MI VÁLASZOLJUK MEG. Az épület a 3D-ben példány-hálókban él, a
-   * találat-vizsgálat tehát a render sávja (`src/render/`), és ez a fájl nem
-   * ismeri a `three`-t. Ha az a sáv beállítja az `epuletKereso`-t, itt semmi
-   * más nem változik; amíg nem, a kattintás elengedi az épületet — ahogy az
-   * üres talajra kattintás az egységeket is elengedi.
+   * A KÉRDÉST NEM MI VÁLASZOLJUK MEG. Az épület mérete és magassága a render
+   * sávjában van leírva (`gazdasag3d.js` → `epuletTalalat()`); ez a fájl csak
+   * kérdez. Ha a horog nincs beállítva (valaki kinullázta), a kattintás
+   * elengedi az épületet — ahogy az üres talajra kattintás az egységeket is.
+   *
+   * A találatot az `epuletKijelol()`-lel vesszük fel, nem a mező közvetlen
+   * írásával: így a kattintás UGYANAZT csinálja, mint a `V` billentyű
+   * (ellenőrzés + visszajelző üzenet), és egy későbbi bővítés nem csak az
+   * egyik úton hatna.
    */
   _epuletKattintas(x, y, szel, mag) {
     if (typeof this.epuletKereso !== 'function') { this.epuletTorol(); return; }
     const i = this.epuletKereso(x, y, szel, mag, this.kamera.objektum) | 0;
-    if (i >= 0 && this.sim.epuletek && this.sim.epuletek.el(i)) this.kijeloltEpulet = i;
-    else this.epuletTorol();
+    if (i < 0 || !this.epuletKijelol(i)) this.epuletTorol();
   }
 
   /**

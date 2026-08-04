@@ -28,6 +28,13 @@
 // rajzhívás kellene. Ugyanaz az `onBeforeCompile`-minta, amit a `props3d.js` és
 // a `terrain3d.js` már használ.
 //
+// ⚠️ AZ `aAlfa` CSAK A KÉT LAPRA MEGY KI. A `SZILARD` doboz átlátszatlan, és
+// szándékosan az: ha átlátszóvá tennénk, kikerülne a mélység-pufferből, és a
+// fal mögé esett kő ÁTÜTNE a falon. Következmény, amit tudni kell: a szilárd
+// részecske NEM tud elhalványulni, tehát a lejáratkor teljes fényerővel pattan
+// ki a képből — ezért viszi a föld alá az `effekt_keszlet.js` a romot és a
+// törmeléket. Aki ott a süllyedést elveszi, ide is nézzen be előbb.
+//
 // ── MIÉRT A `Lovedek3D` A GAZDÁJA ─────────────────────────────────────────
 // A `src/main.js` ebben a körben NEM módosítható (párhuzamosan tizenhat agent
 // dolgozik ugyanabban a munkafában), a réteg-táblát pedig az állítja össze.

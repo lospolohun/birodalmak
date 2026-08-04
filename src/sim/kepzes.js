@@ -11,8 +11,40 @@
 // Nem a sor végén, hanem a beálláskor. Kétszer is meggondoltuk, mert az AoE
 // visszatérítést ad, ha a játékos törli a sort — de a visszatérítés egy MÁSIK
 // ág, ami nyersanyagot TEREMT, és a v0.3 óta a gazdaság szigorúan egyirányú.
-// A v0.5-ben ezért nincs sor-törlés; ha később kell, a visszatérítést egyben,
-// külön paranccsal és külön ellenőrzéssel érdemes bevezetni.
+// A v0.5-ben ezért nem volt sor-törlés.
+//
+// ── SOR-TÖRLÉS (v0.18): VAN, DE NINCS VISSZATÉRÍTÉS ───────────────────────
+// A törlés végül azért került be, mert a hiánya nem a visszatérítést tiltotta,
+// hanem a JÁTÉKOST zárta ki egy saját hibájának a javításából: a sorban álló
+// egység FOGLALJA a népességet (`sorbanNepesseg`) és a sor-helyet. Egy elgépelt
+// shift+kattintás öt ostromgépet tesz sorba — az 15 népesség és 5 sor-hely —,
+// és onnantól a csapat percekig semmi mást nem tud képezni. A törlés ezt oldja
+// fel, és pontosan ez az ÉRTÉKE: a hely és a férőhely, NEM a nyersanyag.
+//
+// ⚠️ A DÖNTÉS: A TÖRLÉS INGYENES, DE NEM AD VISSZA SEMMIT. Három út volt:
+//
+//   a) teljes visszatérítés — ez a v0.3 óta érvényes egyirányúságot törné meg.
+//      Nem az a baj vele, hogy a rendelés–törlés kör önmagában nyerne (az
+//      pontosan nullszaldós), hanem hogy LÉTREJÖNNE egy `keszlet += …` ág a
+//      képzésben. Az ár a sorbaálláskor a `Civ.arSzazalek` egész osztásával
+//      megy le, a visszatérítés pedig a törlés pillanatában SZÁMOLNÁ ÚJRA. Ma a
+//      kettő bitre egyezik (a civ a meccs alatt nem változik), de az első
+//      olyan technológia vagy korszak-bónusz, ami az egység árához hozzányúl,
+//      csendben nyersanyag-gyárat csinálna belőle: rendelj olcsón, töröld
+//      drágán. Ehhez sor-elemenként el kellene tenni a KIFIZETETT árat
+//      (`maxEpulet × 8 × 4` egész), és azt a mentésbe és a hashbe is bele
+//      kellene venni — sok új felület egy kényelmi funkcióért.
+//   b) csak a MÉG EL NEM KEZDETT elemre — ez a fél megoldás a legrosszabb: az
+//      egyelemű sor (a leggyakoribb eset: „mégsem ezt akartam") pont a
+//      folyamatban lévő elem, tehát a gomb a felhasználó nyolcvan százalékában
+//      NÉMÁN NEM CSINÁLNA SEMMIT. Ebből a fajta hibából ebben a projektben már
+//      épp elég volt.
+//   c) nincs visszatérítés, bármelyik elem törölhető — EZ LETT.
+//
+// Az ár tehát elveszett, ugyanúgy, mint a félbehagyott épületé vagy az
+// elindított korszakváltásé (lásd a `gazdasag.js` fejlécét: „aki elindította a
+// váltást, annak a nyersanyaga elment"). Egyetlen szabály, három helyen
+// ugyanúgy — és a képzésben SINCS olyan sor, ami készletet növelne.
 //
 // ── NÉPESSÉG ──────────────────────────────────────────────────────────────
 // A férőhelyet az épületek adják (`EP_NEPESSEG`), a felhasználást az élő
@@ -82,6 +114,26 @@ export class Kepzes {
     /** Statisztika: hány egység készült el, és hány sorbaállás bukott el. */
     this.keszult = [0, 0];
     this.elutasitva = [0, 0];
+    /**
+     * v0.18 — hány sor-elemet töröltek, és hány törlés futott elutasításba.
+     *
+     * ⚠️ MŰKÖDÉS-SZÁM, nem hash-mező. A törlés HATÁSA (a `sor`, a `sorDb` és a
+     * `hatra`) már benne van az `allapotHash()`-ben, tehát a determinizmust az
+     * őrzi; ez a két szám arra kell, hogy a szonda LÁSSA, hogy az ág egyáltalán
+     * lefutott-e. A projekt hétszer égett meg zöld kapu melletti halott
+     * rendszeren, és a semmit sem törlő törlés is tökéletesen reprodukálható.
+     */
+    this.torolve = [0, 0];
+    this.torlesElutasitva = [0, 0];
+
+    /**
+     * A TÖRLÉS PARANCS-FAJTÁJA, kimondva. A `panel_kepzes.js` ezt kérdezi meg
+     * (`sim.kepzes.torlesParancsFajta || 'kepzes_torles'`), mielőtt parancsot
+     * ad be. Azért mező és nem hallgatólagos megegyezés: ha a fajta neve valaha
+     * változik, EGY helyen változik, és a panel nem egy elgépelt stringgel küld
+     * a semmibe — az ismeretlen `fajta` a `parancsok.js`-ben CSENDBEN elvész.
+     */
+    this.torlesParancsFajta = 'kepzes_torles';
 
     /**
      * Újrahasznált ár-puffer a civ-szorzóhoz. Azért mező és nem lokális tömb,
@@ -99,6 +151,8 @@ export class Kepzes {
     this.hatra.fill(0);
     this.keszult[0] = 0; this.keszult[1] = 0;
     this.elutasitva[0] = 0; this.elutasitva[1] = 0;
+    this.torolve[0] = 0; this.torolve[1] = 0;
+    this.torlesElutasitva[0] = 0; this.torlesElutasitva[1] = 0;
   }
 
   /**
@@ -157,6 +211,60 @@ export class Kepzes {
     this.sor[ep * SOR_HOSSZ + this.sorDb[ep]] = egysegTipus;
     this.sorDb[ep]++;
     if (this.sorDb[ep] === 1) this.hatra[ep] = this._ido(csapat, egysegTipus);
+    return true;
+  }
+
+  /**
+   * SOR-ELEM TÖRLÉSE (v0.18). Nincs visszatérítés — lásd a fejlécet.
+   *
+   * ⚠️ A CSAPATOT KÖTELEZŐ MEGADNI, és nem az épületből vesszük. Ugyanaz az
+   * indok, mint a `kepezheti()`-nél: a törlés az ELLENFÉL sorát is ürítené, ami
+   * ingyenes szabotázs lenne. A parancs `csapat` mezője a hálózatról jön, és a
+   * v0.8 lockstepjében ott is ez a mező az egyetlen, amiből a sim tudhatja, ki
+   * adta ki. Aki nem ad csapatot, elutasítást kap.
+   *
+   * ⚠️ A FOLYAMATBAN LÉVŐ (0.) ELEM IS TÖRÖLHETŐ, és ez tudatos. A tiltása
+   * olcsóbb lenne, de az egyelemű sor — a leggyakoribb eset — pont az, és egy
+   * gomb, ami az esetek többségében némán nem csinál semmit, rosszabb, mint ha
+   * ott sem lenne. A haladás elvész: a mögötte álló elem TELJES idővel indul
+   * (`_ido`), nem örökli a megkezdett visszaszámlálót. Fordítva a törlés
+   * gyorsítás lenne — rendelj egy olcsó lándzsást, várd ki a felét, töröld, és
+   * a mögötte álló lovag félidőből készülne el.
+   *
+   * @param {number} ep épület-index
+   * @param {number} index a sorbeli hely (0 = ami épp készül)
+   * @param {number} csapat aki a parancsot kiadta
+   * @returns {boolean} törlődött-e
+   */
+  torol(ep, index, csapat) {
+    const epuletek = this.sim.epuletek;
+    const cs = (csapat | 0) & 1;
+    // A rom sorát is engedjük üríteni: a `lep()` úgysem dolgozza fel (holt
+    // teher a fejléc szerint), de a népességet a `sorbanNepesseg` csak ÉLŐ
+    // épületre számolja — vagyis itt semmi nem szabadul fel, csak takarítunk.
+    // Ezért `el()` és nem `kesz()`: az ÉPÜLŐ épület sorából is lehet törölni.
+    if (!epuletek.el(ep) || ep >= this.maxEpulet) { this.torlesElutasitva[cs]++; return false; }
+    if (csapat === undefined || epuletek.csapat[ep] !== cs) {
+      this.torlesElutasitva[cs]++;
+      return false;
+    }
+    const db = this.sorDb[ep];
+    const i = index | 0;
+    if (db <= 0 || i < 0 || i >= db) { this.torlesElutasitva[cs]++; return false; }
+
+    const alap = ep * SOR_HOSSZ;
+    for (let k = i + 1; k < db; k++) this.sor[alap + k - 1] = this.sor[alap + k];
+    this.sorDb[ep] = db - 1;
+    this.sor[alap + db - 1] = -1;
+    // Csak akkor nyúlunk a visszaszámlálóhoz, ha a SOR ELEJE változott. A
+    // hátrébb álló elem törlése nem érinti azt, ami épp készül — ha itt is
+    // újraindítanánk az órát, a sor végének takarítása lassítaná a legelöl
+    // állót, és a játékos azt látná, hogy a törlés büntet.
+    if (i === 0) {
+      this.hatra[ep] = this.sorDb[ep] > 0
+        ? this._ido(epuletek.csapat[ep], this.sor[alap]) : 0;
+    }
+    this.torolve[cs]++;
     return true;
   }
 
@@ -291,7 +399,11 @@ export class Kepzes {
       if (KEPEZ[epuletek.tipus[ep]] && KEPEZ[epuletek.tipus[ep]].length) kepzo++;
       sorban += this.sorDb[ep];
     }
-    return { sorban, kepzo, keszult: this.keszult[csapat & 1] };
+    return {
+      sorban, kepzo,
+      keszult: this.keszult[csapat & 1],
+      torolve: this.torolve[csapat & 1],
+    };
   }
 }
 

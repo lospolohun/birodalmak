@@ -12,6 +12,20 @@
 // laposak maradnak. A második fele legalább olyan fontos, mint az első: egy
 // zajt generáló, mindig „mozgó" gyűjtő az első próbán átmenne.
 //
+// ── ⚠️ AMI A v0.17-BEN MEGVÁLTOZOTT: A JÁTÉKNAK MÁR VAN VÉGE ─────────────
+// Ez a szonda a v0.16-ban azzal a kikötéssel született, hogy „a sim nem ismer
+// győzelmi feltételt", és ezt ki is írta a jelentésébe. A `src/sim/gyozelem.js`
+// landolásával ez MEGSZŰNT IGAZ LENNI: a meccsnek van hivatalos vége, és a
+// `panel_statisztika_adat.js` `vegallapot()`-ja `hivatalos: true`-t ad, ha a
+// sim kimondta.
+//
+// Egy szonda, ami egy megszűnt korlátot ismételget, rosszabb az elavult
+// doksinál: azt a látszatot kelti, hogy MÉRTE. A 7. gát ezért kettévált. A
+// 7. továbbra is azt őrzi, hogy a FUTÓ meccs ne hazudjon eredményt; a 7/b
+// pedig azt, hogy a BEFEJEZETT meccs ki is mondja — mindkét hivatalos úton
+// (feladás, központ-vesztés), szabotázs-kontrollal arra, hogy a „hivatalos"
+// jelző nem egy örökös igen.
+//
 // ── A NYOLC GÁT ───────────────────────────────────────────────────────────
 //   1. A sorozat-táblázat ép: egyedi kulcsok, létező ikonnevek, a mérce
 //      súlyainak összege 100.
@@ -28,8 +42,12 @@
 //      csinál új mintát; a minták tickjei a mintaköz többszörösei.
 //   6. FORDULÓPONTOK: keletkeznek, nevesítettek, a korlát tartja magát, és a
 //      súly szerinti ritkítás a FONTOSAKAT hagyja meg.
-//   7. ÁLLÁS / MÉRLEG / VÉGÁLLAPOT: a pontok összege 100, és a cím SOHA nem
-//      mond győzelmet, amíg a sim nem mondott ki ilyet (ma sosem mond).
+//   7. ÁLLÁS / MÉRLEG / VÉGÁLLAPOT: a pontok összege 100, és a FUTÓ meccsen a
+//      cím SOHA nem mond győzelmet, amíg a sim nem mondott ki ilyet.
+//   7/b. ⚠️ A HIVATALOS VÉG (v0.17): valódi meccs, ami TÉNYLEG véget ér —
+//      feladással és a központ elvesztésével is. A `vegeTick` a simé, a mérleg
+//      címe „Győzelem"/„Vereség", és a `hivatalos` jelző igaz. Szabotázs-
+//      kontroll: ugyanaz a felállás vég nélkül — ott hamisnak KELL lennie.
 //   8. GÖRBE-MATEMATIKA: a pontok a dobozon belül vannak, x szigorúan nő, és
 //      egy MOZGÓ sorozatból nem lehet vízszintes vonal.
 //
@@ -48,6 +66,9 @@ const { TIPUS } = await be('src', 'sim', 'units.js');
 const { NYERS } = await be('src', 'sim', 'eroforras.js');
 const { TICK_HZ } = await be('src', 'sim', 'sim.js');
 const { IKON_NEVEK } = await be('src', 'ui', 'ikonok.js');
+// A v0.17 győzelmi rétege — a 7/b vizsgálat ebből tudja, mit KELLENE kapnia.
+const { VEG_OK } = await be('src', 'sim', 'gyozelem.js');
+const { EPULET } = await be('src', 'sim', 'epuletek.js');
 const A = await be('src', 'ui', 'panel_statisztika_adat.js');
 const {
   StatisztikaGyujto, SOROZAT, KULCSOK, MERCE, MAX_FORDULOPONT, MINTA_TICK,
@@ -353,7 +374,8 @@ const pontOssz = all.pont[0] + all.pont[1];
 sor('állás-pont', all.pont[0] + ' : ' + all.pont[1], all.szoveg);
 gat(Math.abs(pontOssz - 100) < 1e-9, 'AZ ÁLLÁS-PONTOK ÖSSZEGE NEM 100 (' + pontOssz + ').');
 gat(all.hivatalos === false, 'AZ ÁLLÁS HIVATALOS EREDMÉNYNEK ADJA KI MAGÁT.',
-  'A sim ma NEM ismer győzelmi feltételt — ezt a panelnek jeleznie KELL.');
+  'Az `allas()` MÉRCÉKBŐL pontoz (nyersanyag, sereg, épület) — az sosem eredmény, '
+  + 'akkor sem, ha a sim már kimondta a győztest. Vezethet az, aki utána veszít.');
 for (const t of all.tetelek) {
   console.log('  ' + t.nev.padEnd(22) + String(szamSzoveg(t.ertek[0])).padStart(10)
     + ' : ' + String(szamSzoveg(t.ertek[1])).padEnd(10)
@@ -368,6 +390,8 @@ sor('mérleg címe', '"' + m.cim + '"', 'sorok: ' + m.sorok.length);
 gat(m.sorok.length === SOROZAT.length, 'A MÉRLEGBŐL HIÁNYZIK SOR.',
   m.sorok.length + ' ≠ ' + SOROZAT.length);
 gat(veg.vege === false, 'A SZONDA MECCSE VÉGET ÉRT VOLNA, PEDIG MINDKÉT FÉL ÉL.');
+gat(veg.hivatalos === false, 'A FUTÓ MECCS VÉGÁLLAPOTA HIVATALOSNAK ADJA KI MAGÁT.',
+  'sim.gyozelem.vege = ' + sim.gyozelem.vege + ' — amíg az hamis, nincs mit hivatalossá tenni.');
 gat(!/Győzelem|Vereség/.test(m.cim),
   'A MÉRLEG GYŐZELMET HIRDET, PEDIG A SIM NEM MONDOTT KI SEMMIT.',
   'cím: "' + m.cim + '" — ez pontosan az a hazugság, amit a v0.16-ban kerülni kell.');
@@ -379,8 +403,15 @@ for (const s of m.sorok) {
 }
 gat(rosszMerleg === 0, rosszMerleg + ' MÉRLEG-SORBAN `undefined`/`NaN` VAN.');
 
-// A KIESÉS ága: külön, ELDOBHATÓ világon. Nem a fenti meccset rontjuk el —
-// a `vegallapot` egyetlen ága maradna különben vizsgálatlanul.
+// A DE FACTO KIESÉS ága: külön, ELDOBHATÓ világon. Nem a fenti meccset rontjuk
+// el — a `vegallapot` egyetlen ága maradna különben vizsgálatlanul.
+//
+// ⚠️ MIÉRT MARAD EZ AZ ÁG A v0.17 UTÁN IS. A `gyozelem.js` óta a simnek VAN
+// hivatalos vége — de nem ugyanarra a feltételre. A sim a központ elvesztésére
+// és a feladásra köt véget; itt viszont a mezőket KÖZVETLENÜL nullázzuk ki,
+// `lep()` nélkül, tehát a sim még nem szólalt meg. Pont ezt a rést méri ez a
+// blokk: amíg a sim hallgat, a panel mondhat állást, de HIVATALOSNAK nem
+// adhatja ki. A hivatalos ágat a 7/b vizsgálat járja ki, valódi meccsen.
 {
   const p = meccsSim(szondaKonfig(), { egyseg: 8, munkasMinden: 2, gepiEllenfel: false });
   const s = p.sim;
@@ -388,10 +419,102 @@ gat(rosszMerleg === 0, rosszMerleg + ' MÉRLEG-SORBAN `undefined`/`NaN` VAN.');
   for (let i = 0; i < s.epuletek.db; i++) if (s.epuletek.csapat[i] === 1) s.epuletek.elo[i] = 0;
   const v = vegallapot(s);
   const mm = merleg(new StatisztikaGyujto(s), s, 0);
-  sor('kiesés-ág', v.vege ? 'felismerve' : '⛔ NEM ismerte fel', 'győztes: ' + v.gyoztes + ' · "' + mm.cim + '"');
+  sor('de facto kiesés', v.vege ? 'felismerve' : '⛔ NEM ismerte fel', 'győztes: ' + v.gyoztes + ' · "' + mm.cim + '"');
   gat(v.vege === true && v.gyoztes === 0, 'A TELJES KIESÉST NEM ISMERI FEL A VÉGÁLLAPOT.');
   gat(mm.cim === 'Győzelem', 'KIESETT ELLENFÉLNÉL SEM ÍR GYŐZELMET A MÉRLEG.', 'cím: ' + mm.cim);
-  gat(v.hivatalos === false, 'A KIESÉS-OLVASAT HIVATALOSNAK ADJA KI MAGÁT.');
+  gat(s.gyozelem.vege === false, 'A SIM KIMONDTA A VÉGET, PEDIG NEM IS LÉPETT.',
+    'a mezőket közvetlenül írtuk át — `lep()` nélkül a `gyozelem` nem szólalhat meg');
+  gat(v.hivatalos === false, 'A SIM HALLGAT, A PANEL MÉGIS HIVATALOSNAK MONDJA A KIESÉST.');
+}
+
+// ══ 7/b. A HIVATALOS VÉG ═══════════════════════════════════════════════════
+//
+// ── MIÉRT KELLETT EZ A VIZSGÁLAT (v0.17) ──────────────────────────────────
+// A szonda eddig azt őrizte, hogy a mérleg SOHA ne hirdessen eredményt — és ez
+// helyes volt, amíg a sim nem ismert győzelmi feltételt. A `gyozelem.js`
+// landolásával viszont a gát fél igazsággá vált: a „nem hazudik győzelmet"
+// mellé kell a párja, hogy „ki is mondja, amikor tényleg vége". A kettő közül
+// a MÁSODIK a drágább hiba: egy panel, ami a megnyert meccs végén is csak
+// „Állás: te vezetsz"-t ír, pontosan az élményt veszi el, amiért a v0.17
+// egyáltalán megszületett — és a determinizmus-kapu elvből vak rá, mert a
+// semmittevés is tökéletesen reprodukálható.
+//
+// Ezért itt VALÓDI meccs fut, ami TÉNYLEG véget ér, mindkét hivatalos úton
+// (feladás és a központ elvesztése), és a mérleget a győztes ÉS a vesztes
+// szemszögéből is megnézzük. A szám, ami elárulja, hogy csinál is valamit:
+// `veg.hivatalos === true` és a `vegeTick`, amit a sim adott.
+cim('7/b. VIZSGÁLAT — a HIVATALOS vég (v0.17): a mérleg eredményt hirdet');
+
+/** Egy eldobható meccs, ami a megadott módon ér véget. */
+function vegigJatszott(hogyan) {
+  const p = meccsSim(szondaKonfig(), { egyseg: 8, munkasMinden: 2, gepiEllenfel: false });
+  const s = p.sim;
+  const gy = new StatisztikaGyujto(s);
+  for (let t = 0; t < 60; t++) { s.lep(); gy.mintaz(s); }
+  if (hogyan === 'feladas') {
+    s.parancs({ fajta: 'feladas', csapat: 1 });
+  } else {
+    // A központ elvesztése — a sebzés útján, nem mező-írással: így ugyanaz a
+    // kód dönt, mint egy valódi meccsen.
+    for (let i = 0; i < s.epuletek.db; i++) {
+      if (s.epuletek.csapat[i] === 1 && s.epuletek.tipus[i] === EPULET.KOZPONT) {
+        s.epuletek.sebez(i, 1e9, s);
+      }
+    }
+  }
+  for (let t = 0; t < 60 && !s.gyozelem.vege; t++) { s.lep(); gy.mintaz(s); }
+  return { s, gy };
+}
+
+/** A 7/b mért számai — az ÍTÉLET ebből mondja meg, hogy tényleg csinál valamit. */
+const hivatalosVegek = [];
+
+for (const [hogyan, vartOk, vartOkNev] of [['feladas', VEG_OK.FELADAS, 'feladta a meccset'],
+  ['kozpont', VEG_OK.KOZPONT, 'elvesztette a központját']]) {
+  const { s, gy } = vegigJatszott(hogyan);
+  const o = s.gyozelem.osszesites();
+  const v = vegallapot(s);
+  const nyert = merleg(gy, s, 0);
+  const vesztett = merleg(gy, s, 1);
+
+  sor(hogyan + ' → sim', o.vege ? 'VÉGE @' + o.vegeTick : '⛔ nem ért véget',
+    'győztes: ' + o.gyoztes + ' · ok: „' + o.okNev + '"');
+  sor(hogyan + ' → mérleg', '"' + nyert.cim + '" / "' + vesztett.cim + '"',
+    v.hivatalos ? 'HIVATALOS · ' + v.ok : '⛔ nem hivatalos');
+
+  gat(o.vege === true, 'A MECCS NEM ÉRT VÉGET (' + hogyan + '), PEDIG A SZABÁLY ELSÜLT VOLNA.');
+  gat(o.gyoztes === 0, 'ROSSZ GYŐZTES (' + hogyan + '): ' + o.gyoztes + ', elvárt 0.');
+  gat(o.ok === vartOk, 'ROSSZ VÉG-OK (' + hogyan + '): ' + o.ok + ', elvárt ' + vartOk + '.');
+  gat(o.vegeTick > 0 && o.vegeTick <= s.tick,
+    'A `vegeTick` NEM A MECCS IDEJÉBE ESIK (' + o.vegeTick + ' / ' + s.tick + ').');
+  // EZ A LÉNYEG: a panel a sim szavát HIVATALOSNAK adja tovább.
+  gat(v.hivatalos === true, 'A MÉRLEG NEM HIVATALOSNAK MONDJA A SIM ÁLTAL KIMONDOTT VÉGET ('
+    + hogyan + ').', 'pont ez volt az az „állás-olvasat", amit a v0.17-nek meg kellett szüntetnie');
+  gat(v.vegeTick === o.vegeTick, 'A PANEL MÁS TICKRE TESZI A MECCS VÉGÉT, MINT A SIM.',
+    'panel: ' + v.vegeTick + ' · sim: ' + o.vegeTick);
+  gat(v.ok.includes(vartOkNev), 'A VÉG OKA NEM A SIM `VEG_OK`-JÁBÓL SZÓL.', 'kapott: "' + v.ok + '"');
+  gat(nyert.cim === 'Győzelem', 'A GYŐZTES SZEMSZÖGÉBŐL SEM „Győzelem" A CÍM.', 'cím: ' + nyert.cim);
+  gat(vesztett.cim === 'Vereség', 'A VESZTES SZEMSZÖGÉBŐL SEM „Vereség" A CÍM.', 'cím: ' + vesztett.cim);
+  gat(nyert.hivatalos === true && vesztett.hivatalos === true,
+    'A MÉRLEG `hivatalos` JELZŐJE NEM MEGY ÁT A CÍM MELLETT.');
+
+  hivatalosVegek.push(hogyan + ' → „' + nyert.cim + '" @' + o.vegeTick + ' tick ('
+    + o.okNev + ')');
+}
+
+// ⚠️ SZABOTÁZS-KONTROLL. A fenti nyolc gát akkor is zöld lenne, ha a
+// `vegallapot()` MINDIG `hivatalos: true`-t adna vissza — a semmittevés helyett
+// itt a „mindig igent mond" a néma hibafajta. Ezért ugyanazzal a felállással,
+// de vég NÉLKÜL is megnézzük: ott hamisnak KELL lennie.
+{
+  const p = meccsSim(szondaKonfig(), { egyseg: 8, munkasMinden: 2, gepiEllenfel: false });
+  const s = p.sim;
+  for (let t = 0; t < 120; t++) s.lep();
+  const v = vegallapot(s);
+  sor('szabotázs-kontroll', v.hivatalos ? '⛔ hivatalos' : 'nem hivatalos',
+    'ugyanaz a felállás, csak nem ért véget');
+  gat(v.hivatalos === false && v.vege === false,
+    'A VÉGÁLLAPOT AKKOR IS HIVATALOS VÉGET MOND, HA A MECCS FUT — a 7/b gátjai vakok.');
 }
 
 // ══ 8. GÖRBE-MATEMATIKA ════════════════════════════════════════════════════
@@ -556,7 +679,15 @@ for (const kulcs of ['nyersOsszes', 'percenkent', 'nepesseg', 'katonaiEro', 'epu
 }
 
 console.log('\n  MÉRLEG (' + m.ido + ' játékidő, ' + sim.tick + ' tick)');
-console.log('    ' + m.cim + (m.hivatalos ? '' : '   — állás-olvasat, a sim nem ismer győzelmi feltételt'));
+// ⚠️ EZ A MONDAT A v0.17-IG HAZUDOTT. Addig azt írta ide, hogy „a sim nem ismer
+// győzelmi feltételt" — ez a `gyozelem.js` landolása óta NEM IGAZ. A meccsnek
+// van hivatalos vége, csak ez a konkrét meccs (9 000 tick, két élő központ) nem
+// ért véget. A kettő nem ugyanaz, és a különbséget a jelentésnek is meg kell
+// mutatnia, különben a szonda tanítja meg a következő olvasót arra, ami már
+// nem áll. A hivatalos véget a 7/b vizsgálat járatja ki, valódi meccsen.
+console.log('    ' + m.cim + (m.hivatalos
+  ? '   — HIVATALOS eredmény (a sim mondta ki)'
+  : '   — állás-olvasat: ez a meccs még fut, a sim nem mondott ki véget'));
 
 // ── ÍTÉLET ────────────────────────────────────────────────────────────────
 cim('ÍTÉLET');
@@ -571,6 +702,7 @@ if (bukas === 0) {
     + szuk.mintaTick + ' tick mintaköz)');
   console.log('     begyűjtve: ' + nyers.join(' / ') + ' · elesett: ' + halott.join(' / ')
     + ' · sebzés: ' + seb.join(' / ') + ' · ' + TICK_HZ + ' Hz');
+  console.log('     HIVATALOS VÉG (v0.17): ' + hivatalosVegek.join(' · '));
 } else {
   console.log('  ❌ ' + bukas + ' vizsgálat BUKOTT.');
 }

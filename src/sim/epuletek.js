@@ -20,6 +20,11 @@
 // Az épület alá szorult egységeket NEM toljuk ki: a lerakás előbb ellenőrzi,
 // hogy a hely szabad-e (`lerakhato`). Ez a játékos dolga, nem a simé — és így
 // nincs olyan ág, ami egységet mozgatna parancs nélkül.
+//
+// A v0.18-ban került ide a KORSZAK-KÖVETELMÉNY (`EP_KORSZAK` / `korszakKell`):
+// a szabály eddig csak a felületen létezett, ahol viszont csak az embert
+// kötötte. A hosszú indoklás — és a mért ok, amiért még nincs élesítve — a
+// tábla fölött áll.
 
 export const EPULET = {
   KOZPONT: 0, RAKTAR: 1, FAL: 2, KAPU: 3,
@@ -74,6 +79,103 @@ const EP_HP = [1200, 400, 900, 700, 550, 800, 800, 800, 800, 1000, 700];
  */
 export const EP_NEPESSEG = [10, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0];
 
+// ── KORSZAK-KÖVETELMÉNY AZ ÉPÍTÉSNÉL (v0.18) ─────────────────────────────
+//
+// A követelmény a v0.16-ig CSAK a `src/ui/panel_epites_adat.js`-ben létezett
+// (`EP_KORSZAK_JAVASLAT`), kikapcsolva — jó okkal: a sim `epit` ága nem nézett
+// korszakot, a gépi ellenfél sem, tehát egy UI-oldali gát CSAK AZ EMBERT
+// büntette volna. A szabály viszont a VILÁGRÓL szól, nem a felületről, ezért
+// most itt van, és innen olvassa a parancs-ág, a gép és a panel is.
+//
+// KÉT TÁBLA VAN, ÉS EZ NEM HABOZÁS:
+//
+//   EP_KORSZAK        ami MA ÉL. A `Epuletek` példány ebből indul.
+//   EP_KORSZAK_IGENY  a bizonyított követelmény, amit a panel javasol.
+//
+// ⚠️ MIÉRT NEM AZ IGÉNY AZ ÉLES TÁBLA — MÉRVE, NEM VÉLVE. A követelmény
+// bekapcsolva a gépi ellenfelet nem „visszafogja", hanem MEGSZÜNTETI mint
+// ellenfelet, mert a gép a nyitott lista P1-e szerint egyetlen korszakot sem
+// vált (mérve: 16 000 tick, nehéz szint, 0 váltás) — vagyis a kapu SOHA nem
+// nyílik ki előtte. A `v0.6` körön mérve, ugyanaz a seed, csak a tábla más:
+//
+//                              ma        IGÉNY-nyel
+//   nehéz gép álló épülete     13        4      (elveszett: íjászda, istálló,
+//                                               piac, 2 torony, 1 laktanya)
+//   ebből katonai              5         1
+//   építési parancs → épület   12→12     156→4  (148 elutasítva korszak miatt)
+//   élő munkás a végén         12        0
+//   élő katona a végén         ~20       2
+//
+// A 156-os szám a legbeszédesebb: az `ai.js` `_buildOrder`-e az első meg nem
+// épülő tétel után `return`-öl, tehát ÖRÖKRE beragad az íjászdánál, és a
+// mögötte álló ház, piac, torony sorra sem kerül. A `npm run det` 9. vizsgálata
+// ezt magától kiírta („A 1. GÉP ÉPÍTÉSI PARANCSAI ELVESZNEK: 156 rendelésből 4
+// épület lett"), a 8. pedig a néma piacot és tornyot.
+//
+// A követelmény tehát KÉSZ, de HÁROM dolog kell, mielőtt élesíthető:
+//   1. a gép tudjon korszakot váltani (a feladatlista P1-e, `ai.js`);
+//   2. az `ai.js` `_buildOrder`-e a korszak-tiltott tételen LÉPJEN TOVÁBB
+//      (`continue`), ne `return`-öljön;
+//   3. a `panel_epites_adat.js` `EP_KORSZAK`-ja vegye át ezt a táblát,
+//      különben a gomb engedi, amit a sim eldob — a `p:epites` 6. vizsgálata
+//      pontosan ezt az elcsúszást fogja meg (mérve: 11/11 → 5/11 egyezés).
+//
+// Élesíteni EGY sor: az `EP_KORSZAK` értékei legyenek az `EP_KORSZAK_IGENY`-é.
+// A determinizmus-szonda 15. köre addig is BEKAPCSOLVA járatja az ágat
+// (`epuletek.korszakGat()`), tehát nem elméleti tábla — minden futásban ki van
+// próbálva, és a működés-száma is látszik.
+//
+// ⚠️ MINDKÉT TÁBLA TIZENEGY HOSSZÚ. Egy rövid tábla `undefined`-ot adna az
+// utolsó helyen, abból `korszak < undefined` → `false` → NÉMÁN kikapcsolt gát
+// pont a legdrágább épületre. A hosszt a fájl alján egy őr ellenőrzi.
+
+/** A KÖVETELMÉNY, amit a panel javasol és a szonda bizonyít. */
+export const EP_KORSZAK_IGENY = [
+  0,  // KOZPONT       — sötét kor
+  0,  // RAKTAR        — sötét kor
+  0,  // FAL           — sötét kor
+  1,  // KAPU          — hajnal kora
+  0,  // HAZ           — sötét kor
+  0,  // LAKTANYA      — sötét kor
+  1,  // IJASZDA       — hajnal kora
+  1,  // ISTALLO       — hajnal kora
+  2,  // OSTROMMUHELY  — kristály kora
+  1,  // TORONY        — hajnal kora
+  1,  // PIAC          — hajnal kora
+];
+
+/** AMI MA ÉL: nincs korszak-követelmény. Lásd fent, hogy miért. */
+export const EP_KORSZAK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+// ── ⚠️ HOSSZ-ŐR ───────────────────────────────────────────────────────────
+// Betöltéskor fut le, egyszer. Egy rövid `EPULET`-indexelt tábla `undefined`-ot
+// ad az utolsó helyeken, és abból NÉMÁN elromló ár, méret vagy kikapcsolt gát
+// lesz — ebből a projektben már öt volt (legutóbb a `FIGURA` és a `SUGAR`
+// táblákkal). Inkább hangos hiba az indulásnál.
+{
+  // ⚠️ PÁROK TÖMBJE, NEM OBJEKTUM. Egy `{ EP_AR, EP_HP, … }` szótár kulcs-
+  // bejárást igényelne, azt pedig a `src/sim/` alatt a kiadás-ellenőrző 11.
+  // elvárása tiltja — jó okkal: a kulcs-sorrend motorfüggő tud lenni, és egy
+  // sorrendfüggő ág a legnehezebben megtalálható desync. Itt a sorrend nem
+  // számít (csak dobunk), de a szabály attól szabály, hogy nincs kivétel.
+  const tablak = [
+    ['EPULET_NEV', EPULET_NEV], ['EP_MERET', EP_MERET], ['EP_MAGASSAG', EP_MAGASSAG],
+    ['EP_IDO', EP_IDO], ['EP_AR', EP_AR], ['LERAKO', LERAKO], ['EP_HP', EP_HP],
+    ['EP_NEPESSEG', EP_NEPESSEG], ['EP_KORSZAK', EP_KORSZAK],
+    ['EP_KORSZAK_IGENY', EP_KORSZAK_IGENY],
+  ];
+  const rossz = [];
+  for (let k = 0; k < tablak.length; k++) {
+    if (tablak[k][1].length !== EPULET_NEV.length) {
+      rossz.push(tablak[k][0] + ' (' + tablak[k][1].length + ')');
+    }
+  }
+  if (rossz.length) {
+    throw new Error('epuletek.js: EPULET-indexelt tábla nem ' + EPULET_NEV.length
+      + ' hosszú: ' + rossz.join(', '));
+  }
+}
+
 export class Epuletek {
   /**
    * @param {import('./grid.js').Racs} racs
@@ -126,6 +228,54 @@ export class Epuletek {
     this.lovesHatra = new Int32Array(maxDb);
 
     this.jarhatosagValtozott = false;
+
+    /**
+     * v0.18 MŰKÖDÉS-SZÁM: hány építés futott KORSZAK miatt elutasításba,
+     * csapatonként. A determinizmus-kapu erre vak — egy soha el nem sülő gát
+     * ugyanolyan reprodukálható, mint egy mindig elsülő —, a szondának viszont
+     * ebből látszik, hogy a korszak-követelmény tényleg érvényesül.
+     */
+    this.korszakElutasitva = [0, 0];
+    /**
+     * Az ÉLŐ korszak-követelmény, példányonként. A modul-szintű `EP_KORSZAK`
+     * másolata, nem hivatkozása: így a szonda átállíthatja EGY sim-en anélkül,
+     * hogy a mellette futó másiknak is átírná a szabályait.
+     */
+    this.korszakIgeny = Int32Array.from(EP_KORSZAK);
+  }
+
+  /**
+   * MELYIK KORSZAK KELL ehhez az épülethez (v0.18). Metódus és nem nyers tábla:
+   * a panel-adatréteg és a gépi ellenfél KÉPESSÉG-FELISMERÉSSEL tud rá kérdezni
+   * (`typeof ep.korszakKell === 'function'`), ahogy a képzés-panel a
+   * `Kepzes.korszakIgeny`-re — így a UI nem másolatból él, ami elcsúszhat.
+   */
+  korszakKell(tipus) {
+    const t = tipus | 0;
+    if (t < 0 || t >= this.korszakIgeny.length) return 0;
+    return this.korszakIgeny[t];
+  }
+
+  /**
+   * A KORSZAK-GÁT ÁTÁLLÍTÁSA (v0.18) — a meccs-felállás és a szonda hívja.
+   *
+   * ⚠️ A MECCS ELEJÉN, ÉS UTÁNA SOHA. Ez a világ SZABÁLYA, nem az állapota:
+   * nincs benne az `allapotHash()`-ben és a mentésben sem, tehát ha két gép
+   * menet közben eltérően állítaná, a desync nem itt bukna ki, hanem húsz
+   * másodperccel később, egy meg nem épült tornyon. Ha a gát valaha meccsről
+   * meccsre változó beállítás lesz (kampány, szabály-készlet), akkor a
+   * `Sim.allapotHash()`-be is bele kell venni — ugyanaz a tanulság, mint a
+   * térkép-presetnél (v0.10).
+   *
+   * @param {number[]|Int32Array} tabla `EPULET`-indexelt korszak-igény
+   */
+  korszakGat(tabla) {
+    if (!tabla || tabla.length !== this.korszakIgeny.length) {
+      throw new Error('Epuletek.korszakGat: a tábla ' + (tabla ? tabla.length : '?')
+        + ' hosszú, kell ' + this.korszakIgeny.length);
+    }
+    for (let t = 0; t < tabla.length; t++) this.korszakIgeny[t] = tabla[t] | 0;
+    return this;
   }
 
   /** Kész van-e (áll, és nem építés alatt)? */
@@ -197,6 +347,7 @@ export class Epuletek {
    * halmozódnának, és a pálya lépcsőről lépcsőre zsugorodna.
    */
   nullaz() {
+    this.korszakElutasitva[0] = 0; this.korszakElutasitva[1] = 0;
     for (let i = 0; i < this.db; i++) {
       if (this.elo[i] === 0) continue;   // a rom celláit már felszabadítottuk
       const m = EP_MERET[this.tipus[i]];

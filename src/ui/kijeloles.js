@@ -10,6 +10,13 @@
 // az egységek), és PARANCSOT ad be (`sim.parancs(...)`). Soha nem ír bele.
 // A sim csak index-tömböket lát, és sosem tudja meg, hogy volt-e egérhúzás.
 //
+// ── MIT TART EZ A MODELL (v0.17) ──────────────────────────────────────────
+// Két, egymást kizáró dolgot: EGYSÉG-indexek listáját (`lista`, `benne`) VAGY
+// egyetlen ÉPÜLET-indexet (`epulet`). Az épület a v0.16-ig hiányzott innen, és
+// emiatt a `jeloles_kontur.js` b) ága meg a kijelölés-panel épület-nézete is
+// készen, de holtan állt. A kizárásról a `bevitel.js` gondoskodik — ez a
+// modell csak tárol.
+//
 // ── A KERET-KIJELÖLÉS MATEKJA ─────────────────────────────────────────────
 // A 3D→2D vetítéshez nem `Vector3.project()`-et hívunk egységenként: az 1600
 // egységnyi ideiglenes objektum pont az a szemét, amit a projekt mindenhol
@@ -44,6 +51,27 @@ export class Kijeloles {
     this.lista = [];
     /** Gyors tagsági kérdés a jelölő-rendernek: `benne[i] === 1`. */
     this.benne = new Uint8Array(sim.maxEgyseg);
+
+    /**
+     * A KIJELÖLT ÉPÜLET indexe a `sim.epuletek`-be, vagy -1.
+     *
+     * ── MIÉRT ITT, AMIKOR A PANEL A `bevitel.kijeloltEpulet`-et olvassa ─────
+     * Mert ez a kijelölés MODELLJE, és az épület éppúgy kijelölés, mint az
+     * egység — csak más adat és más panel tartozik hozzá. A `bevitel.js`
+     * `kijeloltEpulet` mezője EZT A MEZŐT olvassa és írja (ott getter/setter),
+     * tehát EGY tárolás van, nem kettő: két külön mező előbb-utóbb elcsúszna,
+     * és a panel meg a 3D-s keret MÁS épületet mutatna.
+     *
+     * A `jeloles_kontur.js` már ma is keresi (a b) ág: `kijeloles.epulet`),
+     * tehát ettől a mezőtől a kijelölt épület ALAPTERÜLETE is kirajzolódik —
+     * ugyanaz a négyzet, amit a sim lezárt.
+     *
+     * ⚠️ Az `urit()` SZÁNDÉKOSAN nem nyúl hozzá. Az egység-kijelölés ürítése és
+     * az épület elengedése két külön döntés; összekötve a csoport-előhívás
+     * (`csoportBetolt`, ami üríteni kezd) egy üres csoportnál magától
+     * eltüntetné az épület-nézetet, és a játékos nem értené, miért.
+     */
+    this.epulet = -1;
 
     /** Ctrl-csoportok: 0..9 → index-tömb. Tömb, nem `Map` — fix, kis méret. */
     this.csoportok = new Array(10);

@@ -41,16 +41,47 @@
 // [`addUpdateRange`], de az képkockánként OBJEKTUMOT foglal — ezért nem
 // használjuk; helyette az ÜRES típusok puffere marad felküldetlen.)
 //
-// ⚠️ Az épületek jele HÁROM szám (`db`, élők száma, hátralévő tickek összege),
-// nem egy. Egyetlen összeg elrejtené a lerombolást: egy elpusztult épület
-// `epulHatra`-ja 0 volt és 0 marad, tehát a v0.3 óta itt maradt egy néma hiba —
-// a rommá lőtt ház a képen ottmaradt. Külön számláló, külön hiba, nincs
-// ütközés.
+// ⚠️ Az épületek jele NÉGY szám (`db`, élők száma, hátralévő tickek összege,
+// állapot-hash), nem egy. Egyetlen összeg elrejtené a lerombolást: egy
+// elpusztult épület `epulHatra`-ja 0 volt és 0 marad, tehát a v0.3 óta itt
+// maradt egy néma hiba — a rommá lőtt ház a képen ottmaradt. Külön számláló,
+// külön hiba, nincs ütközés.
+//
+// ── AZ ÁLLAPOT-CSATORNA RENDES BEKÖTÉSE (v0.17) ───────────────────────────
+// A v0.16/2 bevezette az épület-sérülés és a kapu-állás LÁTVÁNYÁT
+// (`epulet_formak.js` → `epAllapot` példány-attribútum), de az ADAT nem tudott
+// ide jutni: ez a fájl akkor MÁSIK AGENT sávja volt, ezért a puffert egy
+// `Material.onBeforeRender`-be tett kerülőút töltötte fel. Az működött, de a
+// rossz helyen volt: rajzoláskor futott, típusonként újra végigjárta az összes
+// épületet, és egy MÁSODIK, kézzel szinkronban tartott másolatát tartotta ennek
+// a huroknak.
+//
+// Most a példány-hurok viszi tovább a `hp/maxHp`-t és a `nyitva`-t is, ugyanott,
+// ahol a mátrixot és a csapatszínt írja — egy bejárás, egy sorrend, egy igazság.
+// A kerülőút EL IS TŰNT az `epulet_formak.js`-ből: amíg mindkettő élt, ugyanarra
+// a pufferre írtak, és az ilyen ütközés némán romlik el (a későbbi írás győz,
+// tehát csak akkor látszik, ha a két forrás elkülönbözik — például egy előnézet
+// MÁSIK simmel, mert a kerülőút a globális simet oldotta fel, nem a réteget).
+//
+// ⚠️ A SORREND-SZERZŐDÉS: a `t` típus
+// `k`-adik példánya a `t` típus `k`-adik ÉLŐ épülete, `ep`-index szerint
+// növekvő sorrendben. Ez a hurok ÍRJA ezt a sorrendet, tehát ha itt változik,
+// a sérülés rossz épületre kerül. Ne rendezd át.
+//
+// ── ⚠️ AZ ÉPÜLET-KATTINTÁS ITT VAN, ÉS NEM VÉLETLENÜL ─────────────────────
+// Az `epuletTalalat()` (a fájl alján) a `bevitel.epuletKereso` horog
+// render-oldali válasza: megmondja, melyik épületre mutat az egér. Azért EBBEN
+// a fájlban van, mert ez az épületek sávja — itt van leírva, mekkora egy épület
+// és milyen magasra nő. Ami fontos: NEM a kirajzolt hálóra vet sugarat, hanem a
+// sim igazságára (`EP_MERET` alapterület + `epuletMagassag()` keret), ugyanabból
+// az okból, amiért a `talajPont()` sem a terep-hálóra metsz.
 
 import { THREE } from './core3d.js';
 import { NYERS } from '../sim/eroforras.js';
 import { EP_MERET } from '../sim/epuletek.js';
-import { epitEpuletGeometriak, epuletAnyag, epuletMagassag } from './epulet_formak.js';
+import {
+  epitEpuletGeometriak, epuletAnyag, epuletMagassag, serulesFokozat,
+} from './epulet_formak.js';
 
 /** A talaj fölé emelés, hogy a modell ne süllyedjen a terepbe. */
 const ULES = 0.05;
@@ -107,10 +138,22 @@ export class Gazdasag3D {
     this._szin = new THREE.Color();
     /** Fajtánként hány példány volt látható legutóbb — ebből tudjuk, kell-e írni. */
     this._utolsoDb = [-1, -1, -1, -1];
-    /** Az épület-jel HÁROM tagja (lásd a fejlécet). */
+    /** Az épület-jel NÉGY tagja (lásd a fejlécet). */
     this._utolsoEpDb = -1;
     this._utolsoEloDb = -1;
     this._utolsoEpulesJel = -1;
+    /**
+     * A sérülés-fokozatok és a kapu-állások hash-e. KÜLÖN tag, mert egyik
+     * meglévő számban sincs benne: egy ostrom alatt álló központ `db`-je,
+     * `elo`-ja és `epulHatra`-ja is változatlan, tehát a rajzoló a v0.16-ban
+     * SOSEM írta volna újra a puffert — a repedés csak akkor jelent volna meg,
+     * ha közben véletlenül épült vagy dőlt valami.
+     *
+     * ⚠️ A hash a FOKOZATOT hasheli, nem a nyers életerőt. Nyers hp-vel minden
+     * egyes találat teljes puffer-újratöltést kérne (ostrom alatt tickenként),
+     * miközben a képen semmi nem változna a küszöbök között.
+     */
+    this._utolsoAllapotJel = -1;
     /** Típusonkénti író-kurzor — előre lefoglalva, a hurok nem allokál. */
     this._kurzor = new Int32Array(formak.tipus.length);
     /**
@@ -132,6 +175,13 @@ export class Gazdasag3D {
     const adat = new THREE.InstancedBufferAttribute(new Float32Array(maxDb * 4), 4);
     adat.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('csapatAdat', adat);
+    // ÁLLAPOT-PUFFER (x = sérülés-fokozat 0/1/2, y = kapu 0/1). A hossza a
+    // példány-mátrixéval EGYEZIK: a `k`-adik példány `k`-adik állapota, tehát a
+    // két puffert ugyanaz a kurzor indexeli. Rövidebb puffer tartományon kívüli
+    // olvasás lenne a shaderben, hosszabb csak pazarlás.
+    const allapot = new THREE.InstancedBufferAttribute(new Float32Array(maxDb * 2), 2);
+    allapot.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('epAllapot', allapot);
     const halo = new THREE.InstancedMesh(geo, this._epAnyag, maxDb);
     halo.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     halo.count = 0;
@@ -139,7 +189,7 @@ export class Gazdasag3D {
     halo.castShadow = false;
     halo.frustumCulled = false;
     szinter.add(halo);
-    return { halo, adat, tri, elozoDb: 0 };
+    return { halo, adat, allapot, tri, elozoDb: 0 };
   }
 
   _epit(szinter, geo, szin, maxDb, haromszogDb) {
@@ -226,14 +276,23 @@ export class Gazdasag3D {
   /** Az épületek újratöltése — akkor, ha új épült, egy dőlt le, vagy egy készültsége lépett. */
   _epuletekFrissit(sim) {
     const ep = sim.epuletek;
-    // Három szám, három független változás — lásd a fejléc figyelmeztetését.
-    let jel = 0, eloDb = 0;
-    for (let i = 0; i < ep.db; i++) { jel += ep.epulHatra[i]; eloDb += ep.elo[i]; }
+    // Négy szám, négy független változás — lásd a fejléc figyelmeztetését.
+    let jel = 0, eloDb = 0, allJel = 0;
+    for (let i = 0; i < ep.db; i++) {
+      jel += ep.epulHatra[i];
+      eloDb += ep.elo[i];
+      // A halott slot állapota nem számít (nem is rajzoljuk) — a 0 tartja
+      // stabilan a hash-t, hogy egy rom ne indítson újratöltéseket.
+      const fok = ep.elo[i] ? serulesFokozat(ep.hp[i], ep.maxHp[i]) : 0;
+      const ny = ep.elo[i] && ep.nyitva[i] ? 1 : 0;
+      allJel = (Math.imul(allJel, 31) + fok * 3 + ny) | 0;
+    }
     if (ep.db === this._utolsoEpDb && eloDb === this._utolsoEloDb
-      && jel === this._utolsoEpulesJel) return;
+      && jel === this._utolsoEpulesJel && allJel === this._utolsoAllapotJel) return;
     this._utolsoEpDb = ep.db;
     this._utolsoEloDb = eloDb;
     this._utolsoEpulesJel = jel;
+    this._utolsoAllapotJel = allJel;
 
     const racs = sim.racs;
     const kurzor = this._kurzor;
@@ -275,6 +334,15 @@ export class Gazdasag3D {
       r.adat.array[c + 2] = this._szin.b;
       r.adat.array[c + 3] = feny;
 
+      // ── ÁLLAPOT: SÉRÜLÉS ÉS KAPU ────────────────────────────────────
+      // UGYANEZ A `k`, UGYANEZ A HUROK. Ez maga a sorrend-szerződés: a
+      // fokozat pontosan arra az épületre kerül, aminek a mátrixát az imént
+      // írtuk. Egy külön bejárás — bárhol is legyen — csak addig egyezne
+      // ezzel, amíg valaki hozzá nem nyúl az egyikhez.
+      const s = k * 2;
+      r.allapot.array[s] = serulesFokozat(ep.hp[i], ep.maxHp[i]);
+      r.allapot.array[s + 1] = ep.nyitva[i] ? 1 : 0;
+
       // Állvány CSAK az épülő ház köré, TELJES magasságban: így egyszerre
       // látszik, mi épül (a forma) és mennyire van kész (meddig ér benne).
       if (!kesz && avDb < this._maxEp) {
@@ -311,6 +379,10 @@ export class Gazdasag3D {
     if (db > 0 || r.elozoDb > 0) {
       r.halo.instanceMatrix.needsUpdate = true;
       r.adat.needsUpdate = true;
+      // Az ÁLLVÁNY állapot-puffere végig nulla marad (az épülő ház sértetlen,
+      // kapuja nincs) — a feltöltése így is olcsóbb, mint egy külön ág, ami
+      // egyszer majd elfelejtődik.
+      r.allapot.needsUpdate = true;
     }
     r.elozoDb = db;
     r.halo.count = db;
@@ -324,6 +396,7 @@ export class Gazdasag3D {
     this._utolsoEpDb = -1;
     this._utolsoEloDb = -1;
     this._utolsoEpulesJel = -1;
+    this._utolsoAllapotJel = -1;
     // A slotok újraosztódnak (`Epuletek.nullaz()`), tehát a megfigyelt építési
     // idők elévülnek — különben az új épület egy régi ház készültségét örökölné.
     this._epitTeljes.fill(0);
@@ -369,11 +442,31 @@ export class Gazdasag3D {
     return n;
   }
 
-  /** Diagnosztika: melyik típusból hány példány van kirajzolva. */
+  /**
+   * Diagnosztika: melyik típusból hány példány van kirajzolva.
+   *
+   * ⚠️ A `serult` és a `nyitottKapu` NEM dísz. A determinizmus-kapu tanulsága
+   * (`CLAUDE.md`): a semmittevés is tökéletesen reprodukálható, tehát minden új
+   * alrendszerhez kell egy SZÁM, ami elárulja, hogy tényleg csinál is valamit.
+   * Az állapot-csatornánál pont ez az a szám: ha a központot verik és ez marad
+   * nulla, akkor az adat nem jut el a pufferig — akkor is, ha minden más zöld.
+   */
   get statisztika() {
+    let serult = 0, nyitottKapu = 0;
+    for (let t = 0; t < this._epTipus.length; t++) {
+      const r = this._epTipus[t];
+      const a = r.allapot.array;
+      for (let k = 0; k < r.halo.count; k++) {
+        if (a[k * 2] > 0) serult++;
+        if (a[k * 2 + 1] > 0) nyitottKapu++;
+      }
+    }
     const db = [];
     for (let t = 0; t < this._epTipus.length; t++) db.push(this._epTipus[t].halo.count);
-    return { epulet: db, allvany: this._allvany.halo.count, rajzhivas: this.rajzhivas };
+    return {
+      epulet: db, allvany: this._allvany.halo.count, rajzhivas: this.rajzhivas,
+      serult, nyitottKapu,
+    };
   }
 
   bont() {
@@ -389,4 +482,128 @@ export class Gazdasag3D {
     // Az anyag KÖZÖS, tehát pontosan egyszer bontjuk le.
     this._epAnyag.dispose();
   }
+}
+
+// ── ÉPÜLET-KATTINTÁS ───────────────────────────────────────────────────────
+
+/**
+ * A típusok magasság-kerete, EGYSZER kiszámolva.
+ *
+ * ⚠️ `EP_MERET`-BŐL SZÁRMAZIK, NEM KÉZZEL ÍRT LISTA. Ebben a projektben ötször
+ * égett meg egy rövid, `EPULET`-tel indexelt tábla (legutóbb a kijelölő gyűrű
+ * `SUGAR`-ja): a hiányzó elem `undefined`, abból `NaN`, a `NaN` pedig minden
+ * összehasonlításban hamis — a kattintás NÉMÁN nem találná el az új típust. Egy
+ * származtatott tábla nem tud rövid lenni.
+ */
+const EP_KERET = EP_MERET.map((_, t) => epuletMagassag(t));
+
+/** Munka-vektor a vetítéshez — modul-szintű, hogy a kattintás se allokáljon. */
+const _sugarVeg = new THREE.Vector3();
+
+/**
+ * MELYIK ÉPÜLETRE MUTAT AZ EGÉR? — a `bevitel.epuletKereso` render-oldali válasza.
+ *
+ * ── MIÉRT NEM `THREE.Raycaster` A PÉLDÁNY-HÁLÓKRA ─────────────────────────
+ * Ugyanaz az ok, amiért a `talajPont()` sem a terep-hálóra metsz: a kirajzolt
+ * háló nem a világ, hanem a világ EGY ÁBRÁZOLÁSA. Itt konkrétan három baja
+ * volna: (1) az épülő ház példány-mátrixa a KÉSZÜLTSÉGGEL van lelapítva, tehát
+ * a félkész laktanya alig volna eltalálható, miközben az állványa teljes
+ * magasságban ott áll; (2) a `Raycaster` az `InstancedMesh`-ből `intersects`
+ * OBJEKTUMOKAT gyárt, vagyis minden kattintás szemetel; (3) a példány-index
+ * NEM épület-index — vissza kellene fejteni ugyanazt a sorrend-szerződést,
+ * amit ez a fájl ír, csak egy másik helyen, ami előbb-utóbb elcsúszik.
+ *
+ * Ezért a sim IGAZSÁGÁRA vetünk sugarat: az alapterület (`EP_MERET`) és a
+ * magasság-keret (`epuletMagassag`) adta tengely-párhuzamos dobozra. Ez pontosan
+ * az a doboz, ami köré a sziluett épül, és ami köré az ÁLLVÁNY is kerül —
+ * vagyis a kattintható terület és a látható tömeg fedi egymást a félkész
+ * épületen is.
+ *
+ * Találat esetén a LEGKÖZELEBBI épület nyer (a kamerához legközelebbi belépési
+ * pont): ha egy fal takar egy központot, a falat jelöljük ki, ahogy a szem is
+ * azt látja.
+ *
+ * ⚠️ AMI SZÁNDÉKOSAN NINCS BENNE: a hadi köd. Az épület-réteg MA nem szűr ködre
+ * (`TODO.md` P2), tehát minden épület látszik — ha a kattintás szűrne, a játékos
+ * ránézésre ott lévő épületre kattintva „semmit" kapna, ami rosszabb, mint a
+ * mostani állapot. Amikor a réteg megkapja a köd-szűrést, ITT IS ugyanazzal a
+ * szabállyal kell szűrni, egy lépésben.
+ *
+ * ⚠️ Az ÉLET-ellenőrzést a hívó (`bevitel.js`) is elvégzi; itt azért van benne,
+ * mert a rom celláit a sim felszabadítja — egy halott épület doboza olyan
+ * helyet nyelne el, ahol a világ szerint már nincs semmi.
+ *
+ * NULLA allokáció: egy modul-szintű `Vector3` a vetítéshez, a többi nyers
+ * aritmetika. A hurok néhány tucat épületen megy végig, egyetlen kattintáskor.
+ *
+ * @param {import('../sim/sim.js').Sim} sim
+ * @param {THREE.Camera} kamera
+ * @param {number} kepX vászon-képpont
+ * @param {number} kepY vászon-képpont
+ * @param {number} szel a vászon szélessége
+ * @param {number} mag a vászon magassága
+ * @returns {number} épület-index a `sim.epuletek`-be, vagy -1
+ */
+export function epuletTalalat(sim, kamera, kepX, kepY, szel, mag) {
+  if (!sim || !kamera || !sim.epuletek || !sim.racs) return -1;
+  const w = szel || 1, h = mag || 1;
+  const ndcX = (kepX / w) * 2 - 1;
+  const ndcY = -((kepY / h) * 2 - 1);
+
+  kamera.updateMatrixWorld();
+  _sugarVeg.set(ndcX, ndcY, 0.5).unproject(kamera);
+  const ox = kamera.position.x, oy = kamera.position.y, oz = kamera.position.z;
+  let dx = _sugarVeg.x - ox, dy = _sugarVeg.y - oy, dz = _sugarVeg.z - oz;
+  const hossz = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (hossz < 1e-9) return -1;
+  dx /= hossz; dy /= hossz; dz /= hossz;
+
+  const ep = sim.epuletek;
+  const racs = sim.racs;
+  let legjobb = -1, legjobbT = Infinity;
+
+  for (let i = 0; i < ep.db; i++) {
+    if (ep.elo[i] === 0) continue;
+    const t = ep.tipus[i];
+    const fel = EP_MERET[t] * 0.5;
+    const talp = racs.magassagPont(ep.x[i], ep.y[i]) + ULES;
+
+    // SÁV-MÓDSZER (slab): tengelyenként belépési és kilépési paraméter, a
+    // metszetük a doboz. Az `Infinity` itt nem hiba, hanem a „soha nem lép ki"
+    // eset — a tengellyel párhuzamos sugarat külön ág kezeli.
+    let be = 0, ki = Infinity;
+
+    let lo = ep.x[i] - fel, hi = ep.x[i] + fel;
+    if (dx > -1e-9 && dx < 1e-9) { if (ox < lo || ox > hi) continue; } else {
+      let t1 = (lo - ox) / dx, t2 = (hi - ox) / dx;
+      if (t1 > t2) { const cs = t1; t1 = t2; t2 = cs; }
+      if (t1 > be) be = t1;
+      if (t2 < ki) ki = t2;
+      if (be > ki) continue;
+    }
+
+    lo = talp; hi = talp + EP_KERET[t];
+    if (dy > -1e-9 && dy < 1e-9) { if (oy < lo || oy > hi) continue; } else {
+      let t1 = (lo - oy) / dy, t2 = (hi - oy) / dy;
+      if (t1 > t2) { const cs = t1; t1 = t2; t2 = cs; }
+      if (t1 > be) be = t1;
+      if (t2 < ki) ki = t2;
+      if (be > ki) continue;
+    }
+
+    lo = ep.y[i] - fel; hi = ep.y[i] + fel;
+    if (dz > -1e-9 && dz < 1e-9) { if (oz < lo || oz > hi) continue; } else {
+      let t1 = (lo - oz) / dz, t2 = (hi - oz) / dz;
+      if (t1 > t2) { const cs = t1; t1 = t2; t2 = cs; }
+      if (t1 > be) be = t1;
+      if (t2 < ki) ki = t2;
+      if (be > ki) continue;
+    }
+
+    // A kamera MÖGÖTTI doboz nem találat (`ki < 0`); ha a kamera a dobozban
+    // ül, a `be` nulla marad, és az a legközelebbi lehetséges találat.
+    if (ki < 0) continue;
+    if (be < legjobbT) { legjobbT = be; legjobb = i; }
+  }
+  return legjobb;
 }

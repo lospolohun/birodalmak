@@ -48,6 +48,66 @@
 // amihez tapadniuk kéne, viszont egy tick-hez kötött porfelhő 20 Hz-en
 // lépcsőzne. Ezért a `lep(dt)` valós másodpercet kap. Következmény: szüneteltetett
 // simen az utolsó robbanás még leül — ez így helyes.
+//
+// ── A SZILÁRD RÉSZECSKÉT EL KELL TEMETNI (v0.17) ──────────────────────────
+// Az `IZZO` és a `LAGY` csoport a burkológörbe ALFÁJÁN hal el. A `SZILARD`
+// csoportnak nincs alfája — átlátszatlan `MeshLambertMaterial` doboz, lásd az
+// `effekt_harc.js` `szilardAnyag`-ját, ahova az `aAlfa` attribútum nem is megy
+// ki. Vagyis amikor egy törmelék vagy egy rom élettartama lejár, az EGYETLEN
+// képkocka alatt, TELJES fényerővel pattan ki a képből.
+//
+// Ezért a szilárd részecske nem „elhalványul", hanem a föld alá megy — a terep
+// átlátszatlan, a takarás ingyen van:
+//
+//   ROM       a `rom()` a süllyedés-sebességet SZÁMOLJA a saját magasságából,
+//   TORMELEK  a `lep()` az utolsó `ELNYELES_IDO` másodpercben elnyeli.
+//
+// Mérve, a régi `-meret * 0.30 / elet` képlettel (a rom teteje a talaj FÖLÖTT,
+// abban a pillanatban, amikor a rekesz felszabadul):
+//
+//   központ/laktanya/…  +0,764 egység        torony  +1,279 egység
+//   raktár/ház          +0,509 egység        fal     +0,186 egység
+//
+// Egy 3 cellás központnál a régi süllyedés 0,738 volt, a szükséges 1,748 —
+// tehát a rom a kellő mélység 42 %-áig jutott, a toronynál 25 %-áig. EZ a
+// hibajelentés „nem süllyed elég mélyre" tétele.
+//
+// A TÖRMELÉK ennél is rosszabbul állt: nem süllyedt SEMENNYIT. Lefeküdt a
+// `talaj + 0,04` szintre, és onnan tűnt el. 200 sorsolt szilánkon mérve,
+// mindhárom kilövési esetben (épület-omlás, épület-találat, ostromkő) 200/200
+// a talaj FÖLÖTT pattant ki, 0,09 és 0,29 egység közötti magasságban.
+//
+// ── A SZÍNTÉR: A SZILÁRD RECEPTEK sRGB-BEN BESZÉLNEK (v0.17) ──────────────
+// A `three` az `instanceColor`-t a MUNKA-TÉRBEN, tehát LINEÁRISAN szorozza a
+// diffúz színbe (`color_vertex.glsl`: `vColor.xyz *= instanceColor.xyz`) —
+// konverzió nincs sehol. Amit ide beírunk, az lineáris marad.
+//
+// A SZILÁRD csoport viszont ALBEDÓ-t kap: ugyanaz a Lambert-fényút világítja
+// meg, mint az épületet (`gazdasag3d.js` szintén `MeshLambertMaterial` +
+// `toneMapped:false`) és a terepet. Az albedó ebben a projektben MINDENHOL
+// sRGB-ből konvertálva megy be — `epulet_reszek.js` → `setHex(hex,
+// THREE.SRGBColorSpace)`, `terep_paletta.js` → `hexLin()`. A v0.16-os receptek
+// ezt kihagyták, tehát a „0,46-os középszürke kő" nem 0,46 sRGB-ként, hanem
+// 0,46 LINEÁRISKÉNT ment ki. Mérve a `fenyek_ciklus.lambertKimenet()`-tel,
+// 8:30-kor (ez a `tools/kep.mjs` ideje), felfelé néző lapon:
+//
+//   rom, RÉGI (0,46 lineáris)     képernyőn (138, 140, 133)
+//   rom, ÚJ   (0,46 sRGB)         képernyőn ( 89,  90,  79)
+//   ép kőfal  SZIN.KO #8b9199     képernyőn (106, 111, 119)
+//   száraz fű #8b9c68             képernyőn (106, 120,  80)
+//   kavics    #7d7a72             képernyőn ( 95,  93,  88)
+//
+// A ROM tehát VILÁGOSABB volt, mint az ép fal, amiből lett, és világosabb, mint
+// a fű, amire ráomlott. EZ a „túl világos" tétel.
+//
+// ⚠️ A LAPOK (izzó, lágy) színe SZÁNDÉKOSAN marad lineáris, és ez nem
+// feledékenység: az additív villanás FÉNY-hozzájárulás, az alfás por pedig
+// `MeshBasicMaterial`-lal megy ki, tehát közvetlen képernyő-érték — egyik sem
+// albedó, egyikre sem hat fény. Aki mégis hozzájuk nyúl, annak ezt kell tudnia:
+// a `fustGomb()` kommentje „sötét"-et mond, a mai 0,20…0,36 lineáris viszont a
+// képernyőn 124…162, a `nyom()` „sötét foltja" (0,16…0,24) pedig 111…134 —
+// mindkettő VILÁGOSABB a terepnél. Ugyanaz a félreértés, de NEM a törmelék, és
+// a hívási helyek (`effekt_esemeny.js`) hangolásával együtt kell eldönteni.
 
 /** Részecske-fajták. A `FAJTA_CSOPORT` mondja meg, melyik meshbe kerülnek. */
 export const EFAJTA = {
@@ -86,6 +146,31 @@ export const PLAKAT = new Uint8Array([1, 1, 1, 1, 0, 0, 0, 0]);
 export const FEKVO = new Uint8Array([0, 0, 0, 0, 0, 0, 1, 0]);
 
 const G = 17.0;
+
+/**
+ * Ennyi ideig tart a törmelék ELNYELŐDÉSE az élettartama végén (mp).
+ *
+ * Nem szépészet: a szilárd csoportnak nincs alfája (lásd a fejlécet), tehát ez
+ * az egyetlen mód, amivel egy kőszilánk el tud tűnni pattanás nélkül. A
+ * legrövidebb törmelék-élettartam 0,9 mp, tehát ez bőven belefér — és a
+ * `lep()` sebesség-képlete önjavító, vagyis egy még repülő szilánkot is
+ * egyenletesen visz le, nem ugrat.
+ */
+const ELNYELES_IDO = 0.40;
+
+/**
+ * sRGB [0..1] → lineáris. Ugyanaz a képlet, amit a `THREE.Color.setHex(hex,
+ * SRGBColorSpace)` és a `terep_paletta.szrgbLin()` használ — csak `three`
+ * nélkül, mert ez a fájl szándékosan nem ismeri a `three`-t.
+ *
+ * CSAK a szilárd (megvilágított) receptek hívják; a miértje a fejlécben.
+ */
+function szrgbLin(c) {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** Az ostromkő színe. Modul-betöltéskor váltjuk át, nem kövenként. */
+const KO_R = szrgbLin(0.40), KO_G = szrgbLin(0.36), KO_B = szrgbLin(0.31);
 
 /**
  * A méret- és alfa-burkológörbe töréspontja: a részecske az élettartama első
@@ -282,15 +367,28 @@ export class EffektKeszlet {
     return n;
   }
 
-  /** Kő- és fatörmelék, ballisztikusan szét. */
+  /**
+   * Kő- és fatörmelék, ballisztikusan szét.
+   *
+   * ⚠️ A szín sRGB-ben értendő (fejléc). Az alapérték 0,36/0,32/0,28 mint
+   * LINEÁRIS albedó a képernyőn (123, 118, 112)-t adott — világosabb kavicsot,
+   * mint maga a kavics-terep (95, 93, 88). sRGB-ként olvasva (69, 61, 54):
+   * sötét kő- és faszilánk, ami elüt attól, amire ráhullott.
+   */
   tormelekek(db, x, y, z, ero, meret, talaj, r = 0.36, g = 0.32, b = 0.28) {
+    const lr = szrgbLin(r), lg = szrgbLin(g), lb = szrgbLin(b);
     let n = 0;
     for (let k = 0; k < db; k++) {
+      // EGY sorsolás a kezdő- ÉS a végméretre: a kőszilánk merev test, nem
+      // lélegzik. Régen a két méret külön sorsolt ugyanabból a képletből, tehát
+      // egy szilánk az élete alatt akár 0,43-szorosára zsugorodott vagy
+      // 2,3-szeresére nőtt — és az elnyelődés sem tudná, mekkora testet kell
+      // eltemetnie (a `lep()` a `meret0`-ból számol).
+      const m = meret * (0.6 + this._v() * 0.8);
       const i = this.szul(EFAJTA.TORMELEK, x, y, z,
         this._sz(ero), this._v() * ero + ero * 0.35, this._sz(ero),
         0.9 + this._v() * 0.8,
-        meret * (0.6 + this._v() * 0.8), meret * (0.6 + this._v() * 0.8),
-        r, g, b, 1.0, talaj);
+        m, m, lr, lg, lb, 1.0, talaj);
       if (i < 0) break;
       n++;
     }
@@ -301,10 +399,29 @@ export class EffektKeszlet {
    * Az összeomló épület MARADVÁNYA: egy süllyedő, zsugorodó test az épület
    * helyén. Ez az, amitől az épület nem PATTANVA tűnik el — a `gazdasag3d.js`
    * a pusztulás pillanatában leveszi a példányt, ez pedig átveszi a helyét.
+   *
+   * ⚠️ A SÜLLYEDÉS MÉRTÉKE SZÁMÍTOTT, NEM ÍZLÉS. A rom akkor tűnik el
+   * észrevétlenül, ha az élettartama végére a doboz TETEJE a talaj alatt van —
+   * különben pont az a pattanás jön vissza, ami ellen az egész recept szól
+   * (a szilárd csoportnak nincs alfája, lásd a fejlécet). A régi
+   * `-meret * 0.30 / elet` ezt nem az induló magasságból számolta, hanem a
+   * méretből, ezért a magas épületeknél messze alulmaradt: a központ 0,738-at
+   * süllyedt 1,748 helyett, a torony 0,492-t 1,935 helyett.
+   *
+   * @param {number} y a rom KÖZEPE (világ y), a hívó az épület fél-magasságát adja
+   * @param {number} r sRGB [0..1] — a szilárd receptek színtere, lásd a fejlécet
+   * @param {number} talaj a terep magassága a rom alatt
    */
   rom(x, y, z, meret, elet, r, g, b, talaj) {
-    const i = this.szul(EFAJTA.ROM, x, y, z, 0, -meret * 0.30 / elet, 0,
-      elet, meret, meret * 0.55, r, g, b, 1.0, talaj);
+    const vegMeret = meret * 0.55;
+    // Kezdő emelkedés + a végméret fele = ennyivel van a doboz teteje a talaj
+    // fölött a lejáratkor, ha nem süllyedne. A ráhagyás (méret 10 %-a) a
+    // lejtőnek szól: a `talaj` a rom KÖZEPE alatti magasság, a doboz sarka
+    // ennél magasabb terepre is eshet.
+    const sullyed = (y - talaj) + vegMeret * 0.5 + meret * 0.10;
+    const i = this.szul(EFAJTA.ROM, x, y, z, 0, -sullyed / elet, 0,
+      elet, meret, vegMeret,
+      szrgbLin(r), szrgbLin(g), szrgbLin(b), 1.0, talaj);
     if (i >= 0) { this.forg[i] = 0; this.forgS[i] = this._sz(0.35); }
     return i;
   }
@@ -329,8 +446,10 @@ export class EffektKeszlet {
     const vx = (cx - x) / ido;
     const vz = (cz - z) / ido;
     const vy = (cy - y) / ido + 0.5 * G * ido;
+    // A szín sRGB-ből váltva (`KO_*`), különben a repülő kő VILÁGOSABB lenne,
+    // mint a törmelék, amit a becsapódásakor maga után hagy.
     const i = this.szul(EFAJTA.KO, x, y, z, vx, vy, vz, ido,
-      0.42, 0.42, 0.40, 0.36, 0.31, 1.0, cy);
+      0.42, 0.42, KO_R, KO_G, KO_B, 1.0, cy);
     if (i >= 0) this.robban[i] = 1;
     return i;
   }
@@ -369,15 +488,43 @@ export class EffektKeszlet {
       }
 
       const f = this.fajta[i];
-      if (GRAVITALIS[f]) this.vy[i] -= G * dt;
+
+      // ── ELNYELŐDÉS ────────────────────────────────────────────────────────
+      // A törmelék az utolsó `ELNYELES_IDO` másodpercben a talaj alá csúszik.
+      // Ez nem dísz: a szilárd csoportnak nincs alfája, tehát máskülönben
+      // teljes fényerővel, egyetlen képkocka alatt pattanna ki a képből.
+      //
+      // A sebesség a HÁTRALÉVŐ időből jön, ezért ÖNJAVÍTÓ: `v = (cél − y) / el`
+      // mellett `y − cél` az `el`-lel arányosan fogy, vagyis a szilánk
+      // EGYENLETESEN ér a cél-mélységbe pontosan a lejáratkor — akkor is, ha
+      // épp a levegőben volt, amikor az elnyelődés elkezdődött. Egy fix
+      // sebesség ilyenkor a föld fölött hagyná, egy egyszeri „tedd le" pedig
+      // ugratná.
+      //
+      // A cél-mélység a doboz fél-magasságánál (`meret0 * 0.5`) mélyebb: az
+      // Y körüli forgás a függőleges kiterjedést nem változtatja, tehát a
+      // 0,62-es szorzó a TETEJÉT is a terep alá viszi. A fix 0,20 azért van
+      // ráadásul, mert a `talaj` a KELETKEZÉS pontján mért magasság, a szilánk
+      // viszont több egységet is elrepülhet — lejtőn a valódi terep ennyivel
+      // a feltételezett szint fölé kerülhet.
+      const elnyel = f === EFAJTA.TORMELEK && el < ELNYELES_IDO;
+      if (elnyel) {
+        const cel = this.talaj[i] - this.meret0[i] * 0.62 - 0.20;
+        this.vx[i] = 0; this.vz[i] = 0;
+        this.vy[i] = (cel - this.y[i]) / el;
+      } else if (GRAVITALIS[f]) this.vy[i] -= G * dt;
+
       const nx = this.x[i] + this.vx[i] * dt;
       const ny = this.y[i] + this.vy[i] * dt;
       const nz = this.z[i] + this.vz[i] * dt;
       this.x[i] = nx; this.z[i] = nz;
 
-      if (TALAJRA_ESIK[f] && ny <= this.talaj[i] + 0.04) {
+      // Az elnyelődő szilánk NEM tapad a talajhoz — különben a clamp azonnal
+      // visszatolná arra a szintre, ahonnan épp el akar tűnni.
+      if (!elnyel && TALAJRA_ESIK[f] && ny <= this.talaj[i] + 0.04) {
         // Földet ért: kis visszapattanás, majd elfekszik. A törmelék így nem
-        // tűnik el a levegőben, és nem is süllyed a terep alá.
+        // tűnik el a levegőben, és a terepen fekve várja meg az elnyelődését
+        // (azt a fenti ág intézi — CSAK az viheti a talaj alá).
         this.y[i] = this.talaj[i] + 0.04;
         if (f === EFAJTA.KO) {
           // A kő nem pattan: a becsapódás a lényeg, ezért azonnal lejár.

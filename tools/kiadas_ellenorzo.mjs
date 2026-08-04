@@ -320,10 +320,18 @@ const EPULET_TABLAK = [
   ['src/sim/epuletek.js', 'EP_NEPESSEG'],
   ['src/sim/kod.js', 'LATOTAV_EPULET'],
   // A `KEPEZ` rövidebb, és ez ITT tudatos: a torony és a piac nem képez semmit,
-  // és MINDKÉT olvasója (`kepezheti`, `allapot`) `!lista`-val védi magát.
-  // Kemény gátnak hamis riasztás lenne — de némán elhagyni sem szabad, mert egy
-  // 11. helyre kerülő KÉPZŐ épület itt esne csendben ki.
-  ['src/sim/kepzes.js', 'KEPEZ', { lagy: true, miert: 'a torony és a piac nem képez; az olvasók `!lista`-val védettek' }],
+  // és minden olvasója őrrel védi magát. Kemény gátnak hamis riasztás lenne —
+  // de némán elhagyni sem szabad, mert egy 11. helyre kerülő KÉPZŐ épület itt
+  // esne csendben ki.
+  //
+  // ⚠️ A `hossz` NEM KÉNYELEM, HANEM A KIVÉTEL ALÁÍRÁSA. Ha valaki hozzáad egy
+  // sort a táblához, a hossz 10 lesz, és a 39. elvárás megszólal: a bejegyzett
+  // kivétel megváltozott, valaki nézzen rá. Enélkül a „tudatos" jelző örökre
+  // elnyelné a tábla MINDEN jövőbeli változását.
+  ['src/sim/kepzes.js', 'KEPEZ', {
+    lagy: true, hossz: 9,
+    miert: 'a torony és a piac nem képez; az olvasók őrrel védettek',
+  }],
 ];
 
 const CIV_TABLAK = [
@@ -900,9 +908,100 @@ elvar('minden EPULET-indexelt tábla az épülettípusok számával egyezik', ()
     + (lagyak.length ? '  (' + lagyak.length + ' tudatos kivétel — lásd lent)' : ''));
 });
 
+/**
+ * Egy rövid tábla ŐR NÉLKÜLI olvasói: `[fájl:sor]` lista.
+ *
+ * ── MIÉRT KELL EZ, HA A HOSSZAT MÁR MÉRJÜK ────────────────────────────────
+ * A 39. elvárás első változata csak ANNYIT mondott, hogy a `KEPEZ` kilenc
+ * hosszú tizenegy helyett — vagyis pontosan ugyanazt, amit a nyilvántartás
+ * `miert` mezője. Az INDOKLÁSÁT („az olvasók `!lista`-val védettek") viszont
+ * SEMMI nem ellenőrizte: ha valaki kiveszi az őrt, a figyelmeztetés szövege
+ * betűre ugyanaz marad, miközben a védettség — az egyetlen ok, amiért a rövid
+ * tábla elfogadható — megszűnt. Egy figyelmeztetés, ami a saját feltételének a
+ * sérülésétől sem változik, nem kapu, hanem felirat.
+ *
+ * ⚠️ HEURISZTIKA, ÉS ITT VÁLLALHATÓ. SORONKÉNT dolgozik: egy sort védettnek
+ * vesz, ha van rajta `TABLA[…] &&` vagy `TABLA[…]?.` alakú olvasás, vagy ha a
+ * sor `const x = TABLA[…]`, és az utána következő néhány sor `x`-re null-őrt
+ * tesz. Egy `TABLA[a] && f(TABLA[b].length)` alakú sort tehát tévesen fogad el
+ * — de ez LÁGY elvárás, és a hamis riasztás itt drágább lenne, mint a
+ * kihagyott ritka eset: két hamis riasztás után senki nem nézi a kimenetet.
+ *
+ * @param {string} nev a tábla neve
+ * @returns {string[]} a védetlen olvasások helyei
+ */
+function ortelenOlvasok(nev) {
+  const OR_UTAN = /^\s*(&&|\?\.)/;
+  const ki = [];
+  const fajlok = [...SIM, ...RENDER, ...UI, ...NET, join(GYOKER, 'src', 'main.js'),
+    ...jsFajlok('src', 'core')];
+  for (const p of fajlok) {
+    if (!existsSync(p)) continue;
+    const sorok = forras(p).kod.split('\n');
+    for (let i = 0; i < sorok.length; i++) {
+      const s = sorok[i];
+      // Csak INDEXELT olvasás érdekel; az import/export csak a nevet említi.
+      const nyit = new RegExp('\\b' + nev + '\\s*\\[', 'g');
+      let talalt = false, vedve = false;
+      for (const m of s.matchAll(nyit)) {
+        talalt = true;
+        // A `[` párja — a `KEPEZ[epuletek.tipus[ep]]` miatt zárójelet párosítunk.
+        let mely = 0, j = m.index + m[0].length - 1;
+        for (; j < s.length; j++) {
+          if (s[j] === '[') mely++;
+          else if (s[j] === ']') { mely--; if (mely === 0) break; }
+        }
+        if (OR_UTAN.test(s.slice(j + 1))) vedve = true;
+      }
+      if (!talalt || vedve) continue;
+      // Értékadás + null-őr a következő sorokban (`const lista = KEPEZ[t];`).
+      const ad = new RegExp('(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*' + nev + '\\s*\\[').exec(s);
+      if (ad) {
+        const v = ad[1].replace(/\$/g, '\\$');
+        const kov = sorok.slice(i + 1, i + 7).join('\n');
+        const or = new RegExp('!\\s*' + v + '\\b|\\b' + v + '\\s*(&&|\\?)|\\b' + v
+          + '\\s*===?\\s*(undefined|null)');
+        if (or.test(kov)) continue;
+      }
+      ki.push(rel(p) + ':' + (i + 1));
+    }
+  }
+  return ki;
+}
+
 elvar('a tudatosan rövid EPULET-táblák védettek maradnak', () => {
-  const { lagyak } = tablaCsoport(EPULET_TABLAK, EPULET_DB, 'EPULET kulcsok');
-  return lagyak.length ? { ok: false, reszletek: lagyak } : jo('nincs kivétel');
+  // ⚠️ LÁGY, mert a rövidség maga TUDATOS — a gát nem azt kéri számon, hogy a
+  // tábla legyen teljes, hanem hogy a kivétel FELTÉTELEI álljanak: a hossz
+  // legyen az, amire a kivételt bejegyeztük, és minden olvasó védje magát.
+  const h = [];
+  const jegyzet = [];
+  for (const [fajl, nev, opt] of EPULET_TABLAK) {
+    if (!opt || !opt.lagy) continue;
+    if (!van(fajl)) { h.push(fajl + ' — nincs ilyen fájl'); continue; }
+    const hossz = tombHossz(forras(join(GYOKER, fajl)).vaz, nev);
+    if (hossz === null) { h.push(fajl + ' → `' + nev + '` — nem található tömb-literál'); continue; }
+
+    if (hossz === EPULET_DB) {
+      // A kivétel megszűnt: a tábla teljes lett. Ez jó hír, de a nyilvántartás
+      // hazudik tőle — ki kell venni belőle, különben örökre „tudatos" marad.
+      h.push(fajl + ' → `' + nev + '` már TELJES (' + hossz + ') — a `lagy: true` '
+        + 'kivétel kivehető a nyilvántartásból');
+      continue;
+    }
+    if (opt.hossz !== undefined && hossz !== opt.hossz) {
+      h.push(fajl + ' → `' + nev + '` hossza ' + hossz + ', a bejegyzett kivétel ' + opt.hossz
+        + ' — a tudatos eltérés MEGVÁLTOZOTT: mi került a tábla végére, és képez-e?');
+    }
+    const ortelen = ortelenOlvasok(nev);
+    for (const o of ortelen) {
+      h.push(o + ' → `' + nev + '[…]` őr NÉLKÜL — a kivétel indoklása („' + opt.miert + '") megdőlt');
+    }
+    if (ortelen.length === 0 && (opt.hossz === undefined || hossz === opt.hossz)) {
+      jegyzet.push(nev + ' ' + hossz + '/' + EPULET_DB + ' — ' + opt.miert);
+    }
+  }
+  return h.length ? { ok: false, reszletek: h }
+    : jo(jegyzet.length ? jegyzet.join(' · ') : 'nincs kivétel');
 }, true);
 
 elvar('az EPULET enum hézagmentes', () => {
@@ -1174,16 +1273,38 @@ elvar('nincs halott fájl a src/ alatt (main.js-ből vagy szondából elérhető
   // ⚠️ LÁGY: a `PLAN.md` maga jelöl be be nem kötött fájlokat (a civ-választó a
   // v0.11-é). A lista mégis kell — egy „kész" alrendszer, amit senki nem
   // importál, a legdrágább fajta önámítás.
+  //
+  // ── ⚠️ AZ ELÉRHETŐSÉG NEM CSAK `from '…'` (v0.17-ben javítva) ───────────
+  // Az első változat kizárólag STATIKUS importokat követett, és ezért HAZUDOTT:
+  // a `panel_technologia.js`-t és a `panel_uzenetek.js`-t halottnak jelentette,
+  // holott a `main.js` mindkettőt felmountolja. A panelek ugyanis nem `import`
+  // sorral jönnek be, hanem `import.meta.glob`-bal, a nevük pedig a
+  // `PANEL_TERV` tábla SZTRINGJEIBEN áll (`'./ui/panel_technologia.js'`). Négy
+  // panel csak véletlenül úszta meg a jelentést: a szondáik szövegében szerepel
+  // a fájlnevük, és a szonda-mentesség kimentette őket.
+  //
+  // Ez a hamis riasztás pontosan a legrosszabb fajta volt: két kész, bekötött,
+  // szondázott alrendszert jelentett halottnak, és aki ezt elhiszi, TÖRÖL.
+  // Ezért a bejárás mostantól a modul-útvonalat is követi, akárhogy írták le:
+  // `from '…'`, `import('…')`, vagy egy relatív `.js` SZTRING egy tábla-sorban.
+  //
+  // ⚠️ AMIT SZÁNDÉKOSAN NEM TESZ: nem bontja ki az `import.meta.glob` mintáit.
+  // A glob attól, hogy BECSOMAGOL egy fájlt, még nem MOUNTOLJA fel — egy
+  // `panel_*.js`, ami nincs benne a `PANEL_TERV`-ben, bekerül a buildbe, és
+  // sosem jelenik meg. A tábla-sor az igazi hivatkozás, tehát az számít; így a
+  // gát a glob mellett is fogja a valóban halott panelt.
   const mind = [...SIM, ...RENDER, ...UI, ...NET, join(GYOKER, 'src', 'main.js'),
     ...jsFajlok('src', 'core')];
+  /** `from '…'` · `import('…')` · relatív `.js` sztring (mount-tábla, dinamikus import). */
+  const HIVATKOZAS = /from\s+'(\.[^']+)'|import\s*\(\s*'(\.[^']+)'\s*\)|'(\.\.?\/[\w.\-/]+\.js)'/g;
   const elert = new Set();
   const sorbanAll = [join(GYOKER, 'src', 'main.js')];
   while (sorbanAll.length) {
     const p = sorbanAll.pop();
     if (elert.has(p) || !existsSync(p)) continue;
     elert.add(p);
-    for (const m of forras(p).kod.matchAll(/from\s+'(\.[^']+)'/g)) {
-      sorbanAll.push(resolve(dirname(p), m[1]));
+    for (const m of forras(p).kod.matchAll(HIVATKOZAS)) {
+      sorbanAll.push(resolve(dirname(p), m[1] || m[2] || m[3]));
     }
   }
   // A szondák dinamikusan importálnak (`join(SIM_DIR, 'sim.js')`), ezért
@@ -1202,28 +1323,44 @@ elvar('nincs halott fájl a src/ alatt (main.js-ből vagy szondából elérhető
 cim('J) BUILD ÉS KIRAKÁS');
 
 elvar('a vite.config.js `base`-e és a PLAN.md kirakási kikötése összeér', () => {
-  // ⚠️ LÁGY, mert KÉT jó megoldás van, és a kettő nem ugyanaz a szöveg. A
-  // `PLAN.md` v0.15-ös szakasza `base: '/aotc/'`-t ír elő; a `vite.config.js`
-  // relatív `'./'`-t használ, ami szintén működik alkönyvtárból — viszont a
-  // kettő ellentmond egymásnak, és a fájl-kommentben szereplő útvonal sem
-  // ugyanaz, mint a tervben. Ez az a fajta eltérés, ami CSAK élesben derül ki
-  // (a `vite preview` gyökérből szolgál ki), tehát ki kell mondani.
+  // ⚠️ LÁGY, mert KÉT jó megoldás van (`'/aotc/'` vagy `'./'`), és a gép nem
+  // tudja megmondani, melyik a helyes — csak azt, hogy a terv és a kód
+  // UGYANAZT mondja-e. Ez az a fajta eltérés, ami helyi `vite preview`-val
+  // SOSEM jön elő (a preview a gyökérből szolgál ki), csak élesben.
+  //
+  // ── MIÉRT `DÖNTÉS:` MARKER, ÉS NEM AZ ELSŐ `base:` A TERVBEN ────────────
+  // Az első változat a `PLAN.md` első `base: '…'` előfordulását vette tervnek.
+  // Ez pontosan addig működött, amíg a terv nem KEZDTE MAGYARÁZNI a döntést:
+  // egy összehasonlító táblázat, ami az elvetett `'/aotc/'`-t is idézi, azonnal
+  // félrevezette volna — és a kapu az elvetett változatot kérte volna számon a
+  // kódon. A terv ezért egy kimondott sorban dönt (`**DÖNTÉS: \`base: '…'\`**`),
+  // és a kapu abból dolgozik. Ha a sor hiányzik, az MAGA a hiba: a v0.15 két
+  // egyformán jó megoldás közül nem választott.
+  //
+  // A `base` és a KIRAKÁSI ÚTVONAL két külön dolog, és a relatív döntés óta már
+  // nem is egyenlők: a cél továbbra is `/aotc/`, a `base` mégis `'./'`. Ezért a
+  // fájl-komment útvonalát a terv DEPLOY-URL-jével vetjük össze, nem a base-zel.
   const vc = forras(join(GYOKER, 'vite.config.js'));
-  const m = /base\s*:\s*'([^']*)'/.exec(vc.kod);
-  const tervUt = (/base:\s*'([^']*)'/.exec(PLAN) || [])[1] || null;
   const h = [];
-  if (!m) {
-    h.push('a vite.config.js-ben nincs `base`, a PLAN.md viszont ' + tervUt + '-t ír elő');
-  } else if (tervUt && m[1] !== tervUt && m[1] !== './') {
-    h.push("vite.config.js base = '" + m[1] + "', a PLAN.md szerint '" + tervUt + "'");
-  } else if (tervUt && m[1] === './') {
-    h.push("vite.config.js base = './' (relatív), a PLAN.md v0.15-ös kikötése viszont '"
-      + tervUt + "' — a kettő közül csak az egyik lehet a terv");
+
+  const m = /base\s*:\s*'([^']*)'/.exec(vc.kod);
+  const dontes = (/DÖNTÉS:\s*`base:\s*'([^']*)'`/.exec(PLAN) || [])[1] || null;
+  if (!dontes) {
+    h.push('a PLAN.md nem mondja ki a döntést — hiányzik a "**DÖNTÉS: `base: \'…\'`**" sor '
+      + 'a v0.15-ös szakaszból');
   }
-  // A fájl kommentjében szereplő cél-útvonal is egyezzen a tervvel.
+  if (!m) {
+    h.push('a vite.config.js-ben nincs `base`');
+  } else if (dontes && m[1] !== dontes) {
+    h.push("vite.config.js base = '" + m[1] + "', a PLAN.md döntése viszont '" + dontes + "'");
+  }
+
+  // A fájl kommentjében szereplő alkönyvtár egyezzen a terv deploy-URL-jével.
+  const deployUt = (/https?:\/\/[\w.-]+(\/[\w-]+)/.exec(PLAN) || [])[1];
   const kommentUt = (/`(\/[\w-]+\/)`/.exec(vc.nyers) || [])[1];
-  if (kommentUt && tervUt && kommentUt !== tervUt) {
-    h.push('a vite.config.js kommentje `' + kommentUt + '`-t mond, a PLAN.md `' + tervUt + '`-t');
+  if (kommentUt && deployUt && kommentUt !== deployUt + '/') {
+    h.push('a vite.config.js kommentje `' + kommentUt + '`-t mond, a PLAN.md deploy-célja `'
+      + deployUt + '/`');
   }
   return rossz(h);
 }, true);
