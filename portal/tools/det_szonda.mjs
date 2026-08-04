@@ -13,6 +13,7 @@
 //   7. SZINTEK — a többszintes állomás minden ága lefut-e, és HASZNÁLJÁK-e
 //   8. GAZDASÁGI DÖNTÉSEK — bérbeadás és nehézségi fokozat
 //   9. CSATORNÁK — vasút, léghajó, űrkapu: megépülnek-e és hoznak-e utast
+//  10. VÉGIGJÁTSZÁS — a hét fejezet végigmegy-e, és él-e a végtelen mód
 //
 // ⚠️ A 6. VIZSGÁLAT NEM DÍSZ. A determinizmus-kapu nem működés-kapu: a
 // semmittevés is tökéletesen reprodukálható. Az AoC-nál a v0.3 mind a hat
@@ -28,7 +29,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
-import { v01Uj, v02Uj, v03Uj, v04Uj } from './forgatokonyv.mjs';
+import { v01Uj, v02Uj, v03Uj, v04Uj, v05Uj } from './forgatokonyv.mjs';
+import { vegtelenCel, rang } from '../src/sim/tortenet.js';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.env.PHT_TICK || 24000);
@@ -337,10 +339,55 @@ cim('9. CSATORNÁK — vasút, léghajó-kikötő, űrkapu');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  10. VÉGIGJÁTSZÁS ÉS VÉGTELEN MÓD
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ EZ A LEGDRÁGÁBB VIZSGÁLAT, és megéri: a végtelen mód a VII. fejezet UTÁN
+// kezdődik, tehát bármilyen rövid forgatókönyv mellett MÉRÉS NÉLKÜL maradna —
+// pedig a győzelem utáni kód az, amiben egy sikeres játékos a legtöbb időt
+// tölti majd.
+//
+// ⚠️ RÖGZÍTETT SEED. A `v05` egy KOMPETENS, de nem optimális gépi játékos:
+// nem minden világban jut el a VII. fejezetig (a mérés szerint négyből
+// kettőben 60 körüli hírnéven ragad, és a fejezet 70-et kér). Ez a szonda nem
+// azt hivatott bizonyítani, hogy a játék mindig megnyerhető — azt az
+// egyensúly-mérés méri (`qa/EGYENSULY.md`) —, hanem azt, hogy a győzelem és a
+// korszakok KÓDJA lefut és determinisztikus.
+
+cim('10. VÉGIGJÁTSZÁS — a hét fejezet és a végtelen korszakok');
+{
+  const L = futas(90210, 70000, false, v05Uj);
+  const M = futas(90210, 70000, false, v05Uj);
+  if (L.zaro === M.zaro) ok('70 000 tick teljes végigjátszással — két futás azonos');
+  else rossz(`a végigjátszás szétcsúszott: ${L.zaro} ≠ ${M.zaro}`);
+
+  const s = L.sim;
+  const t = s.tortenet;
+  info(`nap ${s.nap} · fejezet ${t.fejezet} · állapot ${t.allapot} · korszak ${t.korszak}`);
+  info(`hírnév ${s.hirnev.toFixed(0)} · elégedett távozó ${s.elegedettTavozok} · csúcs ${s.csucsUtas}`);
+
+  if (s.gyoztel) ok(`a hét fejezetes ív teljesítve (${s.gyozelemTick}. tick)`);
+  else rossz('a végigjátszás nem érte el a győzelmet — a végtelen mód mérés nélkül maradt');
+  if (t.allapot === 'vegtelen') ok('a világ NEM állt meg a győzelemmel: végtelen módban fut');
+  else rossz(`a győzelem után nem indult el a végtelen mód (állapot: ${t.allapot})`);
+  if (t.korszak >= 2) ok(`${t.korszak}. korszak — ${rang(t.korszak).nev}`);
+  else rossz(`csak a ${t.korszak}. korszakig jutott — a korszakváltás ága nem futott le`);
+  if (s.korszakSzorzo > 1) ok(`a nyomás korszakonként nő (szorzó ${s.korszakSzorzo.toFixed(2)})`);
+  else rossz('a korszak-szorzó nem nőtt — a végtelen mód nem lesz nehezebb');
+  if (s.jatekVege === null) ok('a győzelem nem állítja meg a szimulációt');
+  else rossz(`a világ megállt: jatekVege = ${s.jatekVege}`);
+
+  // A korszakcél NŐ — enélkül a végtelen mód a második korszaktól ingyen jönne.
+  const c1 = vegtelenCel(1), c5 = vegtelenCel(5);
+  if (c5.utas > c1.utas * 3 && c5.hirnev > c1.hirnev) ok(`a korszakcél emelkedik (${c1.utas} → ${c5.utas} utas, ${c1.hirnev} → ${c5.hirnev} hírnév)`);
+  else rossz('a korszakcél nem emelkedik érdemben');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 
 console.log('');
 if (hiba === 0) {
-  console.log('\x1b[42m\x1b[30m  MIND A KILENC VIZSGÁLAT ZÖLD  \x1b[0m\n');
+  console.log('\x1b[42m\x1b[30m  MIND A TÍZ VIZSGÁLAT ZÖLD  \x1b[0m\n');
   process.exit(0);
 } else {
   console.log(`\x1b[41m\x1b[37m  ${hiba} HIBA  \x1b[0m\n`);

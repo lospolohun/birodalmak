@@ -35,7 +35,7 @@ import { DIMENZIOK, DIMENZIO_INDEX, ujDimenzioAllapot, dimenzioDij, dijVonzero }
 import { DOLGOZOK, DOLGOZO_INDEX, ujDolgozo, dolgozoBer, dolgozoEro } from './dolgozok.js';
 import { TECHNOLOGIAK, tech } from './kutatas.js';
 import { ESEMENYEK } from './esemenyek.js';
-import { FEJEZETEK, ujTortenet } from './tortenet.js';
+import { FEJEZETEK, ujTortenet, vegtelenCel, korszakTerheles, rang } from './tortenet.js';
 import { ALLAPOT, ujUtas, utastIndit, utasLep, elhagySort } from './utas.js';
 
 /** Két esemény között ennyi tick telik el (alsó-felső határ). */
@@ -57,7 +57,17 @@ export class Sim {
     this.rnd = mulberry32(seed);
     this.tick = 0;
     this.nap = 1;
-    this.jatekVege = null;   // null | 'gyozelem' | 'csod'
+    /**
+     * Csak a CSŐD állítja meg a világot. A győzelem nem: a v0.4-ig
+     * megfagyasztotta az állomást, vagyis a jól játszó embertől pont akkor
+     * vette el a játékot, amikor végre minden összeállt.
+     */
+    this.jatekVege = null;   // null | 'csod'
+    /** Teljesítette-e a hét fejezetes ívet. */
+    this.gyoztel = false;
+    this.gyozelemTick = -1;
+    /** A végtelen mód nyomás-szorzója (instabilitás, bérek). */
+    this.korszakSzorzo = 1;
 
     this.racs = new Racs(RACS_SZ, RACS_M, RACS_SZINT);
     this.utkereso = new Utkereso(this.racs);
@@ -746,7 +756,7 @@ export class Sim {
       if (this.tortenetJelzok.has('megerosites')) nov *= 0.75;
       if (this.tortenetJelzok.has('terjeszkedes')) nov *= 1.35;
       if (this.tortenetJelzok.has('mindet_tartom')) nov *= 1.5;
-      nov *= this.nehezseg.instabil;
+      nov *= this.nehezseg.instabil * this.korszakSzorzo;
       d.instabilitas += nov;
       if (d.instabilitas >= INSTABIL_HATAR) { this._kapuOsszeomlas(d); continue; }
 
@@ -1077,6 +1087,7 @@ export class Sim {
   // ── TÖRTÉNET ────────────────────────────────────────────────────────────
   _tortenetLep() {
     const t = this.tortenet;
+    if (t.allapot === 'vegtelen') { this._vegtelenLep(); return; }
     if (t.allapot !== 'fut') return;
     const f = FEJEZETEK[t.fejezet];
     if (!f) return;
@@ -1090,15 +1101,58 @@ export class Sim {
     const t = this.tortenet;
     t.fejezet++;
     t.valtasTick = this.tick;
-    if (t.fejezet >= FEJEZETEK.length) { t.allapot = 'vege'; return; }
+    if (t.fejezet >= FEJEZETEK.length) { this._korszakotIndit(1); return; }
     t.allapot = 'bevezeto';
+  }
+
+  /** A hét fejezet vége — innentől korszakok jönnek. */
+  gyozelem() {
+    if (this.gyoztel) return;
+    this.gyoztel = true;
+    this.gyozelemTick = this.tick;
+  }
+
+  _korszakotIndit(korszak) {
+    const t = this.tortenet;
+    t.allapot = 'vegtelen';
+    t.korszak = korszak;
+    // A korszak SAJÁT számlálóval megy: az elégedett távozók abszolút száma
+    // már ezresekben jár, abból nem látszana a haladás.
+    t.korszakAlap = this.elegedettTavozok;
+    t.valtasTick = this.tick;
+    this.korszakSzorzo = korszakTerheles(korszak);
+    if (korszak > 1) {
+      this.naplo(`${korszak}. korszak — ${rang(korszak).nev}. A hálózat terhelése tovább nőtt.`, 'jo');
+    }
+  }
+
+  /** A végtelen mód haladása 0..1 — a HUD és a szonda is ezt kérdezi. */
+  korszakHalad() {
+    const t = this.tortenet;
+    if (t.allapot !== 'vegtelen') return 0;
+    const cel = vegtelenCel(t.korszak);
+    const utas = this.elegedettTavozok - t.korszakAlap;
+    return Math.min(1, utas / cel.utas);
+  }
+
+  _vegtelenLep() {
+    const t = this.tortenet;
+    const cel = vegtelenCel(t.korszak);
+    const utas = this.elegedettTavozok - t.korszakAlap;
+    if (utas < cel.utas || this.hirnev < cel.hirnev) return;
+    // Teljesítve: jutalom, és a következő korszak MINDIG nehezebb.
+    // Ugyanaz a szabály, mint a célnál: hatvány helyett szorzás (lásd tortenet.js).
+    const jutalom = Math.round(9000 * t.korszak * (1 + (t.korszak - 1) * 0.15));
+    this.bevetel(jutalom, 'korszak-jutalom');
+    this.naplo(`A ${t.korszak}. korszak teljesítve. Jutalom: ${jutalom}.`, 'jo');
+    this._korszakotIndit(t.korszak + 1);
   }
 
   // ── NAPI ELSZÁMOLÁS ─────────────────────────────────────────────────────
   _napiElszamolas() {
     let ber = 0;
     for (let i = 0; i < this.dolgozok.length; i++) ber += dolgozoBer(this.dolgozok[i]);
-    ber = Math.round(ber * this.nehezseg.ber);
+    ber = Math.round(ber * this.nehezseg.ber * this.korszakSzorzo);
     if (ber > 0) this.koltseg(ber, 'bérek');
 
     let reklam = 0;
@@ -1281,6 +1335,12 @@ export class Sim {
   /** Egy épület-példány típusleírója. A UI és a forgatókönyv is ezt kéri. */
   epuletTipusa(ep) { return EPULETEK[ep.tipusIdx]; }
 
+  /** Egy épülettípus alapára — a felület és a forgatókönyvek ebből tervezhetnek. */
+  epuletAra(kod) { const t = epuletTipus(kod); return t ? t.ar : 0; }
+
+  /** Melyik technológia oldja fel az épületet (vagy null). */
+  epuletKutatasa(kod) { const t = epuletTipus(kod); return t ? (t.kutatas || null) : null; }
+
   /** Kikutatható-e most: nincs kész, és minden előfeltétele megvan. */
   kutathato(kod) {
     if (this.keszTechek.has(kod)) return false;
@@ -1379,7 +1439,8 @@ export class Sim {
    */
   ellenorzoOsszeg() {
     const o = new Osszeg();
-    o.be(this.tick).be(this.nap).be(this.rnd.allapot()).be(this.nehezsegIdx);
+    o.be(this.tick).be(this.nap).be(this.rnd.allapot()).be(this.nehezsegIdx)
+      .be(this.gyoztel ? 1 : 0).be(this.tortenet.korszak).be(this.tortenet.korszakAlap);
     o.beF(this.penz).beF(this.hirnev).beF(this.kosz);
     o.be(this.utasSzam).be(this.osszTavozo).be(this.elegedettTavozok).be(this.duhosTavozok);
     o.be(this.energiaIgeny).be(this.energiaTermeles).be(this.aramszunet ? 1 : 0);
@@ -1433,6 +1494,8 @@ export class Sim {
       dolgozo: this.dolgozok.length,
       nyitottKapu: this.nyitottDimenziok().length,
       fejezet: this.tortenet.fejezet,
+      korszak: this.tortenet.korszak,
+      gyoztel: this.gyoztel,
       osszeg: this.ellenorzoOsszeg(),
     };
   }

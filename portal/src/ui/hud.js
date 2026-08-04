@@ -17,7 +17,7 @@
 
 import { el, be, szoveg, szam, savBeallit } from './elemek.js';
 import { JATEK_NEV, VERZIO, SEBESSEGEK, NAP_TICK, RACS_SZINT } from '../mag/config.js';
-import { FEJEZETEK } from '../sim/tortenet.js';
+import { FEJEZETEK, vegtelenCel, rang } from '../sim/tortenet.js';
 
 const SZINEK = ['#ff5d73', '#ffc247', '#63d68a'];
 
@@ -195,17 +195,32 @@ export class Hud {
   }
 
   _fejezetet() {
-    const t = this.sim.tortenet;
-    if (t.allapot === 'vege' || t.fejezet >= FEJEZETEK.length) {
+    const s = this.sim;
+    const t = s.tortenet;
+    // ── VÉGTELEN MÓD ────────────────────────────────────────────────────
+    // A hét fejezet után a kártya nem tűnik el és nem lesz üres gratuláció:
+    // korszakot és rangot mutat, ugyanazzal a haladásjelzővel. A játékosnak
+    // a győzelem után is legyen mit néznie ezen a helyen.
+    if (t.allapot === 'vegtelen') {
+      const r = rang(t.korszak);
+      const cel = vegtelenCel(t.korszak);
+      const utas = s.elegedettTavozok - t.korszakAlap;
+      szoveg(this.fejCim, `${r.ikon} ${t.korszak}. korszak — ${r.nev}`);
+      szoveg(this.fejCel, `${cel.szoveg}  (${utas}/${cel.utas})`);
+      savBeallit(this.fejSav, s.korszakHalad(), SZINEK);
+      this.fejezetDoboz.style.borderLeftColor = s.hirnev >= cel.hirnev ? '#ffd257' : '#ff5d73';
+      return;
+    }
+    if (t.fejezet >= FEJEZETEK.length) {
       szoveg(this.fejCim, '★ Az ív végére értél');
-      szoveg(this.fejCel, 'Az állomás a hálózat közepe. Innentől a te történeted.');
+      szoveg(this.fejCel, 'Az állomás a hálózat közepe.');
       savBeallit(this.fejSav, 1, SZINEK);
       return;
     }
     const f = FEJEZETEK[t.fejezet];
     szoveg(this.fejCim, `${f.ikon} ${f.cim}`);
     szoveg(this.fejCel, f.celSzoveg);
-    savBeallit(this.fejSav, f.halad(this.sim), SZINEK);
+    savBeallit(this.fejSav, f.halad(s), SZINEK);
   }
 
   /** Az új naplósorok buborékként felúsznak, majd eltűnnek. */

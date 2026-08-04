@@ -161,18 +161,83 @@ export const FEJEZETEK = [
     jutalom(s) {
       s.bevetel(15000, 'A trónus adója');
       s.naplo('A Sárkánytrónus áll. A hálózat közepe innentől TE vagy.', 'jo');
-      s.jatekVege = 'gyozelem';
+      s.gyozelem();
     },
   },
 ];
+
+// ══════════════════════════════════════════════════════════════════════════
+//  VÉGTELEN MÓD — ami a VII. fejezet UTÁN jön
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ── MIÉRT NEM ÉR VÉGET A JÁTÉK A GYŐZELEMMEL ──────────────────────────────
+// A v0.4-ig a VII. fejezet befejezése megállította a szimulációt: kijött egy
+// „Nyertél" ablak, és az állomás megfagyott. Ez két dolgot rontott el.
+// Egyrészt a tycoon-játékos a legjobb állomását épp akkor veszíti el, amikor
+// végre minden összeállt. Másrészt — és ez a súlyosabb — a győzelem így
+// BÜNTETÉS lett: aki jól játszott, hamarabb fejezte be a játékot.
+//
+// A megoldás nem „végtelen homokozó": az ugyanaz az üresség lenne, ami ellen
+// az egész történet-ív szól. Helyette KORSZAKOK jönnek: mindegyik ad egy
+// mérhető célt és egy rangot, és mindegyik NEHEZEBB az előzőnél — az
+// instabilitás és a bérek korszakonként nőnek. A cél tehát nem az, hogy
+// örökké lehessen játszani, hanem hogy a játékos maga döntse el, hol áll meg.
+
+/** A rangok a korszakok szerint. Az utolsó ismétlődik, ha valaki nagyon kitart. */
+export const RANGOK = [
+  { korszak: 1, nev: 'Állomásfőnök', ikon: '🎖️' },
+  { korszak: 2, nev: 'Csomópont-igazgató', ikon: '🏅' },
+  { korszak: 3, nev: 'Hálózati felügyelő', ikon: '🎗️' },
+  { korszak: 4, nev: 'A Tanács tagja', ikon: '👑' },
+  { korszak: 5, nev: 'Dimenzióherceg', ikon: '💫' },
+  { korszak: 7, nev: 'A Hálózat Ura', ikon: '🌌' },
+];
+
+export function rang(korszak) {
+  let ki = RANGOK[0];
+  for (const r of RANGOK) if (korszak >= r.korszak) ki = r;
+  return ki;
+}
+
+/**
+ * Egy korszak célja. Két számot kér egyszerre — MENNYISÉGET és MINŐSÉGET —,
+ * mert külön-külön mindkettő kijátszható: a sok utas önmagában jöhet
+ * elhanyagolt állomásra is, a magas hírnév meg egy pici, üres állomáson a
+ * legkönnyebb. Együtt viszont csak úgy teljesíthető, ha az állomás NŐ ÉS
+ * MŰKÖDIK is.
+ *
+ * @param {number} korszak 1-től
+ */
+export function vegtelenCel(korszak) {
+  // ⚠️ NINCS `Math.pow`. Kézenfekvő lett volna `300 * korszak^1.35`, és a
+  // determinizmus-szonda statikus vizsgálata azonnal el is kapta: a hatvány
+  // pontossága motorfüggő, tehát két gépen MÁS korszakcél jönne ki ugyanabból
+  // a mentésből. A négyzetes növekedés ugyanazt a görbét adja szorzásból.
+  const utas = Math.round(300 * korszak * (1 + (korszak - 1) * 0.22));
+  const hirnev = Math.min(88, 62 + korszak * 3);
+  return {
+    utas,
+    hirnev,
+    szoveg: `Szolgálj ki ${utas} elégedett utast ebben a korszakban, és tartsd ${hirnev} fölött a hírnevet.`,
+  };
+}
+
+/** A korszakonként növekvő nyomás. 1. korszak = 1,0; onnan +9 % korszakonként. */
+export function korszakTerheles(korszak) {
+  return 1 + (korszak - 1) * 0.09;
+}
 
 /** A történet változó állapota. */
 export function ujTortenet() {
   return {
     fejezet: 0,
-    /** 'bevezeto' | 'fut' | 'dontes' | 'vege' */
+    /** 'bevezeto' | 'fut' | 'dontes' | 'vegtelen' */
     allapot: 'bevezeto',
     /** Az utolsó fejezetváltás tickje — a UI ebből tudja, hogy újat mutasson. */
     valtasTick: 0,
+    /** Végtelen módban: hányadik korszak (1-től). Előtte 0. */
+    korszak: 0,
+    /** A mostani korszak indulásakor mért elégedett-távozó szám. */
+    korszakAlap: 0,
   };
 }

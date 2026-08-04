@@ -13,7 +13,7 @@
 // újraépülne a DOM, és a gombnyomás pont a csere pillanatában veszne el.
 
 import { el, be, ures, szam } from './elemek.js';
-import { FEJEZETEK } from '../sim/tortenet.js';
+import { FEJEZETEK, rang } from '../sim/tortenet.js';
 import { ESEMENYEK } from '../sim/esemenyek.js';
 
 export class Modalok {
@@ -47,6 +47,10 @@ export class Modalok {
     const t = s.tortenet;
 
     if (s.jatekVege) return this._mutat('vege:' + s.jatekVege, () => this._vege(s.jatekVege), true);
+    // A győzelem EGYSZER jelenik meg, és nem állítja meg a világot: utána a
+    // végtelen korszakok jönnek. A `lezart` halmaz gondoskodik róla, hogy ne
+    // ugorjon fel újra minden képkockában.
+    if (s.gyoztel) return this._mutat('gyozelem', () => this._gyozelem(), true);
     if (t.allapot === 'dontes') return this._mutat('dontes:' + t.fejezet, () => this._dontes(), true);
     if (t.allapot === 'bevezeto' && t.fejezet < FEJEZETEK.length) {
       return this._mutat('bevezeto:' + t.fejezet, () => this._bevezeto(), true);
@@ -139,9 +143,36 @@ export class Modalok {
     be(this.modal, v);
   }
 
+  _gyozelem() {
+    const s = this.sim;
+    be(this.modal,
+      this._fejlec('👑', 'A hét fejezet vége', 'A hálózat közepe'),
+      el('p', 'torzs',
+        'A Sárkánytrónus kapuja áll, és a hírneved átér a dimenziókon. Az állomásod ' +
+        'már nem átszállóhely: a hálózat közepe.'),
+      el('p', 'torzs',
+        'A játék NEM ér véget. Innentől KORSZAKOK jönnek: mindegyik ad egy célt és egy ' +
+        'rangot, és mindegyik nehezebb az előzőnél — az instabilitás és a bérek ' +
+        'korszakonként nőnek. Addig játszol, ameddig bírod.'));
+    const t = el('p', 'torzs');
+    t.innerHTML =
+      `<b>${s.nap}</b> nap · <b>${szam(s.osszTavozo)}</b> utas fordult meg nálad<br>` +
+      `elégedetten: <b style="color:#63d68a">${szam(s.elegedettTavozok)}</b> · ` +
+      `dühösen: <b style="color:#ff5d73">${szam(s.duhosTavozok)}</b><br>` +
+      `hírnév: <b>${s.hirnev.toFixed(0)}</b> · csúcsforgalom: <b>${s.csucsUtas}</b> egyszerre`;
+    be(this.modal, t);
+    const v = el('div', 'valaszok');
+    const g = el('button', 'valasz');
+    be(g, el('b', null, `Tovább — ${rang(1).ikon} ${rang(1).nev}`),
+      el('span', null, 'Kezdődik az 1. korszak. A világ ott folytatódik, ahol abbahagytad.'));
+    g.onclick = () => this._rejt();
+    be(v, g);
+    be(this.modal, v);
+  }
+
   _vege(fajta) {
     const s = this.sim;
-    const gyozelem = fajta === 'gyozelem';
+    const gyozelem = false;   // a győzelem külön ablak, ez már csak a csőd
     be(this.modal,
       this._fejlec(gyozelem ? '👑' : '💸', gyozelem ? 'Az ív vége' : 'Vége', gyozelem ? 'A hálózat közepe' : 'Csőd'),
       el('p', 'torzs', gyozelem

@@ -437,3 +437,157 @@ export function v04Uj() {
     }
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  v0.5 — A VÉGIGJÁTSZÁS (a hét fejezet + a végtelen korszakok)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ MIÉRT KELL EZ: a végtelen mód a VII. fejezet UTÁN kezdődik. Ha nincs
+// olyan forgatókönyv, ami tényleg végigviszi a történetet, akkor a korszakok
+// kódja — a jutalom, a növekvő nyomás, a rangok — soha nem fut le a
+// szondában. Márpedig az az a rész, amit a játékos a legtöbb időt töltve fog
+// használni, ha egyszer eljut odáig.
+//
+// Ez a forgatókönyv egy KOMPETENS játékos: előbb kapacitás, aztán bevétel,
+// aztán terjeszkedés — és mindig van elég személyzet. Nem optimális, csak jó.
+
+/** Prioritásos építési sor: [típus, dx, dy, z]. Sorrendben épül, ha van rá pénz. */
+const V05_TERV = [
+  ['biztonsag', 6, 2, 0], ['wc', 6, 6, 0], ['varo', 2, 10, 0],
+  ['etterem', 14, 6, 0], ['bolt', 6, 10, 0], ['info', 18, 2, 0],
+  ['takarito', 2, 6, 0], ['poggyasz', 15, 10, 0], ['biztonsag', 10, 2, 0],
+  ['karbantarto', 18, 10, 0], ['konyvesbolt', 12, 10, 0], ['bolt', 9, 10, 0],
+  ['etterem', 18, 6, 0], ['vam', 6, 13, 0], ['wc', 10, 6, 0],
+  ['seprupark', 9, 13, 0], ['hoforras', 12, 13, 0], ['jegkamra', 15, 13, 0],
+  ['biztonsag', 14, 2, 0], ['orvos', 18, 13, 0], ['energiamag', 0, 10, 0],
+  // ── MÁSODIK HULLÁM a déli bővítményben ────────────────────────────────
+  // Enélkül a bot a 25. nap után megállt a fejlődésben: milliói voltak, de
+  // 45-ös hírneve, mert a forgalom rég kinőtte a kapacitást. A VII. fejezet
+  // viszont 70 fölötti hírnevet kér — vagyis a „megállok, mert gazdag
+  // vagyok" stratégia a történet felénél megfeneklik. Ez a JÁTÉKRA is igaz.
+  ['vip', 2, 17, 0], ['biztonsag', 6, 17, 0], ['etterem', 14, 17, 0],
+  ['bolt', 22, 17, 0], ['wc', 28, 17, 0], ['info', 6, 20, 0],
+  ['varo', 9, 20, 0], ['biztonsag', 10, 17, 0], ['konyvesbolt', 13, 20, 0],
+  ['etterem', 18, 17, 0], ['poggyasz', 16, 20, 0], ['bolt', 25, 17, 0],
+  ['karbantarto', 20, 20, 0], ['takarito', 24, 20, 0], ['orvos', 27, 20, 0],
+  // ── HARMADIK HULLÁM a nyugati szárnyban ───────────────────────────────
+  // A második hullám után a bot 58-60-as hírnéven ragadt, a VII. fejezet
+  // viszont 70-et kér: négy seedből kettő SOHA nem fejezte be a történetet.
+  // Nem a gazdaság volt a szűk keresztmetszet (milliói voltak), hanem a
+  // kapacitás. Ez a játék egyik alaptétele: a pénz önmagában nem hírnév.
+  ['biztonsag', -10, 2, 0], ['etterem', -10, 6, 0], ['bolt', -6, 6, 0],
+  ['poggyasz', -6, 2, 0], ['wc', -3, 2, 0], ['konyvesbolt', -3, 6, 0],
+  ['biztonsag', -10, 10, 0], ['varo', -6, 10, 0], ['bolt', -3, 10, 0],
+  ['info', -10, 13, 0], ['etterem', -7, 13, 0], ['wc', -3, 13, 0],
+];
+
+/** Kapuhelyek a keleti bővítményben, megnyitási sorrendben. */
+const V05_KAPUK = [[22, 1], [26, 1], [22, 5], [26, 5], [22, 9], [26, 9], [22, 13]];
+
+const V05_KUTATAS = [
+  'gyors_sorok', 'kapu_hangolas', 'fejlett_boltok', 'stabil_kapuk',
+  'energia_halo', 'kristaly_takarek', 'vip_ellatas', 'takaritorobot',
+  'auto_poggyasz', 'gyogyaszat', 'kapu_szkenner', 'teleport_lift',
+  'ido_kotes', 'legendas_kapu',
+];
+
+/**
+ * v0.5 — teljes végigjátszás. Gyárfüggvény, saját állapottal.
+ * @returns {(sim: object, t: number) => void}
+ */
+export function v05Uj() {
+  let tervIdx = 0;
+  let kapuIdx = 0;
+  let utolsoFelvetel = -999;
+  let utolsoEpites = -999;
+  const megtett = new Set();
+  return function v05(sim, t) {
+    const kx = sim.kezdoX, ky = sim.kezdoY;
+
+    // ── TEREP ────────────────────────────────────────────────────────────
+    if (t === 30) sim.parancs({ fajta: 'padlo', x: kx + 22, y: ky, sz: 10, m: 16 });
+    if (t === 2000) sim.parancs({ fajta: 'padlo', x: kx, y: ky + 16, sz: 32, m: 8 });
+    if (t === 6000) sim.parancs({ fajta: 'padlo', x: kx - 10, y: ky, sz: 10, m: 16 });
+
+    // ── A CSARNOK BERENDEZÉSE, PRIORITÁSI SORRENDBEN ─────────────────────
+    // Kétszeres pénzfedezet kell: enélkül a bot mindig nullán állna, és az
+    // első esemény csődbe vinné. Egy jó játékos is tart tartalékot.
+    // ── SZEMÉLYZET ELŐBB, MINT ÉPÍTÉS ────────────────────────────────────
+    // Az első változat fordítva csinálta, és az ELSŐ KÉT HÉTBEN csődbe ment:
+    // 21 épületet húzott fel, mire lett hozzá ember, így minden 15 %-on ment,
+    // a sorok elszabadultak, a hírnév 6-ra esett — és alacsony hírnévvel már
+    // nincs elég forgalom ahhoz, hogy kitermelje a béreket. A tanulság a
+    // JÁTÉKRA is igaz: a személyzet nélküli épület rosszabb, mint a semmi.
+    const hiany = hianyzoSzakma(sim);
+    if (hiany && t - utolsoFelvetel > 30 && sim.penz > 2500) {
+      sim.parancs({ fajta: 'felvesz', tipus: hiany }); utolsoFelvetel = t;
+    }
+
+    // ── ÉPÍTÉS: csak ha minden meglévő épület fel van töltve ─────────────
+    if (t > 3 && !hiany && t - utolsoEpites > 120 && tervIdx < V05_TERV.length) {
+      const [tipus, dx, dy, z] = V05_TERV[tervIdx];
+      const ar = sim.epuletAra ? sim.epuletAra(tipus) : 0;
+      const kut = sim.epuletKutatasa ? sim.epuletKutatasa(tipus) : null;
+      if (kut && !sim.kesz(kut)) {
+        // Még nincs kikutatva (tipikusan a VIP): most kihagyjuk, de a
+        // következő körben újra sorra kerül — nem veszik el a listából.
+        utolsoEpites = t - 100;
+      } else if (sim.penz > ar * 2 + 4000) {
+        sim.parancs({ fajta: 'epit', tipus, x: kx + dx, y: ky + dy, z });
+        tervIdx++; utolsoEpites = t;
+      }
+    }
+    // Karbantartó mérnök akkor is kell, ha az épület még nem áll — a
+    // felvétel a szabad munkahelyre magától beoszt.
+    if (t > 600 && t % 400 === 0 && sim.penz > 12000 && sim.dolgozoSzamTipus('kobold') < 3) {
+      sim.parancs({ fajta: 'felvesz', tipus: 'kobold' });
+    }
+
+    // ── ÁRAM ─────────────────────────────────────────────────────────────
+    if (t > 300 && t % 200 === 0 && sim.aramszunet && sim.penz > 5000) {
+      const n = sim.epuletSzam('energiamag');
+      if (n < 8) sim.parancs({ fajta: 'epit', tipus: 'energiamag', x: kx + 2 + (n - 1) * 3, y: ky + 22 });
+    }
+
+    // ── KAPUK ────────────────────────────────────────────────────────────
+    if (t > 400 && t % 40 === 0 && kapuIdx < V05_KAPUK.length && sim.penz > 12000 && !hiany) {
+      for (let i = 0; i < sim.dimenziok.length; i++) {
+        const d = sim.dimenziok[i];
+        if (!d.felfedezve || d.nyitva || d.lezarva) continue;
+        const h = V05_KAPUK[kapuIdx];
+        sim.parancs({ fajta: 'epit', tipus: 'portal', x: kx + h[0], y: ky + h[1], dim: d.kod });
+        kapuIdx++;
+        break;
+      }
+    }
+
+    // ── KUTATÁS ──────────────────────────────────────────────────────────
+    if (!sim.aktivKutatas && sim.penz > 20000 && !hiany) {
+      for (const kod of V05_KUTATAS) {
+        if (sim.kutathato(kod)) { sim.parancs({ fajta: 'kutat', kod }); break; }
+      }
+    }
+
+    // ── KAPUFEJLESZTÉS: csak bőségből ────────────────────────────────────
+    if (t > 6000 && t % 900 === 0 && sim.penz > 60000) {
+      const l = sim.nyitottKapuk();
+      if (l.length) sim.parancs({ fajta: 'dim_szint', kod: l[0].kod });
+    }
+
+    // ── TÖRTÉNET ─────────────────────────────────────────────────────────
+    if (t % 20 === 0) {
+      if (sim.tortenet.allapot === 'bevezeto') sim.parancs({ fajta: 'fejezet_tovabb' });
+      else if (sim.tortenet.allapot === 'dontes') {
+        // A III. fejezetnél a TERJESZKEDÉS ág kell, mert az nyitja meg a
+        // Parázsmélyt — onnan jönnek a démonok, és az V. fejezet VIP-célja
+        // enélkül csak a ritka sárkány-eseményre támaszkodhatna.
+        sim.parancs({ fajta: 'dontes', valasz: sim.tortenet.fejezet === 2 ? 1 : 0 });
+      }
+      for (let i = 0; i < sim.varakozoValaszok.length; i++) {
+        const e = sim.varakozoValaszok[i];
+        // Egy jó játékos fizet a bajért, ha van miből.
+        sim.parancs({ fajta: 'esemeny_valasz', azon: e.azon, valasz: sim.penz > 25000 ? 0 : 1 });
+      }
+    }
+  };
+}
