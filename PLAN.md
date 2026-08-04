@@ -17,7 +17,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **kész** — lásd alább |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | **kész** — lásd alább |
-| v0.10 | Térkép-presetek, kampány | |
+| v0.10 | Térkép-presetek, kampány | v0.10/1 **kész** — lásd alább |
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
 | v0.13 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | |
@@ -605,6 +605,64 @@ elbukott egyszer: az ÁR és az IDŐ esetén a POZITÍV szám a hátrány.
 
 A választót még senki nem importálja; a főmenübe kötése a v0.11 dolga. Ezért
 `npx vite build` nem is nézi meg — külön lib-bundle-lel lett ellenőrizve.
+
+## A v0.10 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.10/1 | térkép-presetek (6 pálya) | **kész** |
+| v0.10/2 | kampány (küldetések, célok, kiváltók) | nyitott |
+
+**Hat preset, EGY generátor.** A kézenfekvő megvalósítás hat `_general()`
+változat lenne — és pont ez lenne mérgező: a terep-generálás a lockstep
+LEGELSŐ feltétele, és hat kódút azt jelenti, hogy hat helyen lehet elrontani,
+öt helyen pedig észrevétlenül, mert a szonda mindig azt az egyet járatná,
+amelyiket a forgatókönyv beállít. Ezért a preset SZÁMOKAT ad a generátornak,
+nem algoritmust.
+
+Ami állítható: domborzat-kilengés, szárazföld-emelés, peremgerincek, tenger-
+levágás, sziklaküszöb, hóhatár, folyó-sáv, gázlók, és a nyersanyag-fürtök.
+A `SZARAZFOLD` preset `tengerTav: 2.0`-ja jó példa: a feltétel sosem teljesül,
+tehát a „nincs tenger" esethez nem kellett külön elágazás.
+
+⚠️ **Ami szándékosan nincs: SZIGETEK.** A műfaj klasszikus térképe, és épp
+ezért kell kimondani, miért hiányzik: NINCS HAJÓ. Vízzel elválasztott pályán a
+két bázis között nincs járható út, az áramlási mező fél térképnyi elérhetetlen
+cellát számolna végig, a gép pedig örökké „támadásra készülne" úgy, hogy a
+serege el sem indul. Ez nem preset-kérdés, hanem hajó-kérdés.
+
+### A 13. vizsgálat: a preset lehet determinisztikus ÉS játszhatatlan
+
+Két hibafajta ellen véd, és a második a rosszabb:
+
+1. **A preset nem csinál semmit** — hat név, hat leírás, mögötte hatszor
+   ugyanaz a pálya. A gát presetenkénti világ-ujjlenyomat (járhatóság +
+   nyersanyag-eloszlás): 6/6 különböző.
+2. **A preset játszhatatlan pályát ad** — a két bázis között nincs járható út.
+   Ez MINDEN eddigi kapun átmegy: a hash stabil, a számok nem nullák, a meccs
+   mégis eldönthetetlen. A gát elárasztásos elérhetőség-vizsgálat mind a hat
+   preseten. Felhőben senki nem fogja szemmel megnézni ezeket a pályákat —
+   a „csak akkor játszható, ha a szonda látta" itt szó szerint értendő.
+
+A folyóra külön, **kétirányú** gát van: a folyó érje át a pályát (különben tó,
+és a preset leírása hazudik a játékosnak), de legyen rajta gázló (különben
+fal). Mérve: 207 vizes sor a 256-ból, 4 vízblokkban.
+
+⚠️ **A gázló nem lyuk a folyóban, hanem MAGASLAT.** Ha a mélységet egyszerűen
+nem vonnánk le ott, a partvonal ugrana, és a meder széle és a gázló között
+függőleges fal keletkezne — ami a `SZIKLA_LEJTO` küszöbön járhatatlan. A gázló
+pont ott lenne zárva, ahol átjárót kell adnia.
+
+**A preset a mentés és a hash része.** A terepet nem mentjük (a seedből épül),
+és a betöltés eddig a seedet meg a méretet nézte. Presettel ez kevés: ugyanaz a
+seed, ugyanaz a méret, más preset — a betöltött sereg egy másik térkép vizében
+állna. A hashben azért van benne, hogy két gép preset-eltérése a 0. körben
+bukjon ki, ne néhány tick múlva, amikor az első egység másfelé kerüli meg a
+folyót — akkor a desync-jelentés a MOZGÁSRA mutatna, nem a valódi okra.
+
+A négy új gát mind ki lett próbálva szabotázzsal: minden preset a nyílt mezőre
+állítva 6/6 → 1/6 ujjlenyomat; `folyoSzeles: 0` → 196 → 17 vizes sor;
+`gazloDb: 0` → 4 → 1 vízblokk; a nyílt mező amplitúdója 5.0 → 5.2 → elmozdulás.
 
 ## A záró lépcsők (v0.11–v0.13)
 

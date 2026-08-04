@@ -42,6 +42,7 @@ import { Ai, NEHEZSEG } from './ai.js';
 import { Kod } from './kod.js';
 import { Civ, CIV, CIV_NINCS } from './civ.js';
 import { Egyedi } from './egyedi.js';
+import { TERKEP, terkepErvenyes } from './terkep.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -50,20 +51,26 @@ export const TICK_HZ = 20;
 
 export class Sim {
   /**
-   * @param {{seed?:number, n?:number, maxEgyseg?:number}} opciok
+   * @param {{seed?:number, n?:number, maxEgyseg?:number, terkep?:number}} opciok
    */
   constructor(opciok = {}) {
     this.seed = (opciok.seed ?? 20260803) >>> 0;
     this.n = opciok.n ?? 256;
     this.maxEgyseg = opciok.maxEgyseg ?? 2000;
+    /**
+     * A TÉRKÉP-PRESET (v0.10). A terep, a nyersanyag-eloszlás és a
+     * járhatóság ebből ÉS a seedből következik — a mentés ezért mindkettőt
+     * ellenőrzi, a hálózaton pedig mindkettőt egyeztetni kell.
+     */
+    this.terkep = terkepErvenyes(opciok.terkep) ? (opciok.terkep | 0) : TERKEP.NYILT_MEZO;
 
     this.tick = 0;
-    this.racs = new Racs(this.n, this.seed);
+    this.racs = new Racs(this.n, this.seed, this.terkep);
     // ⚠️ A NYERSANYAGOK A MEZŐ-TÁR ELŐTT. Az erdő és a kőfejtő ZÁRJA a celláját,
     // tehát a `racs.jarhato` csak ezután végleges — és az áramlási mezők arra
     // épülnek. Fordított sorrendben az első kiszámolt mező még a nyersanyagok
     // nélküli pályát látná, és a sereg átsétálna az erdőn.
-    this.eroforrasok = new Eroforrasok(this.racs, this.seed);
+    this.eroforrasok = new Eroforrasok(this.racs, this.seed, this.terkep);
     this.mezoTar = new MezoTar(this.racs, 8);
     this.egysegek = new Egysegek(this.maxEgyseg, this.racs, this.mezoTar);
     /** A meccs-RNG. MINDEN véletlen ebből jön, sosem a `Math.random`-ból. */
@@ -1084,6 +1091,13 @@ export class Sim {
     const e = this.egysegek;
     const db = e.db;
     let h = 0x811c9dc5;
+    // ⚠️ A TÉRKÉP-PRESET IS BENNE VAN (v0.10). A terep maga nincs a hashben —
+    // a seedből épül, tehát fölösleges lenne —, de a preset MEGVÁLTOZTATJA a
+    // terepet ugyanabból a seedből. Enélkül két gép, ami más presetet
+    // választott, nem a 0. körben bukna ki, hanem néhány tick múlva, amikor az
+    // első egység másfelé kerüli meg a folyót — és a desync-jelentés a
+    // MOZGÁSRA mutatna, nem a valódi okra. Egy szám, és a hiba megnevezi magát.
+    h = fnvSzam(h, this.terkep);
     h = fnvSzam(h, this.tick);
     h = fnvSzam(h, db);
     h = fnvTomb(h, e.px, db);

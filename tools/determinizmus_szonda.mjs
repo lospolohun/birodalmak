@@ -11,7 +11,7 @@
 // ez a lényege: ha a `src/sim/` node-ban fejen állva is lefut, akkor tényleg
 // nem szivárgott bele render-függőség.
 //
-// ── TIZENKÉT VIZSGÁLAT ────────────────────────────────────────────────────
+// ── TIZENHÁROM VIZSGÁLAT ──────────────────────────────────────────────────
 //   1. STATIKUS  — tiltott hívások keresése a `src/sim/` forrásában
 //   2. FUTÁSI    — két friss `Sim`, azonos seed, 10 000 tick, hash-egyezés
 //   3. KEVERT    — ugyanaz, de a tickek közé IDEGEN munkát ékelünk
@@ -21,6 +21,7 @@
 //   10. MENTÉS   — mentés/betöltés, majd FOLYTATÁS: a hash a formátum leírása
 //   11. LOCKSTEP — két gép közös parancs-soron, késleltetéssel és desynccel
 //   12. CIVEK    — nyolc nép; a záró gát az, hogy civ NÉLKÜL más világ jön ki
+//   13. TÉRKÉPEK — hat preset; mind a hat JÁTSZHATÓ (bázistól bázisig van út)
 //
 // ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
 // reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
@@ -1863,6 +1864,244 @@ if (ketV09.ok) {
 sor('lefutott', ((Date.now() - t12) / 1000).toFixed(1) + ' mp');
 civBukas = bukas - civBukas;
 
+// ════════════════════════════════════════════════════════════════════════════
+// 13) v0.10/1 — TÉRKÉP-PRESETEK
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Hat preset, EGY generátor. A veszély itt nem a desync, hanem két másik:
+//
+//   A) A PRESET NEM CSINÁL SEMMIT. Hat név, hat leírás, és mögötte hatszor
+//      ugyanaz a pálya. Tökéletesen determinisztikus, és a menüben hazugság.
+//   B) A PRESET JÁTSZHATATLAN PÁLYÁT AD. Ez a rosszabb: egy térkép, ahol a két
+//      bázis között nincs járható út, minden kapun átmegy — a hash stabil, a
+//      számok nem nullák —, és a meccs mégis eldönthetetlen. A gépi ellenfél
+//      örökké „támadásra készülne" úgy, hogy a serege el sem indul.
+//
+// Ezért a vizsgálat mind a hat presetet legenerálja, és mindegyikre KIMÉRI a
+// járhatóságot, a nyersanyagokat és azt, hogy a két kezdő bázis egyáltalán
+// eléri-e egymást. A „csak akkor játszható, ha a szonda látta" szabály itt
+// szó szerint értendő: felhőben nincs GPU, ezt a pályát senki nem fogja
+// szemmel megnézni.
+cim('13) v0.10/1 TÉRKÉP-PRESETEK — hat pálya, egy generátor');
+const t13 = Date.now();
+let terkepBukas = bukas;
+{
+  const { Sim } = await import(pathToFileURL(join(SIM_DIR, 'sim.js')).href);
+  const { TERKEP, TERKEP_DB, TERKEP_NEV, terkepBeallitas, terkepErvenyes } = await import(
+    pathToFileURL(join(SIM_DIR, 'terkep.js')).href);
+  const { TEREP } = await import(pathToFileURL(join(SIM_DIR, 'grid.js')).href);
+  const { NYERS } = await import(pathToFileURL(join(SIM_DIR, 'eroforras.js')).href);
+
+  /** Elér-e a 0. bázis az 1.-ig? Elárasztás a `jarhato` rácson. */
+  const bazisElerheto = (s) => {
+    const n = s.n, j = s.racs.jarhato;
+    const rajt = s._jarhatoKozel(Math.round(n * 0.22), Math.round(n * 0.5));
+    const cel = s._jarhatoKozel(Math.round(n * 0.78), Math.round(n * 0.5));
+    if (!rajt || !cel) return { ok: false, resz: 0 };
+    const latott = new Uint8Array(n * n);
+    const sor = new Int32Array(n * n);
+    let f = 0, v = 0, jarDb = 0;
+    for (let i = 0; i < n * n; i++) if (j[i]) jarDb++;
+    const si = (rajt.y | 0) * n + (rajt.x | 0);
+    const ci = (cel.y | 0) * n + (cel.x | 0);
+    sor[v++] = si; latott[si] = 1;
+    let ok = false, elert = 0;
+    while (f < v) {
+      const c = sor[f++]; elert++;
+      if (c === ci) ok = true;
+      const cx = c % n, cy = (c / n) | 0;
+      if (cx + 1 < n) { const i = c + 1; if (!latott[i] && j[i]) { latott[i] = 1; sor[v++] = i; } }
+      if (cx > 0) { const i = c - 1; if (!latott[i] && j[i]) { latott[i] = 1; sor[v++] = i; } }
+      if (cy + 1 < n) { const i = c + n; if (!latott[i] && j[i]) { latott[i] = 1; sor[v++] = i; } }
+      if (cy > 0) { const i = c - n; if (!latott[i] && j[i]) { latott[i] = 1; sor[v++] = i; } }
+    }
+    return { ok, resz: jarDb ? (elert * 100 / jarDb) : 0 };
+  };
+
+  const hashek = new Set();
+  const ujjak = new Set();
+  console.log('  preset            járható%  víz%  szikla%   étel   fa    kő  kristály  bázis');
+  console.log('  ' + '─'.repeat(76));
+  for (let t = 0; t < TERKEP_DB; t++) {
+    const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 200, terkep: t });
+    const n = s.n, cellak = n * n;
+    let jar = 0, viz = 0, szik = 0;
+    for (let i = 0; i < cellak; i++) {
+      if (s.racs.jarhato[i]) jar++;
+      if (s.racs.terep[i] === TEREP.VIZ) viz++;
+      if (s.racs.terep[i] === TEREP.SZIKLA) szik++;
+    }
+    const db = [0, 0, 0, 0];
+    for (let i = 0; i < s.eroforrasok.db; i++) db[s.eroforrasok.fajta[i]]++;
+    const e = bazisElerheto(s);
+    hashek.add(s.allapotHash() >>> 0);
+    ujjak.add(jar + ':' + viz + ':' + szik + ':' + db.join(','));
+
+    console.log('  ' + TERKEP_NEV[t].padEnd(16)
+      + (jar * 100 / cellak).toFixed(1).padStart(8)
+      + (viz * 100 / cellak).toFixed(1).padStart(7)
+      + (szik * 100 / cellak).toFixed(1).padStart(8)
+      + String(db[NYERS.ETEL]).padStart(7) + String(db[NYERS.FA]).padStart(6)
+      + String(db[NYERS.KO]).padStart(6) + String(db[NYERS.KRISTALY]).padStart(9)
+      + (e.ok ? '   elérhető' : '   NEM ÉRI EL'));
+
+    // ── JÁTSZHATÓSÁGI INVARIÁNSOK ────────────────────────────────────
+    if (!e.ok) {
+      console.log('\n  ⛔ A(Z) „' + TERKEP_NEV[t] + '" PÁLYÁN A KÉT BÁZIS KÖZÖTT NINCS JÁRHATÓ ÚT.');
+      console.log('     Minden kapun átmegy — a hash stabil, a számok nem nullák —, és a');
+      console.log('     meccs mégis eldönthetetlen. Ez a preset így nem adható ki.');
+      bukas++;
+    }
+    if (jar * 100 / cellak < 40) {
+      console.log('\n  ⛔ A(Z) „' + TERKEP_NEV[t] + '" PÁLYA ' + (jar * 100 / cellak).toFixed(1)
+        + ' %-A JÁRHATÓ — kevés a manőverhez.');
+      bukas++;
+    }
+    for (let f = 0; f < 4; f++) {
+      if (db[f] === 0) {
+        console.log('\n  ⛔ A(Z) „' + TERKEP_NEV[t] + '" PÁLYÁN NINCS ' + f + '. NYERSANYAG.');
+        console.log('     Négyből egy hiányzó nyersanyag egész épület- és technológia-ágakat');
+        console.log('     tesz elérhetetlenné, a gép pedig örökre arra gyűjtene, ami nincs.');
+        bukas++;
+      }
+    }
+  }
+
+  console.log('');
+  sor('különböző kezdő hash', hashek.size + ' / ' + TERKEP_DB, 'presetenként más világ');
+  sor('különböző világ-ujjlenyomat', ujjak.size + ' / ' + TERKEP_DB,
+    'járhatóság + nyersanyag-eloszlás');
+  if (hashek.size < TERKEP_DB || ujjak.size < TERKEP_DB) {
+    console.log('\n  ⛔ KÉT PRESET UGYANAZT A PÁLYÁT ADJA. Hat név, hat leírás, és mögötte');
+    console.log('     ugyanaz a világ — determinisztikus, és a menüben hazugság. Nézd meg a');
+    console.log('     `terkep.js` paraméter-tábláját és azt, hogy a `grid.js` tényleg a');
+    console.log('     preset számait használja-e a beégetett konstansok helyett.');
+    bukas++;
+  }
+
+  // ── UGYANAZ A SEED + PRESET → BITRE UGYANAZ A PÁLYA ─────────────────
+  // A lockstep LEGELSŐ feltétele, még a parancsok előtt. Két friss példány.
+  let terepEltero = -1;
+  for (let t = 0; t < TERKEP_DB && terepEltero < 0; t++) {
+    const A = new Sim({ seed: SEED, n: 128, maxEgyseg: 50, terkep: t });
+    const B = new Sim({ seed: SEED, n: 128, maxEgyseg: 50, terkep: t });
+    for (let i = 0; i < A.n * A.n; i++) {
+      if (A.racs.jarhato[i] !== B.racs.jarhato[i] || A.racs.terep[i] !== B.racs.terep[i]) {
+        terepEltero = t; break;
+      }
+    }
+    if (A.eroforrasok.db !== B.eroforrasok.db) terepEltero = t;
+  }
+  sor('két friss generálás', terepEltero < 0 ? 'AZONOS' : 'ELTÉR (' + TERKEP_NEV[terepEltero] + ')',
+    'mind a ' + TERKEP_DB + ' preseten');
+  if (terepEltero >= 0) {
+    console.log('\n  ⛔ UGYANAZ A SEED ÉS PRESET KÉT KÜLÖNBÖZŐ PÁLYÁT ADOTT.');
+    console.log('     Ez a lockstep legelső feltétele, a parancsok ELŐTT. Keress');
+    console.log('     `Math.random`-ot vagy modul-szintű állapotot a `grid.js`-ben.');
+    bukas++;
+  }
+
+  // ── A FOLYÓ ÁTÉRI-E A PÁLYÁT, ÉS VAN-E RAJTA GÁZLÓ ──────────────────
+  //
+  // ⚠️ KÉT IRÁNYBAN IS BUKTAT, ÉS EZ A LÉNYEGE. Egy folyó, ami nem éri át a
+  // pályát, csak egy tó — a preset ígérete („aki a gázlót tartja…") hazugság
+  // lenne. Egy folyó gázló nélkül viszont FAL: a fenti elérhetőség-gát ugyan
+  // elkapná, de nem mondaná meg, mi a baj. A két szám együtt megnevezi a hibát.
+  {
+    const s = new Sim({ seed: SEED, n: 256, maxEgyseg: 50, terkep: TERKEP.FOLYAM });
+    const n = s.n;
+    const bal = (n * 0.30) | 0, jobb = (n * 0.70) | 0;
+    let vizesSor = 0, szarazSor = 0, blokk = 0, futo = 0;
+    for (let y = 0; y < n; y++) {
+      let van = false;
+      for (let x = bal; x < jobb; x++) {
+        if (s.racs.terep[y * n + x] === TEREP.VIZ) { van = true; break; }
+      }
+      if (van) { vizesSor++; futo++; } else { szarazSor++; if (futo > 0) { blokk++; futo = 0; } }
+    }
+    if (futo > 0) blokk++;
+    sor('folyó a középső sávban', vizesSor + ' / ' + n + ' sor',
+      'megszakítás: ' + blokk + ' vízblokk · száraz sor: ' + szarazSor);
+    if (vizesSor < n * 0.5) {
+      console.log('\n  ⛔ A FOLYÓ NEM ÉRI ÁT A PÁLYÁT: ' + vizesSor + ' sor a ' + n + '-ből.');
+      console.log('     Ez nem folyam, hanem tó — a preset leírása mást ígér a játékosnak.');
+      bukas++;
+    }
+    if (blokk < 2) {
+      console.log('\n  ⛔ A FOLYÓN NINCS GÁZLÓ: egyetlen összefüggő vízblokk.');
+      console.log('     Fal, nem folyó. Nézd meg a `gazloEmeles()`-t és a `gazloDb`-t.');
+      bukas++;
+    }
+  }
+
+  // ── A NYÍLT MEZŐ A RÉGI SZÁMOKAT VISELI ─────────────────────────────
+  //
+  // Az alapértelmezés a v0.1 óta érvényes pálya, és minden addigi mérés ahhoz
+  // van kötve. Ha a preset-tábla 0. sora elmozdul, a v0.1–v0.9 összes
+  // forgatókönyve MÁS pályán futna — a szonda ettől még zöld lenne, hiszen
+  // mindkét futása ugyanazon az új pályán menne.
+  {
+    const p = terkepBeallitas(TERKEP.NYILT_MEZO);
+    const vart = {
+      amplitudo: 5.0, emeles: 2.4, gerinc: 14.0, peremTav: 0.62, tengerTav: 0.95,
+      sziklaLejto: 0.55, havasSzint: 9.5, folyoSzeles: 0, kristalyFurt: 14,
+    };
+    const rossz = [];
+    for (const k of Object.keys(vart)) if (p[k] !== vart[k]) rossz.push(k);
+    const furt = { etel: [13, 4, 5, 3], fa: [11, 34, 30, 6], ko: [7, 5, 5, 3] };
+    for (const k of Object.keys(furt)) {
+      for (let i = 0; i < 4; i++) if (p[k][i] !== furt[k][i]) { rossz.push(k); break; }
+    }
+    sor('nyílt mező = a v0.1 pálya', rossz.length ? 'ELMOZDULT' : 'változatlan',
+      rossz.length ? 'eltérő mező: ' + rossz.join(', ') : 'mind a 12 szám');
+    if (rossz.length) {
+      console.log('\n  ⛔ AZ ALAPÉRTELMEZETT PRESET SZÁMAI ELMOZDULTAK: ' + rossz.join(', '));
+      console.log('     A v0.1–v0.9 minden forgatókönyve ezen a pályán futott. A szonda');
+      console.log('     ettől még zöld marad — mindkét futása az ÚJ pályán menne —, de a');
+      console.log('     `qa/` mappa mért számai egy csapásra összehasonlíthatatlanná válnak.');
+      bukas++;
+    }
+  }
+
+  // ── A MENTÉS ELUTASÍTJA A MÁS PRESETTEL KÉSZÜLT ÁLLÁST ──────────────
+  // A terepet nem mentjük, tehát ez az EGYETLEN védelem: ugyanaz a seed és
+  // méret, más preset — a betöltött sereg egy másik térkép vizében állna.
+  {
+    const { mentesSzoveg, betoltesSzoveg } = await import(
+      pathToFileURL(join(SIM_DIR, 'mentes.js')).href);
+    const A = new Sim({ seed: SEED, n: 128, maxEgyseg: 50, terkep: TERKEP.FOLYAM });
+    A.szondaFelallas(8, { munkasMinden: 1 });
+    for (let t = 0; t < 200; t++) A.lep();
+    const szoveg = mentesSzoveg(A);
+    const jo = betoltesSzoveg(new Sim({ seed: SEED, n: 128, maxEgyseg: 50, terkep: TERKEP.FOLYAM }), szoveg);
+    const rossz = betoltesSzoveg(new Sim({ seed: SEED, n: 128, maxEgyseg: 50, terkep: TERKEP.HEGYVIDEK }), szoveg);
+    sor('mentés más preseten', (jo.ok ? 'egyezőre elfogadva' : 'EGYEZŐRE ELUTASÍTVA')
+      + ' / ' + (rossz.ok ? 'ELTÉRŐRE IS ELFOGADVA' : 'eltérőre elutasítva'));
+    if (!jo.ok || rossz.ok) {
+      console.log('\n  ⛔ A BETÖLTÉS NEM SZŰRI A TÉRKÉP-PRESETET. A terep nincs a mentésben —');
+      console.log('     a seedből épül —, tehát ez az egyetlen védelem. Enélkül a betöltött');
+      console.log('     sereg egy MÁSIK pálya vizében állna, és a hiba a mozgásra mutatna.');
+      bukas++;
+    }
+  }
+
+  // Érvénytelen preset-index: a nyílt mezőre kell esnie, nem összeomlania.
+  const csunya = new Sim({ seed: SEED, n: 64, maxEgyseg: 10, terkep: 99 });
+  sor('érvénytelen preset (99)', TERKEP_NEV[csunya.terkep],
+    'érvényes-e a 99: ' + terkepErvenyes(99));
+  if (csunya.terkep !== TERKEP.NYILT_MEZO || terkepErvenyes(99)) {
+    console.log('\n  ⛔ AZ ÉRVÉNYTELEN PRESET NEM A NYÍLT MEZŐRE ESIK VISSZA.');
+    bukas++;
+  }
+
+  if (bukas === terkepBukas) {
+    console.log('\n  ✓ Hat preset, hat különböző és mind a hat JÁTSZHATÓ pálya —');
+    console.log('    a két bázis mindegyiken eléri egymást, és mind a négy nyersanyag megvan.');
+  }
+}
+sor('lefutott', ((Date.now() - t13) / 1000).toFixed(1) + ' mp');
+terkepBukas = bukas - terkepBukas;
+
 cim('ÍTÉLET');
 sor('1) statikus', statOk ? 'RENDBEN' : 'BUKOTT');
 sor('2) két futás', ket.ok ? 'RENDBEN' : 'BUKOTT (tick ' + ket.tick + ')');
@@ -1887,6 +2126,7 @@ sor('9) v0.6 AI + v0.7 köd',
 sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('11) v0.8 lockstep', lockstepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('12) v0.9 civ + egyedi egység', civBukas === 0 ? 'RENDBEN' : 'BUKOTT');
+sor('13) v0.10 térkép-presetek', terkepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

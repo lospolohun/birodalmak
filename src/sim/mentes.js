@@ -61,7 +61,7 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 3;   // v0.9: `civ` (2) és `egyedi` (3) blokk
+export const MENTES_VERZIO = 4;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4)
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
@@ -118,6 +118,11 @@ export function mentes(sim) {
     verzio: MENTES_VERZIO,
     seed: sim.seed,
     n: sim.n,
+    // A TÉRKÉP-PRESET (v0.10). A terepet nem mentjük — a seedből épül —, de a
+    // preset ugyanabból a seedből MÁS pályát ad. Enélkül a betöltés két
+    // ellenőrzése (seed, méret) átengedne egy olyan mentést, aminek a serege
+    // egy másik térkép vizében állna.
+    terkep: sim.terkep,
     maxEgyseg: sim.maxEgyseg,
     tick: sim.tick,
     rng: sim.rng.allapot(),
@@ -303,6 +308,9 @@ export function betoltes(sim, m) {
     return { ok: false, hiba: 'más seed: a terep nem egyezne' };
   }
   if ((m.n | 0) !== sim.n) return { ok: false, hiba: 'más pályaméret' };
+  if ((m.terkep | 0) !== sim.terkep) {
+    return { ok: false, hiba: 'más térkép-preset: a terep nem egyezne' };
+  }
 
   sim.tick = m.tick | 0;
   sim.rng.beallit(m.rng | 0);

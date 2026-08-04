@@ -30,6 +30,7 @@
 import { mulberry32 } from './rng.js';
 import { TEREP } from './grid.js';
 import { fxSin, fxCos } from './fx.js';
+import { terkepBeallitas } from './terkep.js';
 
 export const NYERS = { ETEL: 0, FA: 1, KO: 2, KRISTALY: 3 };
 export const NYERS_NEV = ['étel', 'fa', 'kő', 'kristály'];
@@ -51,8 +52,15 @@ export class Eroforrasok {
    * @param {import('./grid.js').Racs} racs
    * @param {number} seed a meccs-seed
    */
-  constructor(racs, seed) {
+  constructor(racs, seed, terkep) {
     this.racs = racs;
+    /**
+     * A fürt-leírások a TÉRKÉP-PRESETBŐL jönnek (v0.10). Ha a hívó nem ad
+     * presetet, a rácsé az irányadó — így egy `Eroforrasok`-példány sosem
+     * kaphat más pályához tartozó nyersanyag-eloszlást, mint amilyen rácsra
+     * rakja. Az erdőség 26 fa-fürtje egy hegyvidéki rácson értelmetlen lenne.
+     */
+    this.terkep = (terkep === undefined ? (racs.terkep | 0) : (terkep | 0));
     const n = racs.n;
     const maxDb = 4096;
 
@@ -121,9 +129,15 @@ export class Eroforrasok {
       }
     };
 
-    furtoz(FURT.ETEL, NYERS.ETEL);
-    furtoz(FURT.FA, NYERS.FA);
-    furtoz(FURT.KO, NYERS.KO);
+    // A preset sorai `[darab, minimum, szórás, sugár]` alakúak — a `FURT`
+    // objektum mezőire képezve. A régi konstans azért maradt a fájlban, mert
+    // ő a NYÍLT MEZŐ sora is egyben: a kettőnek egyeznie kell, és a szonda
+    // 13. vizsgálata ezt ellenőrzi is.
+    const p = terkepBeallitas(this.terkep);
+    const sor = (a) => ({ db: a[0], min: a[1], valt: a[2], sugar: a[3] });
+    furtoz(sor(p.etel), NYERS.ETEL);
+    furtoz(sor(p.fa), NYERS.FA);
+    furtoz(sor(p.ko), NYERS.KO);
   }
 
   _felvesz(cella, fajta) {
