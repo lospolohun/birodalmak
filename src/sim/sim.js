@@ -41,6 +41,7 @@ import { Technologia, TECH, TECH_DB, techEpulete } from './technologia.js';
 import { Ai, NEHEZSEG } from './ai.js';
 import { Kod } from './kod.js';
 import { Civ, CIV, CIV_NINCS } from './civ.js';
+import { Egyedi } from './egyedi.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -124,6 +125,10 @@ export class Sim {
      */
     this.civValasztas = new Int32Array(2).fill(CIV_NINCS);
 
+    // ── v0.9/2: az egyedi egység csapatonkénti adatsora ──────────────────
+    // Egyetlen `TIPUS`, nyolc nép. A számokat ez tartja csapatonként — a
+    // `harc.js` és a `kepzes.js` innen kérdez, ha a típus `TIPUS.EGYEDI`.
+    this.egyedi = new Egyedi(2, this);
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -266,8 +271,11 @@ export class Sim {
     // nulláznánk, a civ csendben elveszne minden újrafelállásnál — és a bónusz
     // a hash-en kívül tűnne el, tehát semmi nem szólna érte.
     this.civ.nullaz();
+    this.egyedi.nullaz();
     for (let cs = 0; cs < this.civValasztas.length; cs++) {
-      if (this.civValasztas[cs] !== CIV_NINCS) this.civ.beallit(cs, this.civValasztas[cs]);
+      if (this.civValasztas[cs] === CIV_NINCS) continue;
+      this.civ.beallit(cs, this.civValasztas[cs]);
+      this.egyedi.beallit(cs, this.civValasztas[cs]);
     }
     this.epuletek.nullaz();
     this.eroforrasok.nullaz();
@@ -1014,6 +1022,9 @@ export class Sim {
     if (csapat < 0 || csapat >= this.civValasztas.length) return;
     this.civValasztas[csapat] = civ;
     this.civ.beallit(csapat, civ);
+    // A kettő SOSEM járhat külön: a bónuszok és az egyedi egység ugyanazé a
+    // népé. Ezért nincs külön `egyediValaszt()` — egy kapu, egy döntés.
+    this.egyedi.beallit(csapat, civ);
   }
 
   /**

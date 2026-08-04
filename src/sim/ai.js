@@ -59,6 +59,18 @@ import { TECH_DB, techEpulete } from './technologia.js';
 import { EGYSEG_AR } from './kepzes.js';
 import { Civ } from './civ.js';
 
+/**
+ * MILYEN SORRENDBEN próbálja a gép a képzést egy épületnél.
+ *
+ * Az EGYEDI egység (v0.9/2) van elöl, és ez az egyetlen ok, amiért a lista
+ * egyáltalán létezik: felfelé számláló ciklussal a nép SAJÁT egysége maradt
+ * volna utoljára, és mivel az első találatnál kilépünk, a gép SOHA nem képezte
+ * volna ki. A réteg tökéletesen determinisztikus lett volna — és halott.
+ * A munkás nincs benne: azt a `_gazdasag` kör rendeli, a központból.
+ */
+const KEPZES_SORREND = [TIPUS.EGYEDI, TIPUS.LANDZSAS, TIPUS.IJASZ,
+  TIPUS.LOVAG, TIPUS.OSTROMGEP];
+
 export const NEHEZSEG = { KONNYU: 0, KOZEPES: 1, NEHEZ: 2 };
 export const NEHEZSEG_NEV = ['könnyű', 'közepes', 'nehéz'];
 
@@ -259,6 +271,9 @@ export class Ai {
      */
     this._ar = [0, 0, 0, 0];
 
+    /** Hány EGYEDI egységet rendelt a gép (v0.9/2) — működés-szám a szondának. */
+    this.egyediDb = new Int32Array(this.csapatDb);
+
     // ── v0.6/3: a gép SAJÁT TUDÁSA és hadműveleti állapota ──────────────
     /** A felfedezett ellenséges bázis, vagy -1 ha még nem tudjuk. */
     this.ismertX = new Int32Array(this.csapatDb).fill(-1);
@@ -311,6 +326,7 @@ export class Ai {
     this.epitDb.fill(0);
     this.kepzesDb.fill(0);
     this.kutatasDb.fill(0);
+    this.egyediDb.fill(0);
     this.ismertX.fill(-1);
     this.ismertY.fill(-1);
     this.felderito.fill(-1);
@@ -559,10 +575,36 @@ export class Ai {
   _buildOrder(cs, bx, by) {
     const sim = this.sim;
     const sor = BUILD_ORDER[this.nehezseg[cs]];
-    for (let k = 0; k < sor.length; k++) {
-      const tipus = sor[k];
-      if (this._epuletDb(cs, tipus) >= EPULET_CEL[tipus]) continue;
-      if (!sim.gazdasag.telik(cs, this._epAr(cs, tipus))) return;   // erre gyűjtünk, nem lépünk tovább
+    // ⚠️ A CIV EGYEDI EGYSÉGÉNEK KÉPZŐ ÉPÜLETE MINDIG BELEFÉR (v0.9/2).
+    // A `BUILD_ORDER` a v0.6 óta rögzített lista, és a nyolc népből NÉGY olyan
+    // épületben képzi az egyedi egységét, ami nincs benne (ostromműhely) vagy
+    // csak a nehéz szinten van (istálló). Mérve: a Hegyi bányász gépe 8000
+    // ticken át NULLA egyedi egységet rendelt, mert az ostromműhely fel sem
+    // épült. A réteg tökéletesen determinisztikus lett volna, és a nyolcból
+    // négy nép jellegzetes egysége sosem lép pályára — pontosan az a hiba,
+    // amire ez a projekt már háromszor ráfizetett.
+    const egyediEp = sim.egyedi.kepzoEpulet(cs);
+    for (let k = 0; k <= sor.length; k++) {
+      // A K === 1 HELY AZ EGYEDI EGYSÉG KÉPZŐJÉÉ: az első laktanya UTÁN,
+      // minden más ELŐTT. A lista végére téve mérhetően SOHA nem került rá
+      // sor — a nehéz szint hét épületet rendel előtte, és 12 000 tick alatt
+      // sem ért a végére. A nép jellegzetes egysége nem lehet a build order
+      // maradéka.
+      const egyediHely = (k === 1 && egyediEp >= 0);
+      const tipus = egyediHely ? egyediEp : sor[k > 1 ? k - 1 : k];
+      if (tipus === undefined || tipus < 0) continue;
+      // Az egyedi egység képzőjéből EGY is elég, akkor is, ha az `EPULET_CEL`
+      // nullát mond rá (az ostromműhelyre mond nullát).
+      const cel = egyediHely ? 1 : EPULET_CEL[tipus];
+      if (this._epuletDb(cs, tipus) >= cel) continue;
+      if (!sim.gazdasag.telik(cs, this._epAr(cs, tipus))) {
+        // ⚠️ AZ EGYEDI KÉPZŐRE NEM GYŰJTÜNK, A TÖBBIRE IGEN. A `return` azt
+        // jelenti: „erre spórolunk, addig semmi mást". Az ostromműhely 250 kő,
+        // és ha a gép arra várna, a laktanyája és a háza is állna — a v0.6
+        // gazdasági köre pont ezt kerüli el a `return`-nel a MAGA listáján.
+        if (egyediHely) continue;
+        return;
+      }
       const el = HELY_ELTOLAS[tipus];
       const hely = this._epitesiHely(tipus, (bx | 0) + el[0], (by | 0) + el[1]);
       if (!hely) continue;
@@ -577,9 +619,20 @@ export class Ai {
     return Civ.arSzazalek(EP_AR[tipus], this.sim.civ.epuletArSzazalek(cs), this._ar);
   }
 
-  /** Egység-ár a csapat civ-szorzójával (v0.9). A puffer újrahasznált. */
+  /**
+   * Egység-ár a csapat civ-szorzójával (v0.9). A puffer újrahasznált.
+   *
+   * ⚠️ A NYERS ÁR A `Kepzes.alapAr()`-BÓL JÖN, NEM AZ `EGYSEG_AR` TÁBLÁBÓL.
+   * Az egyedi egység (v0.9/2) ára csapatfüggő, a tábla 6. sora csak a semleges
+   * érték — és pontosan ez sült el: a Kristálykovács gépe 55 étel „árat" látott
+   * a Kristálypajzsosra a valódi 49 étel + 38 kristály helyett, tehát a
+   * gazdagon álló kristályát sosem költötte el, és a nép saját egysége 12 000
+   * ticken át EGYSZER sem került sorba. A gépnek ugyanazt az árat kell néznie,
+   * amit a parancs levon — ez a v0.9/1 leckéje, most az egyedi egységre.
+   */
   _egysegAr(cs, tipus) {
-    return Civ.arSzazalek(EGYSEG_AR[tipus], this.sim.civ.egysegArSzazalek(cs, tipus), this._ar);
+    return Civ.arSzazalek(this.sim.kepzes.alapAr(cs, tipus),
+      this.sim.civ.egysegArSzazalek(cs, tipus), this._ar);
   }
 
   /**
@@ -632,17 +685,26 @@ export class Ai {
       if (ep.csapat[k] !== cs || !ep.kesz(k)) continue;
       if (ep.tipus[k] === EPULET.KOZPONT) continue;   // az a munkásé
       if (sim.kepzes.sorDb[k] >= SOR_KORLAT) continue;
-      for (let t = 0; t < 5; t++) {
-        if (t === TIPUS.MUNKAS) continue;
-        if (!sim.kepzes.kepezheti(ep.tipus[k], t)) continue;
+      for (let s = 0; s < KEPZES_SORREND.length; s++) {
+        const t = KEPZES_SORREND[s];
+        if (!sim.kepzes.kepezheti(ep.tipus[k], t, cs)) continue;
         // ELŐZETES ÁR-VIZSGÁLAT. A `Kepzes.sorba` úgyis elutasít, ha nem telik,
         // de a vak rendelés zajt csinál: mérve 978 képzési parancsot adott ki a
         // nehéz gép, aminek a túlnyomó része elutasításba futott. A v0.8-ban
         // ezek a parancsok a HÁLÓZATON is átmennének — egy AI, ami másodpercenként
         // tucat halott parancsot küld, ott már nem csak zaj.
-        if (!sim.gazdasag.telik(cs, this._egysegAr(cs, t))) break;
+        if (!sim.gazdasag.telik(cs, this._egysegAr(cs, t))) {
+          // ⚠️ AZ EGYEDI EGYSÉGNÉL `continue`, MINDEN MÁSNÁL `break`. A `break`
+          // azt jelenti: „erre gyűjtünk". Az egyedi egység viszont
+          // SZÁNDÉKOSAN drágább, és ha rá is gyűjtene a gép, a laktanyája
+          // hetekig üresen állna, miközben az olcsó lándzsásra rég tellett
+          // volna. Így viszont csak akkor képzi, amikor tényleg van rá.
+          if (t === TIPUS.EGYEDI) continue;
+          break;
+        }
         sim.parancs({ fajta: 'kepzes', csapat: cs, epulet: k, egyseg: t });
         this.kepzesDb[cs]++;
+        if (t === TIPUS.EGYEDI) this.egyediDb[cs]++;
         break;
       }
     }

@@ -61,7 +61,7 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 2;   // v0.9: a `civ` blokk bekerült
+export const MENTES_VERZIO = 3;   // v0.9: `civ` (2) és `egyedi` (3) blokk
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
@@ -98,6 +98,7 @@ export function mentes(sim) {
   const ai = sim.ai;
   const kd = sim.kod;
   const cv = sim.civ;
+  const eg = sim.egyedi;
 
   // A PARANCS-SOR: csak a JÖVŐBELI tickek érdekesek. A `Map` bejárása itt
   // rendben van — nem a sim állapotát olvassuk belőle sorrendfüggően, hanem
@@ -257,6 +258,20 @@ export function mentes(sim) {
       bonuszDb: Array.from(cv.bonuszDb), elutasitva: Array.from(cv.elutasitva),
     },
 
+    // AZ EGYEDI EGYSÉG ADATSORA (v0.9/2). Ugyanaz az indok, mint a `civ`
+    // blokknál: a profil-tábla a v0.13 hangolásának célpontja, és a mentés
+    // legyen önhordó. A `keszult`/`elutasitva` pedig működés-szám — ha nem
+    // jönne át, a betöltött meccs jelentése hazudna a réteg munkájáról.
+    egyedi: {
+      civ: Array.from(eg.civ), aktiv: Array.from(eg.aktiv),
+      hp: Array.from(eg.hp), sebzes: Array.from(eg.sebzes),
+      tamadas: Array.from(eg.tamadas), pancel: Array.from(eg.pancel),
+      pancelErtek: Array.from(eg.pancelErtek), utem: Array.from(eg.utem),
+      ar: Array.from(eg.ar), ido: Array.from(eg.ido),
+      nep: Array.from(eg.nep), epulet: Array.from(eg.epulet),
+      keszult: Array.from(eg.keszult), elutasitva: Array.from(eg.elutasitva),
+    },
+
     kod: {
       latott: kd.latott.map((t) => Array.from(t)),
       lathato: kd.lathato.map((t) => Array.from(t)),
@@ -402,6 +417,15 @@ export function betoltes(sim, m) {
   be(cv.egysegAr, m.civ.egysegAr); be(cv.egysegIdo, m.civ.egysegIdo);
   be(cv.nepesseg, m.civ.nepesseg);
   be(cv.bonuszDb, m.civ.bonuszDb); be(cv.elutasitva, m.civ.elutasitva);
+
+  const eg = sim.egyedi;
+  be(eg.civ, m.egyedi.civ); be(eg.aktiv, m.egyedi.aktiv);
+  be(eg.hp, m.egyedi.hp); be(eg.sebzes, m.egyedi.sebzes);
+  be(eg.tamadas, m.egyedi.tamadas); be(eg.pancel, m.egyedi.pancel);
+  be(eg.pancelErtek, m.egyedi.pancelErtek); be(eg.utem, m.egyedi.utem);
+  be(eg.ar, m.egyedi.ar); be(eg.ido, m.egyedi.ido);
+  be(eg.nep, m.egyedi.nep); be(eg.epulet, m.egyedi.epulet);
+  be(eg.keszult, m.egyedi.keszult); be(eg.elutasitva, m.egyedi.elutasitva);
 
   const kd = sim.kod;
   for (let cs = 0; cs < kd.csapatDb; cs++) {

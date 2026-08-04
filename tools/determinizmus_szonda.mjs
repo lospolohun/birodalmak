@@ -1590,7 +1590,7 @@ lockstepBukas = bukas - lockstepBukas;
 //      tömbjeikbe, de a VILÁGHOZ nem értek hozzá: a beakasztási pontok
 //      hiányoznak. Ez az egyetlen gát, ami a hiányzó HORGOT fogja meg — a
 //      `civ.js` maga tökéletesen működhet mellette.
-cim('12) v0.9/1 CIVILIZÁCIÓK — nyolc nép, két oldal, ugyanaz a pálya');
+cim('12) v0.9 CIVILIZÁCIÓK ÉS EGYEDI EGYSÉGEK — nyolc nép, két oldal');
 const t12 = Date.now();
 let civBukas = bukas;
 const ketV09 = ketFutas(FORGATOKONYVEK.v09);
@@ -1777,9 +1777,87 @@ if (ketV09.ok) {
     bukas++;
   }
 
+  // ── v0.9/2 — AZ EGYEDI EGYSÉG ──────────────────────────────────────
+  //
+  // Egyetlen `TIPUS`, nyolc nép, csapatfüggő számokkal. A veszély itt nem a
+  // desync, hanem a NÉMASÁG: ha a gép sosem képezi ki, vagy rossz épületben
+  // próbálja, a réteg tökéletesen reprodukálhatóan nem csinál semmit.
+  //
+  // Négy szám, négy külön hibára:
+  //   · a két csapat MÁS egységet kap (`hp`/`sebzes` eltér)
+  //   · a meccsben RENDELT is, KÉSZÜLT is belőle
+  //   · a képző épület civenként MÁS, és rossz épületben ELUTASÍT
+  //   · mind a NYOLC nép sora ép, és mind a nyolcat sorba lehet állítani
+  const e0 = civvel.egyedi.osszesites(0), e1 = civvel.egyedi.osszesites(1);
+  console.log('');
+  sor('egyedi egység', e0.nev + ' / ' + e1.nev,
+    'életerő ' + e0.hp + '·' + e1.hp + ' · sebzés ' + e0.sebzes + '·' + e1.sebzes);
+  sor('rendelt / elkészült', civvel.ai.egyediDb[0] + '→' + e0.keszult
+    + ' / ' + civvel.ai.egyediDb[1] + '→' + e1.keszult,
+    'rossz épületben elutasítva: ' + e0.elutasitva + ' / ' + e1.elutasitva);
+
+  if (e0.hp === e1.hp && e0.sebzes === e1.sebzes && e0.utem === e1.utem) {
+    console.log('\n  ⛔ A KÉT CSAPAT EGYEDI EGYSÉGE SZÁMRA AZONOS: a `beallit()` nem');
+    console.log('     a civ sorát teríti ki, vagy mindkét csapat ugyanazt kapja.');
+    bukas++;
+  }
+  if (civvel.ai.egyediDb[0] + civvel.ai.egyediDb[1] === 0) {
+    console.log('\n  ⛔ EGYIK GÉP SEM RENDELT EGYETLEN EGYEDI EGYSÉGET SEM.');
+    console.log('     Mérve már kétszer megtörtént: egyszer azért, mert a képző épület');
+    console.log('     nem volt a build orderben, egyszer azért, mert a gép a SEMLEGES');
+    console.log('     ár-sort nézte a civ sora helyett. Nézd meg a `KEPZES_SORREND`-et,');
+    console.log('     az `Ai._buildOrder` egyedi-helyét és az `Ai._egysegAr`-t.');
+    bukas++;
+  } else if (e0.keszult + e1.keszult === 0) {
+    console.log('\n  ⛔ RENDELÉS VOLT, EGYSÉG NEM LETT: a sorbaállás mindig elutasításba');
+    console.log('     futott. A szándék és az eredmény nem ér össze — ugyanaz a hibafajta,');
+    console.log('     mint a v0.6/1 száz építési parancsa és egy háza.');
+    bukas++;
+  }
+
+  // MIND A NYOLC NÉP — gyors, meccs nélküli próba. A meccses mérés csak KETTŐT
+  // járat meg; a maradék hat sora úgy maradhatna hibás, hogy semmi nem szól
+  // érte. Itt minden népre kiterítjük az adatsort, és a KÉPZÉS ÚTJÁN próbáljuk
+  // sorba állítani — a jó épületben és egy rosszban is.
+  {
+    const { EPULET } = await import(pathToFileURL(join(SIM_DIR, 'epuletek.js')).href);
+    const { TIPUS } = await import(pathToFileURL(join(SIM_DIR, 'units.js')).href);
+    let rossz = [];
+    for (let c = 0; c < CIV_DB; c++) {
+      const p = new Sim({ seed: SEED, n: 128, maxEgyseg: 200 });
+      p.civValaszt(0, c);
+      p.szondaFelallas(4, { munkasMinden: 1 });
+      const o = p.egyedi.osszesites(0);
+      if (!o.van || o.hp <= 0 || o.sebzes <= 0 || o.utem <= 0 || o.ido <= 0 || o.nep <= 0) {
+        rossz.push(CIV_NEV[c] + ': hiányos adatsor'); continue;
+      }
+      let ar = 0;
+      for (let f = 0; f < 4; f++) ar += p.egyedi.ar[f];
+      if (ar <= 0) { rossz.push(CIV_NEV[c] + ': ingyen van'); continue; }
+      // A jó épületben IGEN, egy másikban NEM. A „másik" a központ: az minden
+      // meccsen áll, és sosem képez egyedi egységet.
+      if (!p.kepzes.kepezheti(o.epulet, TIPUS.EGYEDI, 0)) {
+        rossz.push(CIV_NEV[c] + ': a saját épülete sem képzi');
+      }
+      if (p.kepzes.kepezheti(EPULET.KOZPONT, TIPUS.EGYEDI, 0) && o.epulet !== EPULET.KOZPONT) {
+        rossz.push(CIV_NEV[c] + ': a központ IS képzi');
+      }
+      if (p.kepzes.kepezheti(o.epulet, TIPUS.EGYEDI)) {
+        rossz.push(CIV_NEV[c] + ': csapat nélkül is képezhető');
+      }
+    }
+    sor('mind a nyolc nép sora', (CIV_DB - rossz.length) + ' / ' + CIV_DB,
+      rossz.length ? 'HIBÁS: ' + rossz.join('; ') : 'ép, és a saját épülete képzi');
+    if (rossz.length) {
+      console.log('\n  ⛔ HIBÁS EGYEDI-ADATSOR: ' + rossz.join('; '));
+      bukas++;
+    }
+  }
+
   if (bukas === civBukas) {
     console.log('\n  ✓ A nyolc nép determinisztikus, tényleg más számokkal játszik,');
-    console.log('    és a különbség a VILÁGON is meglátszik.');
+    console.log('    a különbség a VILÁGON is meglátszik, és mindegyiknek van saját');
+    console.log('    egysége, amit a gép ki is képez.');
   }
 }
 sor('lefutott', ((Date.now() - t12) / 1000).toFixed(1) + ' mp');
@@ -1808,7 +1886,7 @@ sor('9) v0.6 AI + v0.7 köd',
     : 'BUKOTT (tick ' + ketV06.tick + ')');
 sor('10) v0.7 mentés/betöltés', mentesBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 sor('11) v0.8 lockstep', lockstepBukas === 0 ? 'RENDBEN' : 'BUKOTT');
-sor('12) v0.9 civilizációk', civBukas === 0 ? 'RENDBEN' : 'BUKOTT');
+sor('12) v0.9 civ + egyedi egység', civBukas === 0 ? 'RENDBEN' : 'BUKOTT');
 console.log('\n  ' + (bukas === 0
   ? '✅ A SZIMULÁCIÓ DETERMINISZTIKUS — a lockstep alapja áll.'
   : '❌ ' + bukas + ' vizsgálat BUKOTT — a lockstep NEM építhető rá.'));

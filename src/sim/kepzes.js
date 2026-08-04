@@ -32,11 +32,12 @@ export const EGYSEG_AR = [
   [30, 45, 0, 0],      // IJASZ
   [70, 0, 0, 40],      // LOVAG
   [0, 160, 80, 0],     // OSTROMGEP
+  [50, 0, 0, 0],       // EGYEDI — SEMLEGES sor, lásd az `egyedi.js` fejlécét
 ];
 /** Képzési idő tickben (20 Hz). */
-const EGYSEG_IDO = [300, 200, 220, 300, 500];
+const EGYSEG_IDO = [300, 200, 220, 300, 500, 200];
 /** Hány népesség-helyet foglal. Az ostromgép hármat. */
-export const EGYSEG_NEP = [1, 1, 1, 1, 3];
+export const EGYSEG_NEP = [1, 1, 1, 1, 3, 1];
 
 /**
  * Melyik épület MIT képez. Üres tömb = nem képez semmit.
@@ -88,6 +89,8 @@ export class Kepzes {
      * a szabály — egy négyelemű tömb újraosztása is szemét.
      */
     this._arPuffer = [0, 0, 0, 0];
+    /** Ugyanez az egyedi egység NYERS árához (v0.9/2) — a kettő egyszerre él. */
+    this._egyediAr = [0, 0, 0, 0];
   }
 
   nullaz() {
@@ -98,8 +101,20 @@ export class Kepzes {
     this.elutasitva[0] = 0; this.elutasitva[1] = 0;
   }
 
-  /** Képezi-e ez az épülettípus ezt az egységtípust? */
-  kepezheti(epTipus, egysegTipus) {
+  /**
+   * Képezi-e ez az épülettípus ezt az egységtípust?
+   *
+   * ⚠️ A CSAPATOT IS TUDNI KELL (v0.9/2). Az egyedi egységet civenként MÁS
+   * épület képzi — a Kőtörő az ostromműhelyben, a Sztyeppei portya az
+   * istállóban —, tehát a `KEPEZ` tábla erre nem tud felelni. Aki nem ad
+   * csapatot, az az egyedi egységre `false`-t kap: inkább utasítsunk el egy
+   * érvényes kérést, mint hogy egy hiányos hívás bárhol kiképezze.
+   */
+  kepezheti(epTipus, egysegTipus, csapat) {
+    if (egysegTipus === TIPUS.EGYEDI) {
+      if (csapat === undefined) return false;
+      return this.sim.egyedi.kepzoEpulet(csapat) === epTipus;
+    }
     const lista = KEPEZ[epTipus];
     if (!lista) return false;
     for (let k = 0; k < lista.length; k++) if (lista[k] === egysegTipus) return true;
@@ -115,19 +130,25 @@ export class Kepzes {
     const epuletek = sim.epuletek;
     if (!epuletek.kesz(ep)) return false;
     const csapat = epuletek.csapat[ep];
-    if (!this.kepezheti(epuletek.tipus[ep], egysegTipus)) return false;
+    if (!this.kepezheti(epuletek.tipus[ep], egysegTipus, csapat)) {
+      // Az egyedi egység elutasítása KÜLÖN is számolódik: a `Kepzes.elutasitva`
+      // egy közös vödör, és ha a v0.9/2 ága végig elutasításba futna (rossz
+      // képző épület, hiányzó civ), az abban a vödörben elveszne.
+      if (egysegTipus === TIPUS.EGYEDI) this.sim.egyedi.elutasitva[csapat & 1]++;
+      return false;
+    }
     if (this.sorDb[ep] >= SOR_HOSSZ) { this.elutasitva[csapat & 1]++; return false; }
 
     // A NÉPESSÉGET a sorbaálláskor foglaljuk le — a sorban álló egység már
     // beleszámít. Enélkül tíz laktanya egyszerre indítana a plafon fölé, és a
     // korlát csak a legvégén ütne be, kifizetett nyersanyaggal.
     const nep = this.sim.gazdasag.nepessegAllapot(csapat);
-    if (nep.foglalt + this.sorbanNepesseg(csapat) + EGYSEG_NEP[egysegTipus] > nep.max) {
+    if (nep.foglalt + this.sorbanNepesseg(csapat) + this.nep(csapat, egysegTipus) > nep.max) {
       this.elutasitva[csapat & 1]++;
       return false;
     }
-    const ar = Civ.arSzazalek(
-      EGYSEG_AR[egysegTipus], sim.civ.egysegArSzazalek(csapat, egysegTipus), this._arPuffer);
+    const ar = Civ.arSzazalek(this.alapAr(csapat, egysegTipus),
+      sim.civ.egysegArSzazalek(csapat, egysegTipus), this._arPuffer);
     if (!sim.gazdasag.levon(csapat, ar)) {
       this.elutasitva[csapat & 1]++;
       return false;
@@ -141,7 +162,36 @@ export class Kepzes {
 
   /** Képzési idő a civ-százalékkal (v0.9). Egész osztás, mint mindenhol. */
   _ido(csapat, egysegTipus) {
-    return Civ.szazalek(EGYSEG_IDO[egysegTipus], this.sim.civ.egysegIdoSzazalek(csapat, egysegTipus));
+    const alap = egysegTipus === TIPUS.EGYEDI
+      ? this.sim.egyedi.ido[csapat & 1] : EGYSEG_IDO[egysegTipus];
+    return Civ.szazalek(alap, this.sim.civ.egysegIdoSzazalek(csapat, egysegTipus));
+  }
+
+  // ── A CSAPATFÜGGŐ ADATSOR (v0.9/2) ───────────────────────────────────
+  // Ugyanaz a szerkezet, mint a `harc.js` `_maxHp`/`_utem` párosánál: az
+  // egyedi egység ára, ideje és népesség-igénye a csapat civjéből jön, minden
+  // más típusé a modul-szintű tábláiból. Nyilvános metódusok, mert a
+  // `gazdasag.js` és a `ai.js` is ezeken keresztül kérdez — a `EGYSEG_NEP`
+  // tömb közvetlen olvasása a v0.9/2 óta HIBÁS lenne.
+
+  /** Népesség-igény típus + csapat szerint. */
+  nep(csapat, egysegTipus) {
+    if (egysegTipus === TIPUS.EGYEDI) return this.sim.egyedi.nep[csapat & 1];
+    return EGYSEG_NEP[egysegTipus];
+  }
+
+  /**
+   * Nyers ár a civ-százalék ELŐTT, négyelemű tömbben.
+   *
+   * Az egyedi egységnél újrahasznált puffert ad vissza (`_egyediAr`), a
+   * többinél a modul-szintű táblát — azt a hívó SEM ÍRHATJA, és nem is írja:
+   * a `Civ.arSzazalek` mindig külön kimenő tömbbe dolgozik.
+   */
+  alapAr(csapat, egysegTipus) {
+    if (egysegTipus === TIPUS.EGYEDI) {
+      return this.sim.egyedi.arba(csapat, this._egyediAr);
+    }
+    return EGYSEG_AR[egysegTipus];
   }
 
   /** Hány népesség-helyet foglalnak a MÁR SORBAN ÁLLÓ egységek egy csapatnál. */
@@ -152,7 +202,7 @@ export class Kepzes {
       if (epuletek.csapat[ep] !== csapat || epuletek.elo[ep] === 0) continue;
       for (let k = 0; k < this.sorDb[ep]; k++) {
         const t = this.sor[ep * SOR_HOSSZ + k];
-        if (t >= 0) n += EGYSEG_NEP[t];
+        if (t >= 0) n += this.nep(csapat, t);
       }
     }
     return n;
@@ -215,7 +265,10 @@ export class Kepzes {
       // Ha nincs szabad slot (betelt a `maxEgyseg`), az egység NEM születik meg,
       // de a sorból akkor is kikerül. Az árát nem adjuk vissza: a gazdaság
       // egyirányú marad, és a plafon amúgy is a játékos hibája.
-      if (i >= 0) this.keszult[csapat & 1]++;
+      if (i >= 0) {
+        this.keszult[csapat & 1]++;
+        if (tipus === TIPUS.EGYEDI) sim.egyedi.keszult[csapat & 1]++;
+      }
     }
 
     // Léptetjük a sort.

@@ -50,14 +50,23 @@ export const PANCEL_NEV = ['gyalogos', 'távolsági', 'lovas', 'épület', 'ostr
 // visz rá (15 sebzés, ~15 mp), a nyíl viszont csak 40 %-ot: az ostromgép fából
 // van, nem húsból. Ellene KÖZELHARCOT kell küldeni, és pont ez a helye a
 // kő-papír-ollóban.
-const MAX_HP = [40, 55, 35, 100, 240];
-const ALAP_SEBZES = [3, 6, 5, 10, 90];
-const TAMADAS_TIPUS = [TAMADAS.VAGO, TAMADAS.SZURO, TAMADAS.NYIL, TAMADAS.VAGO, TAMADAS.OSTROM];
-const PANCEL_TIPUS = [PANCEL.GYALOGOS, PANCEL.GYALOGOS, PANCEL.TAVOLSAGI, PANCEL.LOVAS, PANCEL.OSTROM];
+//
+// ── A 6. HELY: `TIPUS.EGYEDI` (v0.9/2) ───────────────────────────────────
+// Az egyedi egység számai CSAPATFÜGGŐK, és a `sim.egyedi` tartja őket. Az itt
+// álló 6. érték a SEMLEGES sor: akkor hat, ha valaki civ nélkül mégis idekerül.
+// A táblákat azért bővítjük ki mégis, hogy egyetlen olvasás se essen a tömbön
+// KÍVÜLRE — egy `undefined` innen csendben `NaN`-t szülne, és a `| 0` abból
+// nullát csinálna. Nulla sebzés, nulla életerő, és semmi nem szólna érte.
+const MAX_HP = [40, 55, 35, 100, 240, 55];
+const ALAP_SEBZES = [3, 6, 5, 10, 90, 6];
+const TAMADAS_TIPUS = [TAMADAS.VAGO, TAMADAS.SZURO, TAMADAS.NYIL, TAMADAS.VAGO,
+  TAMADAS.OSTROM, TAMADAS.VAGO];
+const PANCEL_TIPUS = [PANCEL.GYALOGOS, PANCEL.GYALOGOS, PANCEL.TAVOLSAGI, PANCEL.LOVAS,
+  PANCEL.OSTROM, PANCEL.GYALOGOS];
 /** Lapos páncél: ennyivel csökken MINDEN beérkező csapás (legalább 1 megy át). */
-const PANCEL_ERTEK = [0, 1, 0, 2, 2];
+const PANCEL_ERTEK = [0, 1, 0, 2, 2, 1];
 /** Két csapás közti tickek. 20 tick = 1 másodperc. Az ostromgép LASSAN üt. */
-const UTEM = [25, 15, 20, 16, 60];
+const UTEM = [25, 15, 20, 16, 60, 15];
 
 /**
  * HATÓTÁVOLSÁG világegységben — eddig ér el az egység a célpontjához.
@@ -67,7 +76,7 @@ const UTEM = [25, 15, 20, 16, 60];
  * a lándzsás orra elé (és meghalna), vagy megállna lőtávon kívül (és nem
  * csinálna semmit). Egy forrás, két olvasó.
  */
-export const HATOTAV = [1.15, 1.45, 6.0, 1.25, 3.2];
+export const HATOTAV = [1.15, 1.45, 6.0, 1.25, 3.2, 1.35];
 
 /**
  * Távolsági-e? A távolsági egység nem azonnal sebez, hanem LÖVEDÉKET indít
@@ -75,7 +84,10 @@ export const HATOTAV = [1.15, 1.45, 6.0, 1.25, 3.2];
  * játékmechanika: ettől lehet „túllőni" egy visszavonulót, és ezért éri meg a
  * lovasnak berohanni az íjászok közé.
  */
-const TAVOLSAGI = [0, 0, 1, 0, 0];
+// Az EGYEDI egység MINDEN népnél közelharcos (0). Lásd az `egyedi.js`
+// fejlécét: a lövedék repülési idővel dolgozik, és a csapatfüggő hatótáv ott
+// ugyanazt a szakadékot nyitná ki a célzás- és a harc-réteg között.
+const TAVOLSAGI = [0, 0, 1, 0, 0, 0];
 
 // ── TORONY (v0.5/3) ──────────────────────────────────────────────────────
 // A torony az EGYETLEN épület, ami magától lő. Hosszabb a hatótávja, mint az
@@ -149,18 +161,57 @@ export class Harc {
     this.toronyNyil[0] = 0; this.toronyNyil[1] = 0;
     for (let i = 0; i < db; i++) {
       const t = e.tipus[i];
-      this.maxHp[i] = MAX_HP[t];
-      this.hp[i] = MAX_HP[t];
+      const cs = e.csapat[i];
+      this.maxHp[i] = this._maxHp(t, cs);
+      this.hp[i] = this.maxHp[i];
       this.elo[i] = 1;
       // Az ütem-számlálót a típusból ÉS az indexből toljuk el, hogy egy
       // összecsapás első csapásai ne EGYETLEN ticken záporozzanak. Ez nem
       // szépészet: az egyszerre leadott 800 csapás egy tickes tüskét csinálna.
-      this.utemHatra[i] = i % UTEM[t];
+      this.utemHatra[i] = i % this._utem(t, cs);
     }
   }
 
   /** Él-e még? A célzás és a render is ezt kérdezi. */
   el(i) { return i >= 0 && i < this.maxDb && this.elo[i] === 1; }
+
+  // ── A CSAPATFÜGGŐ ADATSOR (v0.9/2) ───────────────────────────────────
+  //
+  // Öt táblából hat lett, és a 6. sor CSAPATONKÉNT MÁS. Az öt olvasó itt megy
+  // át egy-egy ágon: ha nem az egyedi egységről van szó, a modul-szintű tábla
+  // felel, különben a csapat kiterített adatsora. Egyetlen összehasonlítás,
+  // nulla allokáció.
+  //
+  // ⚠️ AZÉRT METÓDUS, ÉS NEM A HÍVÁSI HELYEN LEÍRT `t === EGYEDI ? … : …`.
+  // Tizenegy olvasási hely van, és az elsőnek elfelejtett ág CSENDBEN a
+  // semleges sort adná — vagyis a Bástyaőrző 130 életerejű egysége 55-tel
+  // születne meg, és semmi nem szólna érte. Egy forrás, tizenegy olvasó.
+
+  /** Maximális életerő típus + csapat szerint. */
+  _maxHp(t, cs) { return t === TIPUS.EGYEDI ? this.sim.egyedi.hp[cs & 1] : MAX_HP[t]; }
+
+  /** Két csapás közti tickek. */
+  _utem(t, cs) { return t === TIPUS.EGYEDI ? this.sim.egyedi.utem[cs & 1] : UTEM[t]; }
+
+  /** Alapsebzés a bónuszok ELŐTT. */
+  _alapSebzes(t, cs) {
+    return t === TIPUS.EGYEDI ? this.sim.egyedi.sebzes[cs & 1] : ALAP_SEBZES[t];
+  }
+
+  /** Támadástípus (`TAMADAS.*`) — ez választja ki az ellensúly-tábla SORÁT. */
+  _tamadasTipus(t, cs) {
+    return t === TIPUS.EGYEDI ? this.sim.egyedi.tamadas[cs & 1] : TAMADAS_TIPUS[t];
+  }
+
+  /** Páncéltípus (`PANCEL.*`) — az ellensúly-tábla OSZLOPA. */
+  _pancelTipus(t, cs) {
+    return t === TIPUS.EGYEDI ? this.sim.egyedi.pancel[cs & 1] : PANCEL_TIPUS[t];
+  }
+
+  /** Lapos páncél. */
+  _pancelErtek(t, cs) {
+    return t === TIPUS.EGYEDI ? this.sim.egyedi.pancelErtek[cs & 1] : PANCEL_ERTEK[t];
+  }
 
   /**
    * EGY tick — a harcérintkezésben álló egységek ütnek.
@@ -204,7 +255,7 @@ export class Harc {
       } else {
         this.sebez(cel, seb, e.csapat[i]);
       }
-      this.utemHatra[i] = UTEM[t];
+      this.utemHatra[i] = this._utem(t, e.csapat[i]);
     }
 
     this._tornyokLonek();
@@ -238,7 +289,13 @@ export class Harc {
       const civ = sim.civ;
       const alap = TORONY_SEBZES + tech.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL)
         + civ.sebzesBonusz(ep.csapat[k], TAMADAS.NYIL);
-      let seb = ((alap * SZORZO[TAMADAS.NYIL][PANCEL_TIPUS[e.tipus[cel]]]) / 100) | 0;
+      // ⚠️ CSAK A PÁNCÉL-TÍPUS lett csapatfüggő, a LAPOS páncél nem: a torony
+      // sortüze a v0.5 óta sem vonja le a `PANCEL_ERTEK`-et, csak a technológia
+      // és a civ bónuszát. Kísértés volt itt „menet közben megjavítani", de az
+      // a v0.5–v0.7 összes mért számát elmozdítaná — egy balansz-változtatás
+      // nem lopakodhat be egy típus-bővítés mellé.
+      const pt = this._pancelTipus(e.tipus[cel], e.csapat[cel]);
+      let seb = ((alap * SZORZO[TAMADAS.NYIL][pt]) / 100) | 0;
       seb -= tech.pancelBonusz(e.csapat[cel]) + civ.pancelBonusz(e.csapat[cel]);
       for (let n = 0; n < nyilak; n++) {
         sim.lovedekek.lo(ep.x[k], ep.y[k], cel, seb < 1 ? 1 : seb,
@@ -312,16 +369,16 @@ export class Harc {
     // ára: az épülettel a benne állók is odavesznek.
     if (ep.sebez(cel, seb)) sim.beszallas.epuletPusztult(cel);
     this.osszSebzes[e.csapat[i] & 1] += seb;
-    this.utemHatra[i] = UTEM[t];
+    this.utemHatra[i] = this._utem(t, e.csapat[i]);
   }
 
   /** A csapás értéke ÉPÜLETRE. Az épületnek nincs lapos páncélja. */
   sebzesEpuletre(tamadoTipus, tamadoCsapat) {
-    const tt = TAMADAS_TIPUS[tamadoTipus];
+    const tt = this._tamadasTipus(tamadoTipus, tamadoCsapat);
     // A technológia az ALAPSEBZÉST emeli, tehát az ellensúly-szorzó UTÁNA jön:
     // a kovácsolás így az ostromgépen sokat ér az épület ellen, a nyílon
     // keveset — pont ez a szorzó-tábla dolga, és nem akarjuk megkerülni.
-    const alap = ALAP_SEBZES[tamadoTipus]
+    const alap = this._alapSebzes(tamadoTipus, tamadoCsapat)
       + this.sim.technologia.sebzesBonusz(tamadoCsapat, tt)
       + this.sim.civ.sebzesBonusz(tamadoCsapat, tt);
     const seb = ((alap * SZORZO[tt][PANCEL.EPULET]) / 100) | 0;
@@ -341,15 +398,16 @@ export class Harc {
    * @returns {number} egész sebzés
    */
   sebzesErtek(tamadoTipus, celTipus, tamadoCsapat, celCsapat) {
-    const tt = TAMADAS_TIPUS[tamadoTipus];
-    const pt = PANCEL_TIPUS[celTipus];
+    const tt = this._tamadasTipus(tamadoTipus, tamadoCsapat);
+    const pt = this._pancelTipus(celTipus, celCsapat);
     const tech = this.sim.technologia;
     // Egész osztás — nincs kerekítési szabadság, tehát gépfüggetlen.
     const civ = this.sim.civ;
-    const alap = ALAP_SEBZES[tamadoTipus]
+    const alap = this._alapSebzes(tamadoTipus, tamadoCsapat)
       + tech.sebzesBonusz(tamadoCsapat, tt) + civ.sebzesBonusz(tamadoCsapat, tt);
     let seb = ((alap * SZORZO[tt][pt]) / 100) | 0;
-    seb -= PANCEL_ERTEK[celTipus] + tech.pancelBonusz(celCsapat) + civ.pancelBonusz(celCsapat);
+    seb -= this._pancelErtek(celTipus, celCsapat)
+      + tech.pancelBonusz(celCsapat) + civ.pancelBonusz(celCsapat);
     return seb < 1 ? 1 : seb;
   }
 
@@ -390,11 +448,12 @@ export class Harc {
    * ez egyetlen frissen kiképzett vagy újrahasznosított slotra.
    */
   szuletik(i) {
-    const t = this.sim.egysegek.tipus[i];
-    this.maxHp[i] = MAX_HP[t];
-    this.hp[i] = MAX_HP[t];
+    const e = this.sim.egysegek;
+    const t = e.tipus[i], cs = e.csapat[i];
+    this.maxHp[i] = this._maxHp(t, cs);
+    this.hp[i] = this.maxHp[i];
     this.elo[i] = 1;
-    this.utemHatra[i] = i % UTEM[t];
+    this.utemHatra[i] = i % this._utem(t, cs);
   }
 
   /** Élő létszám csapatonként — a jelentésekhez és a HUD-hoz. */

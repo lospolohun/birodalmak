@@ -140,8 +140,16 @@ const HATAS = {
 /** „Minden alfajtára" — a `NYERS`/`TIPUS` index helyén. */
 const MIND = -1;
 
-/** Hány egységtípusra tartunk ár- és idő-szorzót (`TIPUS` mérete). */
-export const EGYSEG_TIPUS_DB = 5;
+/**
+ * Hány egységtípusra tartunk ár- és idő-szorzót (`TIPUS` mérete).
+ *
+ * A v0.9/2-ben 5-ről 6-ra nőtt (`TIPUS.EGYEDI`). Ez fontosabb, mint amilyennek
+ * látszik: a `MIND` indexű bónuszok itt terülnek szét, tehát a Kristálykovácsok
+ * „minden egység 10 %-kal drágább" tétele az EGYEDI egységükre is hat — ahogy
+ * kell. Ha a szám 5 maradt volna, a nyolcból négy nép egyedi egysége csendben
+ * kimaradt volna a saját népe hátrányából.
+ */
+export const EGYSEG_TIPUS_DB = 6;
 
 /**
  * A NYOLC CIV BÓNUSZ-TÁBLÁZATA.

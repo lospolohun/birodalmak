@@ -169,7 +169,9 @@ export class Gazdasag {
     for (let i = 0; i < e.db; i++) {
       if (e.csapat[i] !== csapat) continue;
       if (s.harc && s.harc.elo[i] === 0) continue;
-      foglalt += EGYSEG_NEP[e.tipus[i]];
+      // A `Kepzes.nep()`-en át, nem a nyers táblából: az egyedi egység (v0.9/2)
+      // népesség-igénye civenként más, és a tábla 6. sora csak a semleges érték.
+      foglalt += s.kepzes.nep(csapat, e.tipus[i]);
     }
     return { foglalt, max };
   }

@@ -16,7 +16,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
 | v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **kész** — lásd alább |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | **kész** — lásd alább |
-| v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | v0.9/1 **kész** — lásd alább |
+| v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | **kész** — lásd alább |
 | v0.10 | Térkép-presetek, kampány | |
 | v0.11 | **Főmenü** a TELEPESEK mintájára: új játék, betöltés, beállítások, civ-választó | |
 | v0.12 | **Hang:** SFX (parancs, harc, építés, gyűjtés, korszakváltás) + zene | |
@@ -491,7 +491,8 @@ Mérve: gyors hálózaton 4 tick, lassún (5 kör késés) 16 tick, hat változ�
 | szakasz | tartalom | állapot |
 |---|---|---|
 | v0.9/1 | 8 civilizáció, bónusz-tábla, beakasztás a kilenc horogra | **kész** |
-| v0.9/2 | egyedi egységek civenként (új `TIPUS`, harc- és render-táblák) | nyitott |
+| v0.9/2 | egyedi egységek civenként | **kész** — a sim és a render kész, saját 3D-alak még nincs |
+| v0.9/3 | civ-választó felület (adatréteg + kártyák) | **kész** — a menübe kötése a v0.11 dolga |
 
 A civ **csak adat**: nyolc nép, ugyanaz az öt egység, más számokkal. A
 `CIV_BONUSZ` lapos `[hatás, index, érték]` hármasokból áll, hogy a v0.13
@@ -539,6 +540,71 @@ folytatódna, mint amivel elindult.
 Hegyi bányász fölöslegesen gyűjtene egy körrel tovább, a Kristálykovács pedig
 sorra adna be elutasításba futó képzést — vagyis épp az a zaj térne vissza,
 ami miatt a szűrés bekerült.
+
+### v0.9/2 — EGY új típus, nyolc nép
+
+A kézenfekvő megvalósítás nyolc új `TIPUS` bejegyzés lenne. A típus-index
+viszont TIZENNÉGY táblában megjelenik (`MAX_HP`, `ALAP_SEBZES`, `HATOTAV`,
+`SEBESSEG`, `EGYSEG_AR`, `KEPEZ`, a render maszkjai…), és az első elfelejtett
+tábla CSENDBEN a 0. típus — a munkás — adatait adná vissza. Ezért egyetlen új
+típus van (`TIPUS.EGYEDI`), és a mögötte álló SZÁMOK csapatfüggők.
+
+**A keret rögzített, a tartalom civfüggő.** Változik: életerő, sebzés, támadás-
+és páncéltípus, lapos páncél, ütem, ár, képzési idő, népesség, képző épület.
+Azonos: sebesség, ütközési sugár, hatótáv, és hogy közelharcos. Ez nem
+lustaság: a hatótávat a `harc.js` és a `parancsallapot.js` is olvassa, és a
+célzás-rétegben a csapat nem mindenhol ismert — csapatfüggő hatótávval az
+egység odaállna a célpont mellé anélkül, hogy bármit csinálna.
+
+**A `& 3` maszk a rendernél kiesett.** A `units3d.js` a típust maszkolta, és
+mellé egy „négy fölött rejtsd el" feltétel járt az ostromgép miatt. A hatodik
+típus így NÉMÁN LÁTHATATLAN lett volna: a sim kiképzi, a gép harcol vele, a
+hash mozog — a képernyőn nincs ott senki. Helyette `FIGURA` tábla mondja ki,
+mi mivé rajzolódik.
+
+**Három mérés, három javítás — mind a „zöld kapu, halott rendszer" fajta:**
+
+1. **A képző épület nem volt a build orderben.** A nyolcból négy nép egyedi
+   egységét olyan épület képzi, ami a gép listáján nincs (ostromműhely) vagy
+   csak a nehéz szinten van. A Hegyi bányász gépe 8000 ticken át NULLA egyedi
+   egységet rendelt. A képző most a build order 2. helyén áll — de nem
+   *gyűjtünk* rá, mert az a laktanyát és a házat is megállítaná.
+2. **A gép a SEMLEGES ár-sort nézte.** Az `Ai._egysegAr` az `EGYSEG_AR`
+   táblából olvasott, aminek a 6. sora csak a semleges érték. A Kristálykovács
+   gépe 55 étel „árat" látott a valódi 30 étel + 45 kristály helyett, tehát a
+   gazdagon álló kristályát sosem költötte el. Ugyanaz a lecke, mint a v0.9/1
+   épület-áránál: **a gépnek ugyanazt az árat kell néznie, amit a parancs
+   levon.**
+3. **Az egyedi egység a képzési sorrend VÉGÉN maradt.** Felfelé számláló
+   ciklussal a nép saját egysége került utoljára, és mivel az első találatnál
+   kilépünk, sosem képződött ki. Innen a `KEPZES_SORREND`.
+
+**Árazás mérésből.** Az első kiosztás étel-nehéz volt (45–80 étel), és a gépi
+gazdaság étel-szűkös: 12 000 tick után 15 étel állt raktáron 2767 fa, 555 kő és
+460 kristály mellett. Nyolcból három nép egyedi egységét SOHA nem rendelte meg
+a gép. Az árak átkerültek a stratégiai nyersanyagokra — utána mind a nyolc nép
+rendel belőle, és nyolcból öt ki is képezi a 12 000 tickes mérésben.
+
+⚠️ **Ami nyitva maradt:** a játékos egyelőre csak ott éri el az egyedi egységet,
+ahol az az épület mást nem képez — a `C` gyorsbillentyű egy parancsot ad, és ha
+az egyedit rendelné, a játékos elveszítené az olcsó lándzsást ugyanazon az
+épületen. Típus-választó felület a v0.11 menüjének dolga. A saját 3D-alak
+(v0.9/2b) szintén nyitott: az egyedi egység ma lándzsás-figurát kap.
+
+Balansz-megjegyzés a v0.13-nak: a szonda v0.9-es körében a Hegyi bányász
+azonos nehézségen is alulmarad a Folyami kereskedővel szemben (2050 vs 6885
+összegyűjtött nyersanyag). Ez nem hiba, hanem hangolatlan matchup.
+
+### v0.9/3 — civ-választó
+
+DOM-mentes adatréteg (`civ_valaszto_adat.js`) + kártyák (`civ_valaszto.js`) +
+saját szonda. Az adatréteg a nyers `[hatás, index, érték]` hármasokat magyar
+mondattá alakítja, és **előnyre/hátrányra bontja** — ugyanazzal a fordított
+olvasattal, amin a determinizmus-szonda 12. vizsgálatának első változata már
+elbukott egyszer: az ÁR és az IDŐ esetén a POZITÍV szám a hátrány.
+
+A választót még senki nem importálja; a főmenübe kötése a v0.11 dolga. Ezért
+`npx vite build` nem is nézi meg — külön lib-bundle-lel lett ellenőrizve.
 
 ## A záró lépcsők (v0.11–v0.13)
 

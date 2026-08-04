@@ -133,8 +133,30 @@ import { TIPUS, ALLAPOT, DT } from '../sim/units.js';
 const TAU = Math.PI * 2;
 const FEL_PI = Math.PI * 0.5;
 
-/** Hány egységtípus van (a táblák ekkorák). */
+/** Hány FIGURA-fajta van (a táblák ekkorák). */
 const TIPUS_DB = 4;
+
+/**
+ * `sim`-TÍPUS → FIGURA-fajta. `-1` = ez a réteg NEM rajzolja ki.
+ *
+ * ⚠️ EZ VÁLTOTTA LE A `& 3` MASZKOT, ÉS NEM SZÉPÍTÉS. A maszk az ötödik
+ * típust (ostromgép) a munkásra ejtette volna, ezért volt mellette egy
+ * `tipus > 3 → rejtsd el` feltétel. A v0.9/2 hatodik típusa (`EGYEDI`) így
+ * NÉMÁN LÁTHATATLAN lett volna: a sim kiképzi, a gép harcol vele, a hash
+ * mozog — a képernyőn viszont nincs ott senki. Egy táblázat, ami kimondja,
+ * mi mivé rajzolódik, ezt a hibafajtát megszünteti.
+ *
+ * Az egyedi egység egyelőre LÁNDZSÁS-figurát kap. Saját alak a v0.9/2b dolga;
+ * addig is látszik, és a csapatszín megkülönbözteti.
+ */
+const FIGURA = [
+  0,   // MUNKAS
+  1,   // LANDZSAS
+  2,   // IJASZ
+  3,   // LOVAG
+  -1,  // OSTROMGEP — saját rétege van (`ostrom3d.js`)
+  1,   // EGYEDI (v0.9/2) — lándzsás-figura, saját alak még nincs
+];
 
 // A figura alap-magassága ~1,0 világegység, MÉRET-szorzó nélkül. A pálya egy
 // cellája 1 világegység, az ütközési sugarak 0,30–0,42 — egy ~1,0–1,3 magas
@@ -939,7 +961,7 @@ export class Egysegek3D {
     this._tipusSzam.fill(0);
 
     for (let i = 0; i < db; i++) {
-      const t = e.tipus[i] & 3;
+      const t = FIGURA[e.tipus[i]];
       const cs = e.csapat[i] & 1;
 
       // A típuson belüli ÁLLANDÓ hely a fegyver-meshben (lásd fejléc).
@@ -1149,7 +1171,8 @@ export class Egysegek3D {
       // v0.4/6: az OSTROMGÉP (típus 4) nem figura — saját rétege van
       // (`ostrom3d.js`). Ez a réteg `& 3`-mal maszkol, tehát az ötödik típus
       // itt a munkásra esne vissza; ezért zárjuk ki, nem pedig bővítjük.
-      let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1) || e.tipus[i] > 3) ? 0 : 2;
+      let vis = ((elo && elo[i] === 0) || (bent && bent[i] === 1)
+        || FIGURA[e.tipus[i]] < 0) ? 0 : 2;
       if (kam && vis !== 0) {
         if (fixSzint >= 0) {
           vis = fixSzint;
@@ -1166,7 +1189,7 @@ export class Egysegek3D {
 
       if (vis === 0) {
         if (this._uVis[i] !== 0) {
-          this._rejtMind(i, e.tipus[i] & 3);
+          this._rejtMind(i, FIGURA[e.tipus[i]] < 0 ? 0 : FIGURA[e.tipus[i]]);
           this._uVis[i] = 0; this._uAnim[i] = 0;
           piszkos = true; irt++;
         }
@@ -1175,7 +1198,7 @@ export class Egysegek3D {
       lathato++;
       if (vis === 2) kozel++;
 
-      const tip = e.tipus[i] & 3;
+      const tip = FIGURA[e.tipus[i]];
       const allapot = e.allapot[i];
 
       // A példányszám-vágás felső határai — a gyorstár-találat ELŐTT, mert a

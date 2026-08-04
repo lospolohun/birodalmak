@@ -60,7 +60,7 @@ import { EPULET, EPULET_NEV } from '../sim/epuletek.js';
 import { TECH_DB, TECH_NEV, TECH_LEIRAS, techEpulete } from '../sim/technologia.js';
 import { mentesSzoveg, betoltesSzoveg } from '../sim/mentes.js';
 import { KORSZAK_NEV } from '../sim/gazdasag.js';
-import { TIPUS } from '../sim/units.js';
+import { TIPUS, TIPUS_DB } from '../sim/units.js';
 
 /** A böngésző-tároló kulcsa a mentéshez. */
 const MENTES_KULCS = 'aotc-mentes';
@@ -304,9 +304,16 @@ export class Bevitel {
       if (d2 < legjobbD2) { legjobbD2 = d2; legjobb = i; }
     }
     if (legjobb < 0) { this._uzenet = 'nincs saját épület a kurzor közelében'; return; }
-    // Mit képez ez az épület? A `Kepzes` tudja — végigpróbáljuk az öt típust.
-    for (let t = 0; t < 5; t++) {
-      if (this.sim.kepzes.kepezheti(ep.tipus[legjobb], t)) {
+    // Mit képez ez az épület? A `Kepzes` tudja — végigpróbáljuk a típusokat.
+    //
+    // ⚠️ AZ ALAPEGYSÉG VAN ELÖL, AZ EGYEDI (v0.9/2) HÁTUL — fordítva, mint a
+    // gépnél. A gyorsbillentyű EGY parancsot ad, és ha az egyedi egységet
+    // rendelné meg, a játékos elveszítené a hozzáférést az olcsó lándzsáshoz
+    // ugyanazon az épületen. A típus-választó felület a v0.11 menüjének dolga;
+    // addig a gyorsbillentyű a megszokottat adja, az egyedi egység pedig ott
+    // érhető el, ahol csak ő képezhető.
+    for (let t = 0; t < TIPUS_DB; t++) {
+      if (this.sim.kepzes.kepezheti(ep.tipus[legjobb], t, cs)) {
         this._ad({ fajta: 'kepzes', csapat: cs, epulet: legjobb, egyseg: t });
         this._uzenet = EPULET_NEV[ep.tipus[legjobb]] + ' — sorba állítva';
         return;
