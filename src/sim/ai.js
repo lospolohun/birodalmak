@@ -142,7 +142,7 @@ const HELY_ELTOLAS = [
 ];
 
 /** Hány katonát tart fenn a gép. A `99`-es ház-cél mellett ez a valódi plafon. */
-const SEREG_CEL = [8, 18, 30];
+const SEREG_CEL = [10, 20, 32];
 
 /**
  * Hány technológiát kutat ki. A KÖNNYŰ gép EGYET SEM — és ez nem lustaság:
@@ -177,8 +177,6 @@ const SOR_KORLAT = 2;
 // meg, ahogy a játékos: valamelyik EGYSÉGE a látótávon belülre kerül egy
 // ellenséges épülethez. A `_felderit` az egyetlen hely, ahol ez a tudás
 // keletkezik.
-const LATOTAV = 14;
-
 /** Hány tickenként indít új felderítőt, ha az előző odaveszett. */
 const FELDERITO_KOZ = [1200, 800, 500];
 
@@ -195,8 +193,15 @@ const FELDERITO_KOZ = [1200, 800, 500];
  * Így viszont a három szint értelmes: a könnyű a teljes (kicsi) seregével
  * támad, a nehéz a nagy seregének kétharmadával, tehát otthon is marad
  * védelem. A nehéz később üt, de sokkal keményebben.
+ *
+ * ⚠️ A NEHEZEBB SZINT NEM LEHET PASSZÍVABB. A második változat 22-es nehéz
+ * küszöbbel ment, és mérve a KÖNNYŰ gép verte meg a nehezet: a könnyű 8-nál
+ * már nyomult, a nehéz meg a 16 000. tickig gyűjtögetett, mire a bázisát
+ * lerohanták (0 munkás, 0 katona a kör végén). A nehézség nem attól nehéz,
+ * hogy tovább vár — attól, hogy több van mögötte, amikor üt. Ezért mindhárom
+ * küszöb elérhető közelségben van a saját célszámához.
  */
-const TAMADAS_KUSZOB = [8, 14, 22];
+const TAMADAS_KUSZOB = [9, 14, 20];
 
 /**
  * Ha a hullám ez alá fogy, VISSZAVONUL és újragyűlik. Enélkül a gép a maradék
@@ -365,10 +370,10 @@ export class Ai {
    *
    * Két része van, és a sorrend számít:
    *
-   *   1. LÁTÁS: ha bármelyik ÉLŐ egységünk `LATOTAV`-on belül van egy
-   *      ellenséges épülethez, a helyét megjegyezzük. Ez az EGYETLEN hely,
-   *      ahol a gép tudása keletkezik — lásd a fájl `LATOTAV` fölötti
-   *      indoklását arról, miért nem olvassuk ki egyszerűen az `epuletek`-et.
+   *   1. LÁTÁS: ha egy ellenséges épület cellája a HADI KÖD szerint éppen
+   *      látható a csapatnak, a helyét megjegyezzük. Ez az EGYETLEN hely, ahol
+   *      a gép tudása keletkezik — lásd a fájl fejlécének indoklását arról,
+   *      miért nem olvassuk ki egyszerűen az `epuletek`-et.
    *   2. FELDERÍTŐ: ha még nem tudjuk, hol az ellenség, kiküldünk EGY egységet
    *      a pálya túloldalára. Egyet, nem többet: a felderítő jellemzően meghal,
    *      és egy egész szakasz elvesztése a gazdaság elején végzetes.
@@ -379,14 +384,25 @@ export class Ai {
     const ep = sim.epuletek;
 
     // ── 1. LÁTÁS ───────────────────────────────────────────────────────
+    //
+    // ⚠️ A v0.7 ÓTA A HADI KÖD A FORRÁS, nem egy külön sugár-vizsgálat. A
+    // v0.6/3-ban a gép a saját egységeitől mért `LATOTAV`-val nézte, lát-e
+    // ellenséges épületet — ami ugyanazt jelentette, de KÉT külön igazsággal:
+    // a gép láthatott olyat, ami a játékos ködtérképén sötét volt, és
+    // fordítva. Két igazságból előbb-utóbb ellentmondás lesz, és az ilyen
+    // ellentmondás pont az a fajta, ami némán megél (lásd a v0.6/3 támadási
+    // küszöbét, ami a sereg-célszámmal került szembe).
+    //
+    // Most egyetlen kérdés van: LÁTHATÓ-E az épület cellája. A köd ugyanazt a
+    // választ adja a gépnek és a rendernek.
     if (this.ismertX[cs] < 0) {
-      for (let i = 0; i < e.db && this.ismertX[cs] < 0; i++) {
-        if (e.csapat[i] !== cs || !sim.harc.elo[i] || sim.beszallas.bent[i] === 1) continue;
-        const k = ep.legkozelebbiEllenseges(cs, e.px[i], e.py[i], LATOTAV);
-        if (k < 0) continue;
+      for (let k = 0; k < ep.db; k++) {
+        if (ep.csapat[k] === cs || !ep.el(k)) continue;
+        if (!sim.kod.lathatoPont(cs, ep.x[k], ep.y[k])) continue;
         this.ismertX[cs] = ep.x[k] | 0;
         this.ismertY[cs] = ep.y[k] | 0;
         this.felfedezDb[cs]++;
+        break;
       }
     }
     if (this.ismertX[cs] >= 0) return;

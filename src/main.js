@@ -31,6 +31,7 @@ import { Diszlet3D } from './render/props3d.js';
 import { Egysegek3D } from './render/units3d.js';
 import { Kijeloles3D } from './render/kijeloles3d.js';
 import { Gazdasag3D } from './render/gazdasag3d.js';
+import { Kod3D } from './render/kod3d.js';
 import { Lovedek3D } from './render/lovedek3d.js';
 import { Ostrom3D } from './render/ostrom3d.js';
 import { Bevitel } from './ui/bevitel.js';
@@ -75,6 +76,10 @@ class Jatek {
       lovedek: new Lovedek3D(szinter, this.sim),
       ostrom: new Ostrom3D(szinter, this.sim),
       kijeloles: new Kijeloles3D(szinter, this.sim, { kijeloles: this.bevitel.kijeloles }),
+      // A köd a LEGUTOLSÓ réteg: átlátszó lap, ami mindenre ráborul. A
+      // `renderOrder` amúgy is eldönti a sorrendet, de a felsorolás olvassa is
+      // magát — aki ide néz, lássa, hogy ez a réteg mindenek fölött van.
+      kod: new Kod3D(szinter, this.sim, { sajatCsapat: 0 }),
     };
 
     // ── Óra-állapot ────────────────────────────────────────────────────

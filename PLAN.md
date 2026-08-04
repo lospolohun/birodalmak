@@ -14,7 +14,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | **v0.4** | Harc: páncéltípusok, repülési idejű lövedékek, fegyvernem-ellensúlyok, ostrom, fal/kapu, beszállásolás | **kész** — lásd alább |
 | v0.5 | Épület-roster + technológiafa → **első játszható build** | **kész** |
 | v0.6 | AI ellenfél 3 nehézséggel, build orderekkel, felderítéssel | **kész** — lásd alább |
-| v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | |
+| v0.7 | Hadi köd (GPU-textúra), minimap, mentés/betöltés, rendes HUD | **folyamatban** — lásd alább |
 | **v0.8** | **Netcode:** WebSocket relay, lockstep, bemenet-késleltetés simítás, újracsatlakozás, desync-detektor az állapot-hashre | |
 | v0.9 | 8 aszimmetrikus civilizáció + egyedi egységek | |
 | v0.10 | Térkép-presetek, kampány | |
@@ -190,6 +190,50 @@ egység sem ér oda. Az első ötlet („okozott épület-sérülés") szintén 
 ha a védő serege kiáll, a támadók vele verekszenek, és épületig el sem jutnak,
 pedig a hullám megérkezett. A szonda ezért futás közben méri a sereg **legjobb
 megközelítését** az ellenséges központhoz.
+
+## A v0.7 állása
+
+| szakasz | tartalom | állapot |
+|---|---|---|
+| v0.7/1 | hadi köd (sim-oldali láthatóság + GPU-textúra) | **kész** |
+| v0.7/2 | mentés / betöltés | hátravan |
+| v0.7/3 | minimap és rendes HUD | hátravan |
+
+**A köd a SIMBEN él, nem a renderben** — pedig elsőre látványnak tűnik. Három
+oka van:
+
+1. **A felfedezettség nem számolható újra.** A „hol jártam már" halmozott
+   tudás: a mostani állapotból nem következik. Ami nem vezethető le, azt tárolni
+   kell — és amit tárolunk, az a világ állapota, tehát megy a hashbe és a
+   mentésbe is.
+2. **A gépi ellenfél ebből tud.** A v0.6/3 óta a gép csak azt tudhatja, amit
+   felderített. Ha a köd a kliensben élne, a gép döntése kliens-oldali adatból
+   származna — az a v0.8 lockstepjében azonnali desync.
+3. **A v0.8 újracsatlakozása.** A visszatérő játékosnak a saját felfedezett
+   térképét kell visszakapnia, nem egy üreset.
+
+A köd rácsa négyszer durvább a pályánál (64×64 a 256×256-hoz), és ez mérés-
+vezérelt: 1600 egység × ~314 cella = 500 000 írás lenne frissítésenként, a
+negyedelt sugárral viszont a kör területe tizenhatodára esik. A látvány nem
+romlik — a textúra lineáris szűrése adja a lágy peremet, ingyen.
+
+⚠️ **A v0.6/3 külön sugár-vizsgálata megszűnt.** A gép addig a saját
+egységeitől mért `LATOTAV`-val nézte, lát-e ellenséges épületet — ami ugyanazt
+jelentette, de KÉT külön igazsággal: a gép láthatott olyat, ami a játékos
+ködtérképén sötét volt. Két igazságból előbb-utóbb ellentmondás lesz. Most
+egyetlen kérdés van, és a köd ugyanazt a választ adja a gépnek és a rendernek.
+
+⚠️ **Amit a köd bevezetése kimutatott:** a nehézségi szintek rosszul voltak
+beállítva. A „nehéz" gép 22 katonánál támadott, a „könnyű" 8-nál — és mérve a
+KÖNNYŰ verte meg a nehezet, mert az a 16 000. tickig gyűjtögetett, mire a
+bázisát lerohanták (0 munkás, 0 katona a kör végén). **A nehezebb szint nem
+lehet passzívabb:** nem attól nehéz, hogy tovább vár, hanem attól, hogy több
+van mögötte, amikor üt.
+
+A szonda köd-számai közül a legfontosabb az, hogy **maradt-e felfedezetlen
+terület**. Enélkül a köd „működne" akkor is, ha egy hibás sugár-számítás az
+egész pályát felfedezettnek jelölné: determinisztikus, a számai nem nullák, és
+mégis pontosan semmit nem takar el.
 
 ## A záró lépcsők (v0.11–v0.13)
 

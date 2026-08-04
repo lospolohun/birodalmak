@@ -39,6 +39,7 @@ import { Beszallas } from './beszallas.js';
 import { Kepzes } from './kepzes.js';
 import { Technologia, TECH, TECH_DB, techEpulete } from './technologia.js';
 import { Ai, NEHEZSEG } from './ai.js';
+import { Kod } from './kod.js';
 
 /** Hány tickkel később hat egy parancs. 2 tick = 100 ms — a hálózat ebbe fér. */
 export const KESLELTETES = 2;
@@ -103,6 +104,12 @@ export class Sim {
     // AI-ja külön döntene, és az azonnali desync (lásd `ai.js` fejléc).
     this.ai = new Ai(2, this);
 
+    // ── v0.7: hadi köd ──────────────────────────────────────────────────
+    // A simben él, mert a FELFEDEZETTSÉG halmozott tudás (nem vezethető le a
+    // mostani állapotból), a gépi ellenfél ebből tud, és a v0.8 újracsatlakozása
+    // a saját felfedezett térképét kell visszakapja. Lásd `kod.js` fejléce.
+    this.kod = new Kod(2, this);
+
     /**
      * A tick közbeékelt lépése. EGY objektum, a konstruktorban — az
      * `Egysegek.lep()` egyetlen horgot fogad, és a v0.3 óta ketten kérnek szót
@@ -150,6 +157,9 @@ export class Sim {
     // sor kiürítése UTÁN gondolkodna, minden döntése egy körrel később érne
     // célba — a gép mérhetően lomhább lenne ugyanannál a beállításnál.
     this.ai.lep(this.tick);
+    // A KÖD AZ AI UTÁN, DE A MOZGÁS ELŐTT frissül: a gép abban a körben a
+    // legfrissebb látóteret látja, amit az előző tick mozgása alakított ki.
+    this.kod.lep(this.tick);
     this.epuletek.lep();
     this.gazdasag.lep();
     this.technologia.lep();
@@ -216,6 +226,7 @@ export class Sim {
     // viszont csendes desync-forrás lenne.
     this.technologia.nullaz();
     this.ai.nullaz();
+    this.kod.nullaz();
     this.epuletek.nullaz();
     this.eroforrasok.nullaz();
     this.gazdasag.nullaz();
@@ -1079,6 +1090,16 @@ export class Sim {
       h = fnvSzam(h, ai.felderitoIdo[cs]);
       h = fnvSzam(h, ai.had[cs]);
       h = fnvSzam(h, ai.frissitesIdo[cs]);
+    }
+    // v0.7 — a FELFEDEZETTSÉG a világ állapota. Nem vezethető le a pozíciókból
+    // (halmozott), a gép ebből dönt, és a v0.8 újracsatlakozásának is ezt kell
+    // visszaadnia. A `lathato` viszont SZÁNDÉKOSAN nincs benne: az minden
+    // frissítéskor nulláról épül a pozíciókból, tehát a hash már úgyis fedi.
+    const kod = this.kod;
+    for (let cs = 0; cs < kod.csapatDb; cs++) {
+      const t = kod.latott[cs];
+      for (let i = 0; i < t.length; i++) h = fnvSzam(h, t[i]);
+      h = fnvSzam(h, kod.latottDb[cs]);
     }
     const ef = this.eroforrasok;
     for (let i = 0; i < ef.db; i++) h = fnvSzam(h, ef.keszlet[i]);

@@ -900,7 +900,7 @@ if (ketV05.ok) {
 // menne, minden nehézség-függő szám azonos lenne, és egy elrontott
 // nehézség-indexelés SEMMIT nem változtatna a hash-en — a hiba a kapun belül
 // maradna. Az aszimmetria itt vizsgálati eszköz, nem ízlés.
-cim('9) v0.6 GÉPI ELLENFÉL — a forgatókönyv maga az AI');
+cim('9) v0.6 GÉPI ELLENFÉL + v0.7 HADI KÖD — a forgatókönyv maga az AI');
 const t9 = Date.now();
 const ketV06 = ketFutas(FORGATOKONYVEK.v06);
 let kevertV06 = { ok: false, tick: 0, a: 0, b: 0 };
@@ -1020,7 +1020,7 @@ if (ketV06.ok) {
   }
   const tec0 = s.technologia.osszesites(0), tec1 = s.technologia.osszesites(1);
   sor('katonai épület', katonaiEp[0] + ' / ' + katonaiEp[1], 'a build order eredménye');
-  sor('élő katona', sereg[0] + ' / ' + sereg[1], 'sereg-cél: 8 / 30');
+  sor('élő katona', sereg[0] + ' / ' + sereg[1], 'sereg-cél: 10 / 32');
   sor('kikutatott technológia', tec0.kesz + ' / ' + tec1.kesz,
     'kutatás-cél: 0 / 6 — a könnyű gép SZÁNDÉKOSAN egyet sem kutat');
 
@@ -1099,6 +1099,43 @@ if (ketV06.ok) {
         bukas++;
       }
     }
+  }
+
+  // ── v0.7/1 — HADI KÖD ──────────────────────────────────────────────
+  //
+  // Három szám, és mind a három más hibát fog meg:
+  //
+  //   · a frissítés lefutott-e egyáltalán (`frissitesDb`)
+  //   · nőtt-e a felfedezett terület a kezdő bázison túl
+  //   · és — ez a legfontosabb — MARADT-E FELFEDEZETLEN TERÜLET
+  //
+  // Az utolsó nélkül a köd „működne" akkor is, ha egy hibás sugár- vagy
+  // index-számítás az egész pályát felfedezettnek jelölné. Az ilyen köd
+  // determinisztikus, a számai nem nullák, és mégis PONTOSAN SEMMIT nem takar
+  // el — a gépi ellenfél felderítése pedig egy csapásra értelmét vesztené,
+  // mert a v0.6/3 óta ezen a rácson keresztül tudja meg, hol az ellenfél.
+  const k0 = s.kod.osszesites(0), k1 = s.kod.osszesites(1);
+  sor('köd-frissítés', s.kod.frissitesDb, 'köd-rács: ' + s.kod.kn + '×' + s.kod.kn
+    + ' (' + k0.osszes + ' cella)');
+  sor('felfedezett terület', k0.szazalek + ' % / ' + k1.szazalek + ' %',
+    'éppen látható: ' + k0.lathato + ' / ' + k1.lathato + ' cella');
+
+  if (s.kod.frissitesDb === 0) {
+    console.log('\n  \u26d4 A KÖD EGYSZER SEM FRISSÜLT: a `Kod.lep()` ága néma.');
+    console.log('     Nézd meg a `KOD_KOZ` maradékos szűrőjét és a `Sim.lep()` hívást.');
+    bukas++;
+  } else if (k0.latott === 0 || k1.latott === 0) {
+    console.log('\n  \u26d4 VALAMELYIK CSAPAT NULLA CELLÁT LÁTOTT: a `_folt` nem ír.');
+    bukas++;
+  } else if (k0.szazalek >= 100 && k1.szazalek >= 100) {
+    console.log('\n  \u26d4 MINDKÉT CSAPAT A TELJES PÁLYÁT FELFEDEZTE: a köd nem takar el');
+    console.log('     SEMMIT. Determinisztikus, a számai nem nullák, és mégis haszontalan.');
+    console.log('     Nézd meg a `LATOTAV_*` értékeket és a `_folt` sugár-számítását.');
+    bukas++;
+  } else if (k0.lathato === 0 && k1.lathato === 0) {
+    console.log('\n  \u26d4 EGYIK CSAPAT SEM LÁT SEMMIT ÉPPEN MOST: a `lathato` rács üres,');
+    console.log('     pedig a `latott` nem az. A frissítés nullázza, de nem tölti újra?');
+    bukas++;
   }
 
   // NAVIGÁCIÓ NÉLKÜL ÁLLÓ MUNKÁS — a v0.6/2 legdrágább hibájának őre.
@@ -1183,7 +1220,7 @@ sor('7) v0.4 harc',
 sor('8) v0.5 építkezés+tech',
   ketV05.ok ? (kevertV05.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV05.tick + ')')
     : 'BUKOTT (tick ' + ketV05.tick + ')');
-sor('9) v0.6 gépi ellenfél',
+sor('9) v0.6 AI + v0.7 köd',
   ketV06.ok ? (kevertV06.ok ? 'RENDBEN' : 'BUKOTT (kevert, tick ' + kevertV06.tick + ')')
     : 'BUKOTT (tick ' + ketV06.tick + ')');
 console.log('\n  ' + (bukas === 0
