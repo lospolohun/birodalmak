@@ -556,13 +556,47 @@ export function v05Uj() {
     // a sorok elszabadultak, a hírnév 6-ra esett — és alacsony hírnévvel már
     // nincs elég forgalom ahhoz, hogy kitermelje a béreket. A tanulság a
     // JÁTÉKRA is igaz: a személyzet nélküli épület rosszabb, mint a semmi.
+    // ── FIZETŐKÉPESSÉG: NE KÖLTS, HA TEGNAP VESZTESÉGES VOLT A NAP ───────
+    //
+    // ⚠️ EZ NEM A SZONDA MEGKERÜLÉSE, HANEM A MŰSZER JAVÍTÁSA. E nélkül a
+    // forgatókönyv KÉSPENGÉN egyensúlyozott: a hírnév-lendület egyetlen
+    // számát végigsöpörve a végigjátszás így viselkedett —
+    //
+    //     100 ✗ csőd · 150 ✗ csőd · 200 ✓ · 250 ✗ csőd · 300 ✓
+    //
+    // — vagyis a kimenet NEM MONOTON, tehát nem is a játékról szólt. Egy
+    // ilyen mérőeszközzel az ember a JÁTÉKOT hangolja a TESZTHEZ: kiválasztja
+    // azt a számot, amelyiknél a szonda véletlenül zöld. Pontosan az a hiba,
+    // ami ellen a `CLAUDE.md` szól, csak visszafelé.
+    //
+    // A bot azért volt ilyen érzékeny, mert nulla tartalékkal működött:
+    // amíg volt 2 500 tallérja, felvett még egy embert ÉS elkezdett egy új
+    // kaput — akkor is, ha a bevétele már nem fedezte a béreket. Egy valódi
+    // játékos ilyenkor megáll. A guard hat ponton mérve (60 · 100 · 150 · 200
+    // · 250 · 300) 2 zöldről 5 zöldre vitte a végigjátszást.
+    //
+    // ⚠️ A 200 UTÁNA IS ELBUKIK, ÉS EZT SZÁNDÉKOSAN NEM HAJSZOLTUK TOVÁBB.
+    // Egyetlen forgatókönyv egyetlen seeden nem a játék ítélete; hogy a
+    // gazdaság ép-e, azt a `qa/EGYENSULY.md` 80 végigjátszása mondja meg (a
+    // szállított 150-nél 6 stratégia nyer 8/8-at, nulla csőddel). Ha valaki
+    // ezt a maradék lyukat úgy „javítja", hogy a JÁTÉK számát tolja el 200-ra,
+    // az pontosan azt a hibát követi el, ami ellen a fenti bekezdés szól.
+    const veszteseges = sim.elozoNap && sim.elozoNap.koltseg > sim.elozoNap.bevetel;
+    const szukos = veszteseges && sim.penz < 12000;
+
+    // ⚠️ AMI NEM VÁLT BE: AZ ELBOCSÁTÁS. Kézenfekvő lett volna veszteséges
+    // napon létszámot csökkenteni (a Tanácsadó is ezt mondja a játékosnak),
+    // de a bot nem tudja, KIT: a listavégi dolgozó elbocsátása egy MŰKÖDŐ
+    // épületet fosztott meg a személyzetétől, az meg 15 %-ra esett. Mérve a
+    // hat ponton: 4 zöldből 3 lett. „A személyzet nélküli épület rosszabb,
+    // mint a semmi" — ugyanaz a szabály, csak a másik irányból.
     const hiany = hianyzoSzakma(sim);
-    if (hiany && t - utolsoFelvetel > 30 && sim.penz > 2500) {
+    if (hiany && !szukos && t - utolsoFelvetel > 30 && sim.penz > 2500) {
       sim.parancs({ fajta: 'felvesz', tipus: hiany }); utolsoFelvetel = t;
     }
 
     // ── ÉPÍTÉS: csak ha minden meglévő épület fel van töltve ─────────────
-    if (t > 3 && !hiany && t - utolsoEpites > 120 && tervIdx < V05_TERV.length) {
+    if (t > 3 && !hiany && !szukos && t - utolsoEpites > 120 && tervIdx < V05_TERV.length) {
       const [tipus, dx, dy, z] = V05_TERV[tervIdx];
       const ar = sim.epuletAra ? sim.epuletAra(tipus) : 0;
       const kut = sim.epuletKutatasa ? sim.epuletKutatasa(tipus) : null;
@@ -590,7 +624,7 @@ export function v05Uj() {
     }
 
     // ── KAPUK ────────────────────────────────────────────────────────────
-    if (t > 400 && t % 40 === 0 && kapuIdx < V05_KAPUK.length && sim.penz > 12000 && !hiany) {
+    if (t > 400 && t % 40 === 0 && kapuIdx < V05_KAPUK.length && sim.penz > 12000 && !hiany && !veszteseges) {
       for (let i = 0; i < sim.dimenziok.length; i++) {
         const d = sim.dimenziok[i];
         if (!d.felfedezve || d.nyitva || d.lezarva) continue;
@@ -602,7 +636,7 @@ export function v05Uj() {
     }
 
     // ── KUTATÁS ──────────────────────────────────────────────────────────
-    if (!sim.aktivKutatas && sim.penz > 20000 && !hiany) {
+    if (!sim.aktivKutatas && sim.penz > 20000 && !hiany && !veszteseges) {
       for (const kod of V05_KUTATAS) {
         if (sim.kutathato(kod)) { sim.parancs({ fajta: 'kutat', kod }); break; }
       }

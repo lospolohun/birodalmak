@@ -97,8 +97,18 @@ export const FEJEZETEK = [
     jutalom(s) {
       s.bevetel(4000, 'Forgalmi prémium');
       s.dimenziotFelfed('fagyperem');
+      // ⚠️ A PARÁZSMÉLY ITT NEM DÍSZ, HANEM A KÖVETKEZŐ FEJEZET FELTÉTELE.
+      // Az V. fejezet VIP-kiszolgálást kér, VIP-igénye pedig csak a démonnak
+      // (Parázsmély) és a sárkánynak (Sárkánytrónus) van — a sárkány viszont
+      // csak a VI. fejezetben jön. A III. fejezet „Megerősítés" ága nem fedte
+      // fel a Parázsmélyt, tehát aki a biztonságos utat választotta, annak
+      // NEM LÉTEZETT VIP-igényű vendége: mérve 8 seedből 8 ragadt be az V.
+      // fejezetnél, üresen álló VIP Lounge-dzsal és 894 463 tallérral. A
+      // menekülőút a véletlen Mélyszkennelés volt — egy fejezet, amit
+      // kockadobás nyit ki, nem fejezet.
+      s.dimenziotFelfed('parazsmely');
       s.kutatasKedvezmeny = 0.8;
-      s.naplo('A Fagyperem jelentkezett. A kutatások 20 %-kal olcsóbbak lettek.', 'jo');
+      s.naplo('A Fagyperem és a Parázsmély is jelentkezett. A kutatások 20 %-kal olcsóbbak lettek.', 'jo');
     },
   },
   {

@@ -364,7 +364,13 @@ export class Sim {
     const ep = this.epuletek[p.azon];
     if (!ep) return this._elutasit('nincs ilyen épület');
     const t = EPULETEK[ep.tipusIdx];
-    if (!t.igeny || t.dij <= 0) return this._elutasit('ezt az épületet nem lehet bérbe adni');
+    // A `szemelyzet === 0` nem szigorítás, hanem egy DOMINÁLT gomb eltüntetése.
+    // A bérbeadás ára a bevétel 58 %-a, a haszna a megspórolt bér — a mosdónak
+    // és a seprűparkolónak viszont nincs személyzete, tehát ott nincs mit
+    // megspórolni. Mérve: napi 2,28 és 3,12 tallér fix díjért adnánk oda a
+    // forgalom többségét. Nincs az a forgalom, amelynél megérné; a felület
+    // eddig olyan gombot kínált, aminek nincs helyes használata.
+    if (!t.igeny || t.dij <= 0 || t.szemelyzet === 0) return this._elutasit('ezt az épületet nem lehet bérbe adni');
     ep.berbeadva = !ep.berbeadva;
     if (ep.berbeadva) {
       // A bérlő hozza a saját embereit: a mi dolgozóink felszabadulnak.
@@ -891,8 +897,33 @@ export class Sim {
     //
     // A javítás nem ajándék, hanem realizmus: egy kis állomás híre
     // MINDKÉT irányban gyorsabban mozog, mert kevesebb vendég emléke van
-    // benne. Nullánál négyszeres, ötszáz utasnál alig másfélszeres lépés.
-    const lendulet = HIRNEV_TEHETETLENSEG * (1 + 60 / (20 + this.utasSzam));
+    // benne.
+    //
+    // ⚠️ A SZÁMLÁLÓ 60 VOLT, ÉS AZ KEVÉS VOLT — DE A JAVASOLT 300 MEG SOK.
+    // A képlet önmagában jó, csak túl gyorsan halt el: 400 utasnál 60-nal már
+    // csak 1,14× szorzót adott, vagyis pont a NAGY állomáson nem létezett —
+    // ott viszont, ahol a hírnév egyszer beszakad, a legnehezebb visszamászni.
+    // Mérve: a pénz-gödörből 41/41 futás kilábalt, a hírnév-gödörből 18/18-ból
+    // EGY SEM, és nem csak a hanyag stratégiák estek bele.
+    //
+    // A 300-at az egyensúly-jelentés javasolta. MEGMÉRTÜK, és rosszabb lett.
+    // Három futás, ugyanaz a kód, csak ez a szám más, 80 végigjátszás mind:
+    //
+    //     szám │ 8/8-at nyerő stratégia │ csőd │ gödörbe esett │ kijött belőle
+    //     ─────┼────────────────────────┼──────┼───────────────┼──────────────
+    //       60 │           6            │  1   │     18/80     │      0
+    //      150 │           6            │  0   │     19/80     │      2
+    //      300 │           2            │  3   │     30/80     │      8
+    //
+    // 300-nál a hírnév olyan szorosan követi a pillanatnyi hangulatot, hogy
+    // ELVISZI a nyerő stratégiák kétharmadát (`emeletes` 8/8 → 3/8, `kutato`
+    // 8/8 → 6/8): a gödörből könnyebb kijönni, de sokkal könnyebb bele is
+    // esni. A 150 az egyetlen mért pont, ahol MINDKÉT ígéret áll — a hat
+    // nyerő stílus megmarad, ÉS a gödör kinyílik.
+    //
+    // A tanulság általánosabb a számnál: egy jól diagnosztizált hiba
+    // javaslata is túllőhet, és ezt csak az újramérés mutatja meg.
+    const lendulet = HIRNEV_TEHETETLENSEG * (1 + 150 / (20 + this.utasSzam));
     this.hirnev += (cel - this.hirnev) * lendulet;
     if (this.hirnev < 0) this.hirnev = 0;
     if (this.hirnev > 100) this.hirnev = 100;

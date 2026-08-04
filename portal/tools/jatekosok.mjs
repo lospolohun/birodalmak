@@ -352,7 +352,15 @@ function motor(profil) {
           const ep = sim.epuletek[a];
           if (!ep || ep.berbeadva) continue;
           const tip = sim.epuletTipusa(ep);
-          if (!tip.igeny || tip.dij <= 0) continue;      // a sim ezt utasítaná el
+          // ⚠️ EZ A FELTÉTEL A SIM FELTÉTELÉNEK MÁSOLATA, ÉS EZ VESZÉLYES.
+          // Amikor a sim `_pBerbead()`-je szigorodott (`szemelyzet === 0` sem
+          // adható bérbe), ez a sor változatlan maradt: a bot átengedte a
+          // mosdót, a sim elutasította, a bot pedig a `return` miatt MINDEN
+          // tickben ugyanoda ért vissza. A `berbeado` stratégia így 8/8
+          // győzelemről 0/8-ra esett, 4 épülettel és 6-os hírnévvel — ami
+          // JÁTÉK-REGRESSZIÓNAK látszott, holott a mérőeszköz akadt el.
+          // Ha a sim feltétele megint változik, ITT is át kell vezetni.
+          if (!tip.igeny || tip.dij <= 0 || tip.szemelyzet === 0) continue;
           if (!p.berbead(ep.kod, sim)) continue;
           sim.parancs({ fajta: 'berbead', azon: ep.azon });
           return;

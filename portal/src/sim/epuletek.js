@@ -203,7 +203,14 @@ export const EPULETEK = [
     ar: 3200, energia: 26, szemelyzet: 1, fajta: 'poggyaszos',
     igeny: null, kapacitas: 0, ido: 0, dij: 0,
     szin: 0x8a7a5c, magas: 2.2, kutatas: null,
-    csatorna: 'vasut', csatornaUtem: 90,
+    // ⚠️ AZ ÜTEM 90 VOLT, ÉS AZ A ZAJSZINT ALATT VOLT. A vasút ág-hatása +1 %
+    // nettó vagyon (a mérés zajküszöbe 26 %) — vagyis 3 200 tallérért, 26
+    // energiáért és 5×3 cellányi helyért gyakorlatilag semmit nem adott. Az
+    // űrkapu (+29 %) bizonyítja, hogy a csatorna-FORMA működik; a vasúton
+    // viszont csak 33,4 tallér jön utasonként (az űrkapun 300,3), tehát itt a
+    // MENNYISÉG az egyetlen értelmes fizetség. 65-tel a „stabil alapzaj"
+    // ígérete végre igaz is.
+    csatorna: 'vasut', csatornaUtem: 65,
     leiras: 'Helyi vasúti forgalom: sok olcsó utas, karbantartás és kristály nélkül. Az állomás stabil alapzaja.',
   },
   {
@@ -227,7 +234,12 @@ export const EPULETEK = [
     ar: 900, energia: 14, szemelyzet: 0, fajta: null,
     igeny: null, kapacitas: 0, ido: 0, dij: 0,
     szin: 0xa8b8d8, magas: 1.0, kutatas: null,
-    atjaro: true, atjaroIdo: 40,
+    // ⚠️ EZ 40 VOLT, ÉS AZ VOLT AZ EMELET IGAZI ÁRA. A szintváltás ideje
+    // közvetlenül az utas türelméből megy, tehát minden emeleti szolgáltatás
+    // kétszer fizet (oda-vissza). 40-nél a magasba építés mérve −40 % utast és
+    // −44 % napi bevételt hozott: nem választás volt, hanem büntetés. 25-nél a
+    // lépcső még mindig HÁROMSZOR lassabb a liftnél (8) — a lift ára megmarad.
+    atjaro: true, atjaroIdo: 25,
     leiras: 'A legolcsóbb út felfelé. Lassabb, mint a lift, de enélkül az emelet halott tér. Kell alá és fölé kiépített padló.',
   },
 ];

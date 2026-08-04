@@ -81,7 +81,13 @@ export const TECHNOLOGIAK = [
     leiras: 'Nem állítja meg az időt. Csak megkéri, hogy várjon.',
   },
   {
-    kod: 'legendas_kapu', nev: 'Legendás kapunyitás', ikon: '🐉', ar: 6500, ido: 2600,
+    // ⚠️ AZ ÁR 6 500 VOLT, ÉS EZ NEM DÖNTÉS VOLT, HANEM KÖTELEZŐ LÉPÉS. A
+    // technológia-abláció szerint EGYEDÜL ez a kutatás +620 708 tallért ért; a
+    // második helyezett (`kristaly_takarek`) +74 244-et — nyolcszoros
+    // különbség. Ami minden mást elhomályosít, az kiveszi a fát a
+    // technológiafából. 12 000-nél a lépcsőkkel együtt ~28 400 a teljes út,
+    // tehát komoly befektetés marad, de nem ingyen nyert játszma.
+    kod: 'legendas_kapu', nev: 'Legendás kapunyitás', ikon: '🐉', ar: 12000, ido: 2600,
     fuggo: ['ido_kotes', 'vip_ellatas'], hatas: 'Felfedezi a Sárkánytrónust.',
     leiras: 'Amit eddig háttérzajnak hittünk, az egy cím volt.',
   },

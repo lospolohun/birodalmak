@@ -138,6 +138,29 @@ export function tanacsok(sim, max = 6) {
     });
   }
 
+  // ── 7/b. A HÍRNÉV-GÖDÖR — az egyetlen állapot, amiből MÉRVE nincs kiút ──
+  //
+  // Ez a szabály másképp működik, mint a többi: nem építeni mond, hanem
+  // VISSZAVENNI. Mérve, 80 futás: 18-ban esett a hírnév 20 alá, és onnan
+  // EGYETLENEGY sem jött vissza 40 fölé — köztük a `bevetel_maximalizalo`
+  // két futása, ami 68 épülettel egyáltalán nem volt hanyag játék.
+  //
+  // Az ok nem pénzhiány (a pénz-gödörből 41/41 kilábalt), hanem hurok: a
+  // hírnév a TÁVOZÓK hangulatából épül, tehát amíg többen távoznak dühösen,
+  // mint elégedetten, addig minden új vendég MÉLYÍTI a gödröt. Aki ilyenkor
+  // épít, az még több vendéget hív be ugyanabba a sorba. A kiút a
+  // forgalom átmeneti visszafogása — díjemelés vagy egy kapu bezárása —,
+  // amíg a meglévő kapacitás utoléri magát.
+  if (sim.hirnev < 25 && sim.osszTavozo > 60 && sim.duhosTavozok > sim.elegedettTavozok) {
+    ki.push({
+      sulyossag: 'baj', ikon: '🕳️', cim: 'Hírnév-gödörben vagy — ne építs, VEGYÉL VISSZA',
+      szoveg: `${Math.round(sim.hirnev)}-ös hírnév, és a vendégek többsége dühösen távozik. Több épület most ` +
+        'NEM segít: még több vendéget hív ugyanabba a sorba, és mélyíti a gödröt. Emeld meg a kapudíjakat ' +
+        'vagy zárj be átmenetileg egy kaput — kevesebb vendég, rövidebb sor, elégedettebb távozók. Ha a ' +
+        'hírnév fölfelé indult, engedheted vissza a forgalmat.',
+    });
+  }
+
   // ── 8. HA MINDEN RENDBEN ───────────────────────────────────────────────
   if (ki.length === 0) {
     ki.push({

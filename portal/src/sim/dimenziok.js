@@ -103,7 +103,13 @@ export const DIMENZIOK = [
   },
   {
     kod: 'sarkanytronus', nev: 'Sárkánytrónus', ikon: '🐉', szin: 0xffb347,
-    dij: 240, vamKoteles: true, veszely: 1.9, nyitasAr: 12000,
+    // ⚠️ A DÍJ 240 VOLT, ÉS AZ EGYETLEN KAPU VITTE A JÁTSZMÁT. Mérve, 80 futás:
+    // a Sárkánytrónus 397,7 tallér/utast hozott (űrkapu 300,3 · Fagyperem
+    // 132,2 · a kezdő Zsibvásár 50,2), és ez az EGY kapu 47,4 millió portáldíjat
+    // termelt — többet, mint a Zsibvásár, a Ködmocsár és a Kőhegység EGYÜTT
+    // (36,0 millió), pedig csak 51 futásban volt nyitva a 80-ból. 170-nel
+    // továbbra is messze a legjövedelmezőbb kapu, de a többi világ is számít.
+    dij: 170, vamKoteles: true, veszely: 1.9, nyitasAr: 12000,
     fajok: [{ kod: 'sarkany', suly: 4 }, { kod: 'demon', suly: 3 }, { kod: 'boszorkany', suly: 2 }],
     kezdo: false,
     leiras: 'LEGENDÁS. Kevés utas, iszonyú bevétel — és a leggyorsabban romló kapu az egész hálózatban.',

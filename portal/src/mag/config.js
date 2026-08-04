@@ -11,7 +11,7 @@
 // az AoC-nál már megégettük magunkat azzal, hogy két helyen állt verziószám.
 
 /** A játék verziója. EZ az igazság, nem a package.json. */
-export const VERZIO = '0.9.0';
+export const VERZIO = '1.0.0';
 export const JATEK_NEV = 'PORTAL HUB TYCOON';
 
 // ── IDŐ ───────────────────────────────────────────────────────────────────
@@ -41,8 +41,15 @@ export const CELLA_MERET = 1;
 export const RACS_SZINT = 3;
 /** Két szint közti magasság világegységben. */
 export const SZINT_MAGASSAG = 7;
-/** Az emeleti padló ennyivel drágább szintenként (tartószerkezet). */
-export const EMELET_FELAR = 1.1;
+// Az emeleti padló ennyivel drágább szintenként (tartószerkezet).
+//
+// ⚠️ EZ 1,1 VOLT, ÉS AZ EMELETET BÜNTETÉSSÉ TETTE. Az emelet valódi ára nem a
+// tartószerkezet, hanem az IDŐ: a szintváltás közvetlenül az utas türelméből
+// megy. Mérve, ág-abláció: a magasba építő stratégia −70 % nettó vagyont,
+// −44 % napi bevételt és −40 % utast hozott — vagyis az emelet kényelmesebb
+// volt ugyan, de KIZÁRÓLAG drágább. Az anyagár így lemegy 0,6-ra: a
+// többszintes állomás ára maradjon az, amit az utas érez, ne dupla büntetés.
+export const EMELET_FELAR = 0.6;
 /** Egy szintváltás ennyi lépésnyi „útnak" számít az útkeresésben. */
 export const ATJARO_KOLTSEG = 4;
 
@@ -128,7 +135,13 @@ export const OSSZEOMLAS_SZUNET = 1600;
 export const NEHEZSEGEK = [
   {
     kod: 'konnyu', nev: 'Könnyű', ikon: '🌤️',
-    penz: 1.6, ber: 0.75, instabil: 0.6, erkezes: 1.15, esemeny: 0.6,
+    // ⚠️ Az `erkezes` 1,15 volt, és pont visszafelé sült el. A könnyű fokozat
+    // pénzben könnyebb volt, KISZOLGÁLÁSBAN viszont nehezebb: több utas zúdult
+    // ugyanarra az állomásra, és a dühös vendégek aránya itt lett a legmagasabb
+    // (75 %), a hírnév pedig alacsonyabb, mint normálon (63,3 vs 67,6). A
+    // kezdőnek nem több vendég kell, hanem több MOZGÁSTÉR — azt a pénz, a bér
+    // és az instabilitás szorzói már megadják.
+    penz: 1.6, ber: 0.75, instabil: 0.6, erkezes: 1.0, esemeny: 0.6,
     leiras: 'Több kezdőtőke, olcsóbb bérek, lassabban romló kapuk. Az első állomáshoz.',
   },
   {
@@ -138,7 +151,12 @@ export const NEHEZSEGEK = [
   },
   {
     kod: 'kemeny', nev: 'Kemény', ikon: '🔥',
-    penz: 0.7, ber: 1.35, instabil: 1.5, erkezes: 0.9, esemeny: 1.5,
+    // ⚠️ Ez `0,7 / 1,35 / 1,5` volt, és az LASSÍTÁS volt, nem nehézség: a jó
+    // játékos a keményen is 8/8-at nyert, mindössze 4,1 nappal később, 2,24
+    // millió nettó vagyonnal. A GYENGE stratégiát viszont már akkor is
+    // büntette (csőd 0/8 → 1/8 → 2/8) — azt az irányt nem kell erősíteni,
+    // csak a felső határt megemelni.
+    penz: 0.55, ber: 1.7, instabil: 2.0, erkezes: 0.9, esemeny: 1.5,
     leiras: 'Kevesebb pénz, drágább személyzet, gyorsan romló kapuk, sűrűbb események.',
   },
 ];
@@ -149,8 +167,17 @@ export function nehezsegIdx(kod) {
 }
 
 // ── BÉRBEADÁS ─────────────────────────────────────────────────────────────
-/** Bérbe adott üzletnél a bevétel ekkora hányada marad nálunk. */
-export const BERLET_RESZESEDES = 0.42;
+// Bérbe adott üzletnél a bevétel ekkora hányada marad nálunk.
+//
+// ⚠️ EZ 0,42 VOLT, ÉS TÚL DRÁGA NYUGALOM VOLT. A bérbeadás cserekereskedelem:
+// kevesebb bevételt adok kevesebb gondért (a bérlő hozza a saját embereit).
+// 0,42-nél a bolt töréspontja 121 tallér/nap volt, a mért tényleges forgalom
+// ~771 — vagyis 6,4-szeres áron vettük meg a nyugalmat, és az ág-abláció
+// −60 % nettó vagyont mutatott (996 903 → 395 886), miközben a létszám 136-ról
+// 51-re esett. 0,60-nál a töréspont 187, a szorzó 4,1: az ág versenyképes
+// lesz, de a nagy forgalmú üzletnél TOVÁBBRA IS a saját üzemeltetés nyer —
+// vagyis marad döntésnek.
+export const BERLET_RESZESEDES = 0.60;
 /** …plusz napi fix bérleti díj az épület árának ekkora hányada. */
 export const BERLET_NAPIDIJ = 0.006;
 

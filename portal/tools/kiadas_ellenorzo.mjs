@@ -158,7 +158,7 @@ cim('5. AZ ALPROJEKT NEM SZIVÁROG');
 // ══════════════════════════════════════════════════════════════════════════
 cim('6. DOKUMENTÁCIÓ');
 {
-  const kell = ['PORTAL_TERV.md', 'qa/V0.1_EREDMENY.md', 'qa/V0.4_EREDMENY.md'];
+  const kell = ['README.md', 'PORTAL_TERV.md', 'qa/V0.1_EREDMENY.md', 'qa/V0.4_EREDMENY.md', 'qa/V1.0_EREDMENY.md', 'qa/EGYENSULY.md'];
   for (const k of kell) {
     if (existsSync(join(GYOKER, k))) ok(k);
     else rossz(`hiányzik: ${k}`);
