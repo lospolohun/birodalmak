@@ -14,6 +14,7 @@
 //   8. GAZDASÁGI DÖNTÉSEK — bérbeadás és nehézségi fokozat
 //   9. CSATORNÁK — vasút, léghajó, űrkapu: megépülnek-e és hoznak-e utast
 //  10. VÉGIGJÁTSZÁS — a hét fejezet végigmegy-e, és él-e a végtelen mód
+//  11. ESEMÉNYEK — ép-e a katalógus, és sokféle-e, ami történik
 //
 // ⚠️ A 6. VIZSGÁLAT NEM DÍSZ. A determinizmus-kapu nem működés-kapu: a
 // semmittevés is tökéletesen reprodukálható. Az AoC-nál a v0.3 mind a hat
@@ -31,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { Sim } from '../src/sim/sim.js';
 import { v01Uj, v02Uj, v03Uj, v04Uj, v05Uj } from './forgatokonyv.mjs';
 import { vegtelenCel, rang } from '../src/sim/tortenet.js';
+import { ESEMENYEK } from '../src/sim/esemenyek.js';
 
 const GYOKER = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TICKEK = Number(process.env.PHT_TICK || 24000);
@@ -384,10 +386,54 @@ cim('10. VÉGIGJÁTSZÁS — a hét fejezet és a végtelen korszakok');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  11. ESEMÉNYEK — ép-e a katalógus, és TÖRTÉNIK-e valami
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A leírás egyik alaptétele: „a játék lényege, hogy folyamatosan történjen
+// valami". Ez a vizsgálat két dolgot néz: hogy a katalógus formailag ép-e
+// (egy elgépelt mező csak akkor derülne ki, amikor az esemény először
+// előfordul — az pedig lehet a hatvanadik játékperc), és hogy egy teljes
+// végigjátszás alatt tényleg SOKFÉLE esemény történik-e.
+
+cim('11. ESEMÉNYEK — katalógus és sokféleség');
+{
+  const kodok = new Set();
+  let baj = 0;
+  for (let i = 0; i < ESEMENYEK.length; i++) {
+    const e = ESEMENYEK[i];
+    const hol = `#${i} (${e.kod || '???'})`;
+    if (!e.kod) { rossz(`${hol} — nincs kód`); baj++; }
+    if (kodok.has(e.kod)) { rossz(`${hol} — duplikált kód`); baj++; }
+    kodok.add(e.kod);
+    if (typeof e.feltetel !== 'function') { rossz(`${hol} — nincs feltetel()`); baj++; }
+    if (typeof e.indit !== 'function') { rossz(`${hol} — nincs indit()`); baj++; }
+    if (!e.leiras || e.leiras.length < 20) { rossz(`${hol} — hiányzó vagy túl rövid leírás`); baj++; }
+    if (!(e.suly > 0)) { rossz(`${hol} — nincs pozitív súly`); baj++; }
+    if (!(e.hossz >= 1)) { rossz(`${hol} — nincs érvényes hossz`); baj++; }
+    if (e.valaszok) {
+      for (let j = 0; j < e.valaszok.length; j++) {
+        const v = e.valaszok[j];
+        if (!v.cim || typeof v.hatas !== 'function' || !(v.ar >= 0)) { rossz(`${hol} válasz #${j} — hibás`); baj++; }
+      }
+    }
+  }
+  if (baj === 0) ok(`${ESEMENYEK.length} esemény, mind ép`);
+
+  // Az 5. és a 10. vizsgálat futásaiból már megvan a mérés — újra nem futtatjuk.
+  const fajtak = A.sim.esemenyDb.size;
+  const osszes = [...A.sim.esemenyDb.values()].reduce((a, b) => a + b, 0);
+  info(`a v01 futásban ${osszes} esemény történt, ${fajtak} féle`);
+  const hosszu = [...futas(90210, 95000, false, v05Uj).sim.esemenyDb.keys()];
+  info(`a teljes végigjátszásban ${hosszu.length} féle: ${hosszu.join(', ')}`);
+  if (hosszu.length >= 8) ok(`${hosszu.length}-féle esemény egyetlen játszásban`);
+  else rossz(`csak ${hosszu.length}-féle esemény — a „folyamatosan történjen valami" ígéret üres`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 
 console.log('');
 if (hiba === 0) {
-  console.log('\x1b[42m\x1b[30m  MIND A TÍZ VIZSGÁLAT ZÖLD  \x1b[0m\n');
+  console.log('\x1b[42m\x1b[30m  MIND A TIZENEGY VIZSGÁLAT ZÖLD  \x1b[0m\n');
   process.exit(0);
 } else {
   console.log(`\x1b[41m\x1b[37m  ${hiba} HIBA  \x1b[0m\n`);

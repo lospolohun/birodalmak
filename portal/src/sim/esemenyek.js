@@ -198,6 +198,99 @@ export const ESEMENYEK = [
     },
     tick() {},
   },
+  // ══════════════════════════════════════════════════════════════════════
+  //  v1.0 — TOVÁBBI ESEMÉNYEK
+  //  ⚠️ A LISTA VÉGÉRE mennek: az index stabil azonosító a mentésben.
+  // ══════════════════════════════════════════════════════════════════════
+  {
+    kod: 'unnep', nev: 'Ünnep odaát', ikon: '🎉', suly: 7, hossz: 1400,
+    feltetel: (s) => s.nyitottKapuk().length > 0,
+    leiras: 'Az egyik világban ünnep van. Az onnan érkezők jobb kedvvel jönnek, és többet is költenek.',
+    indit(s, e) {
+      const lista = s.nyitottKapuk();
+      e.dim = lista[Math.floor(s.rnd() * lista.length)].idx;
+      e.cim = `Ünnep: ${s.dimenzioNev(e.dim)}`;
+      s.unnepDim = e.dim;
+      s.erkezesSzorzoDim[e.dim] = 1.6;
+    },
+    tick() {},
+    veg(s, e) { s.erkezesSzorzoDim[e.dim] = 1; if (s.unnepDim === e.dim) s.unnepDim = -1; },
+  },
+  {
+    kod: 'mernok_sztrajk', nev: 'A mérnökök sztrájkolnak', ikon: '🔧', suly: 5, hossz: 1000,
+    feltetel: (s) => s.dolgozoSzamTipus('mernok') >= 2 && s.mukodoEpuletVan('karbantarto'),
+    leiras: 'A portálmérnökök leteszik a szerszámot. Amíg tart, a karbantartás ÁLL — és az instabilitás nem vár.',
+    indit(s, e) { e.cim = 'Mérnök-sztrájk'; s.sztrajk = true; },
+    tick() {},
+    veg(s) { s.sztrajk = false; },
+    valaszok: [
+      {
+        cim: 'Béremelés (−3200)', leiras: 'Azonnal munkába állnak, és nem is haragszanak.',
+        ar: 3200,
+        hatas(s, e) { s.sztrajk = false; e.hossz = 0; s.hirnevValt(2); },
+      },
+      { cim: 'Kivárjuk', leiras: 'A kapuk addig magukra maradnak.', ar: 0, hatas() {} },
+    ],
+  },
+  {
+    kod: 'kristaly_lelet', nev: 'Kristálylelet', ikon: '💎', suly: 5, hossz: 1,
+    feltetel: () => true,
+    leiras: 'A karbantartás közben kristálytelérre bukkantak az egyik kapu alatt.',
+    indit(s, e) {
+      e.azonnali = true;
+      const ertek = Math.round((900 + s.rnd() * 1800) * (1 + s.tortenet.korszak * 0.3));
+      s.bevetel(ertek, 'kristálylelet');
+      e.cim = `Kristálylelet (+${ertek})`;
+      s.naplo(`Kristálytelérre bukkantak: +${ertek} tallér.`, 'jo');
+    },
+    tick() {},
+  },
+  {
+    kod: 'elveszett_poggyasz', nev: 'Elveszett poggyász', ikon: '🧳', suly: 6, hossz: 1,
+    feltetel: (s) => s.mukodoEpuletVan('poggyasz'),
+    leiras: 'Egy csomag nem érkezett meg oda, ahová kellett volna.',
+    indit(s, e) {
+      e.azonnali = true;
+      // A felkészültség dönt: a feltöltött poggyászkezelő megtalálja.
+      let jol = false;
+      for (let i = 0; i < s.epuletek.length; i++) {
+        const ep = s.epuletek[i];
+        if (ep && ep.kod === 'poggyasz' && ep.hatekonysag >= 0.95) { jol = true; break; }
+      }
+      const kar = jol ? 120 : Math.round(500 + s.rnd() * 700);
+      s.koltseg(kar, 'kártérítés');
+      s.hirnevValt(jol ? -1 : -5);
+      e.cim = `Elveszett poggyász (−${kar})`;
+      s.naplo(jol
+        ? `Egy csomag elkeveredett, de a szalag mellett voltak. Kártérítés: ${kar}.`
+        : `Elveszett egy poggyász, és nem volt, aki keresse. Kártérítés: ${kar}.`, jol ? 'gond' : 'baj');
+    },
+    tick() {},
+  },
+  {
+    kod: 'portal_visszhang', nev: 'Portálvisszhang', ikon: '🔊', suly: 4, hossz: 800,
+    feltetel: (s) => s.nyitottKapuk().length >= 2,
+    leiras: 'Két kapu rezonanciába került: az egyiken kétszer annyian jönnek, a másik instabilabb lesz.',
+    indit(s, e) {
+      const l = s.nyitottKapuk();
+      e.dim = l[Math.floor(s.rnd() * l.length)].idx;
+      let masik = l[Math.floor(s.rnd() * l.length)].idx;
+      if (masik === e.dim) masik = l[(l.findIndex((d) => d.idx === e.dim) + 1) % l.length].idx;
+      e.dim2 = masik;
+      e.cim = `Portálvisszhang: ${s.dimenzioNev(e.dim)}`;
+      s.erkezesSzorzoDim[e.dim] = 2;
+    },
+    tick(s, e) { s.dimenziok[e.dim2].instabilitas += 0.25 * s.eventEro(); },
+    veg(s, e) { s.erkezesSzorzoDim[e.dim] = 1; },
+    valaszok: [
+      {
+        cim: 'Szétcsatolás (−1400)', leiras: 'A mérnökök szétválasztják a két kaput.',
+        ar: 1400,
+        hatas(s, e) { e.hossz = 0; },
+      },
+      { cim: 'Hagyjuk zúgni', leiras: 'A forgalom jól jön. A másik kapu állja a számlát.', ar: 0, hatas() {} },
+    ],
+  },
 ];
 
 export const ESEMENY_INDEX = (() => {

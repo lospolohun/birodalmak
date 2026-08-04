@@ -114,8 +114,12 @@ export function utastIndit(sim, u, dimIdx, px, py, pz = 0, fajIdxKenyszer = -1) 
   // fele is átjön. Enélkül a szintlépés csak darabszámot adna, és a
   // „fejlesszek vagy nyissak újat?" döntés mindig ugyanaz lenne.
   const szintSzorzo = 1 + (dall.szint - 1) * 0.22;
-  u.penz = Math.round((faj.penz + (sim.rnd() * 2 - 1) * faj.szoras) * szintSzorzo);
+  // Ünnep a kiinduló világban: jobb kedv és nagyobb pénztárca. Ez az egyetlen
+  // esemény, ami az UTAS oldaláról hat — a többi az állomásra.
+  const unnep = sim.unnepDim === dimIdx;
+  u.penz = Math.round((faj.penz + (sim.rnd() * 2 - 1) * faj.szoras) * szintSzorzo * (unnep ? 1.5 : 1));
   if (u.penz < 10) u.penz = 10;
+  if (unnep) u.turelem = Math.round(u.turelem * 1.25);
 
   tervetKeszit(sim, u, faj, dim);
 

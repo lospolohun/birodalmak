@@ -120,6 +120,10 @@ export class Sim {
     this.idoviharSzorzo = 1;
     this.kristalyArSzorzo = 1;
     this.kutatasKedvezmeny = 1;
+    /** Sztrájk alatt a karbantartás áll (esemény). */
+    this.sztrajk = false;
+    /** Melyik dimenzióban van épp ünnep (-1 = egyikben sem). */
+    this.unnepDim = -1;
     this.napiBevetel = 0;
     this.napiKoltseg = 0;
     this.elozoNap = { bevetel: 0, koltseg: 0 };
@@ -146,7 +150,15 @@ export class Sim {
     this.osszTavozo = 0;
     this.vipKiszolgalt = 0;
     this.hianyok = new Map();   // igénykód → hányszor nem volt meg
+    /** eseménykód → hányszor fordult elő. A statisztika és a szonda kéri. */
+    this.esemenyDb = new Map();
     this.naplok = [];           // { tick, szoveg, fajta }
+    /**
+     * Napi pillanatképek a grafikonokhoz. Azért a SIM tartja, nem a UI:
+     * a betöltött játék így nem veszíti el a történetét, és a mérőeszközök
+     * is ugyanazt látják, mint a képernyő. 120 nap után a legrégebbi esik ki.
+     */
+    this.napiTortenet = [];
 
     // ── PARANCSOK ─────────────────────────────────────────────────────────
     this.parancsSor = [];
@@ -992,6 +1004,7 @@ export class Sim {
       if (kod === 'mernok' && ep.kod === 'karbantarto') karbantartoEro += dolgozoEro(d) * ep.hatekonysag;
       if (kod === 'kobold' && ep.kod === 'takarito') takaritoEro += dolgozoEro(d) * ep.hatekonysag;
     }
+    if (this.sztrajk) karbantartoEro = 0;
     if (karbantartoEro > 0) {
       const csokk = INSTABIL_KARBANTARTAS * 0.01 * karbantartoEro;
       for (let i = 0; i < this.dimenziok.length; i++) {
@@ -1142,6 +1155,7 @@ export class Sim {
     if (!v) return null;
     const def = ESEMENYEK[v.i];
     const e = { azon: this.kovEsemenyAzon++, idx: v.i, kod: def.kod, kezdet: this.tick, hossz: def.hossz, cim: def.nev };
+    this.esemenyDb.set(def.kod, (this.esemenyDb.get(def.kod) || 0) + 1);
     def.indit(this, e);
     if (!e.azonnali) {
       this.aktivEsemenyek.push(e);
@@ -1256,6 +1270,17 @@ export class Sim {
     if (uzemeltetes > 0) this.koltseg(Math.round(uzemeltetes), 'üzemeltetés');
 
     this.elozoNap = { bevetel: this.napiBevetel, koltseg: this.napiKoltseg, tetelek: new Map(this.tetelek) };
+    this.napiTortenet.push({
+      nap: this.nap,
+      penz: Math.round(this.penz),
+      hirnev: Math.round(this.hirnev * 10) / 10,
+      utas: this.utasSzam,
+      bevetel: Math.round(this.napiBevetel),
+      koltseg: Math.round(this.napiKoltseg),
+      elegedett: this.elegedettTavozok,
+      duhos: this.duhosTavozok,
+    });
+    if (this.napiTortenet.length > 120) this.napiTortenet.shift();
     this.napiBevetel = 0;
     this.napiKoltseg = 0;
     this.tetelek.clear();
@@ -1408,6 +1433,22 @@ export class Sim {
   /** Melyik technológia oldja fel az épületet (vagy null). */
   epuletKutatasa(kod) { const t = epuletTipus(kod); return t ? (t.kutatas || null) : null; }
 
+  /**
+   * Kik állnak ezen a cellán? A felület „ki áll itt?" vizsgálója kéri.
+   * @returns {object[]} az utas-rekordok (a hívó CSAK OLVASHATJA őket)
+   */
+  utasokACellan(x, y, z = 0, sugar = 1) {
+    const ki = [];
+    for (let i = 0; i < this.utasok.length; i++) {
+      const u = this.utasok[i];
+      if (!u.aktiv || u.z !== z) continue;
+      if (Math.abs(u.x - (x + 0.5)) > sugar || Math.abs(u.y - (y + 0.5)) > sugar) continue;
+      ki.push(u);
+      if (ki.length >= 8) break;
+    }
+    return ki;
+  }
+
   /** Egy épülettípus alapterülete — a felület és a forgatókönyvek terveznek vele. */
   epuletMerete(kod) { const t = epuletTipus(kod); return t ? { sz: t.sz, m: t.m } : null; }
 
@@ -1509,8 +1550,9 @@ export class Sim {
    */
   ellenorzoOsszeg() {
     const o = new Osszeg();
-    o.be(this.tick).be(this.nap).be(this.rnd.allapot()).be(this.nehezsegIdx)
-      .be(this.gyoztel ? 1 : 0).be(this.tortenet.korszak).be(this.tortenet.korszakAlap);
+    o.be(this.tick).be(this.nap).be(this.rnd.allapot()).be(this.nehezsegIdx).be(this.sztrajk ? 1 : 0)
+      .be(this.gyoztel ? 1 : 0).be(this.tortenet.korszak).be(this.tortenet.korszakAlap)
+      .be(this.napiTortenet.length);
     o.beF(this.penz).beF(this.hirnev).beF(this.kosz);
     o.be(this.utasSzam).be(this.osszTavozo).be(this.elegedettTavozok).be(this.duhosTavozok);
     o.be(this.energiaIgeny).be(this.energiaTermeles).be(this.aramszunet ? 1 : 0);
