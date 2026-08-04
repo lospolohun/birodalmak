@@ -3,7 +3,7 @@
 | mappa | játék | indítás |
 |---|---|---|
 | gyökér (`src/`) | **AGE OF THE CRYSTALS** — böngészős RTS | `npm run dev` |
-| [`portal/`](portal/PORTAL_TERV.md) | **PORTAL HUB TYCOON** — dimenziókapu-tycoon | `npm run portal:dev` |
+| [`portal/`](portal/README.md) | **PORTAL HUB TYCOON** — dimenziókapu-tycoon | `npm run portal:dev` |
 
 A két játék diszjunkt fájlkészleten él: a `portal/` alprojektnek saját
 `index.html`-je, `vite.config.js`-e és szondái vannak, és az AoC egyetlen
