@@ -2,3 +2,14 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# ── IDEIGLENES MÉRŐSZKRIPTEK A REPÓ GYÖKERÉBEN ────────────────────────────
+# A `playwright` csak innen oldódik fel (a `node_modules` itt van), ezért egy
+# gyors A/B-méréshez vagy egy egyszer használatos végigkattintáshoz néha ide
+# kell írni egy eldobható fájlt (`.ui_perf.mjs`, `.qa_kor.mjs`, …).
+#
+# Ezek MÉRŐESZKÖZÖK, nem a játék részei, és nem is szabad, hogy azok legyenek:
+# ami tartósan kell, az `portal/tools/` alá megy rendes néven, fejléc-
+# kommenttel és `npm run` bejegyzéssel. A pont-előtag az, ami megkülönbözteti
+# az eldobhatót a szállítandótól.
+/.*.mjs
