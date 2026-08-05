@@ -47,18 +47,38 @@ export function tanacsok(sim, max = 6) {
   }
 
   // ── 2. SZEMÉLYZET NÉLKÜLI ÉPÜLETEK ────────────────────────────────────
-  const ures = [];
+  //
+  // ⚠️ EZ EGY SZABÁLYBAN VOLT, ÉS HAZUDOTT. Minden személyzet nélküli
+  // épületre azt mondta, hogy „15 %-on üzemel… sorba állítja a vendégeket" —
+  // csakhogy az ENERGIAMAG üres szerelővel 78 %-on termel (`_energiaSzamol`),
+  // és nem áll benne sor. Az állomás viszont ingyen kapott energiamaggal
+  // INDUL, tehát a tanácsadó a MÁSODPERC NULLÁN adott egy `baj` szintű,
+  // tárgyilag hibás riasztást. Egy tanácsadó, aminek az első mondata sem
+  // igaz, elveszíti a hitelét — és utána a valódi riasztásait sem olvassák
+  // el. Ezért a két eset kettévált: a KISZOLGÁLÓ épület személyzet nélkül
+  // valóban baj, a háttér-épület csak gond, és mást is mondunk róla.
+  const uresSzolg = [], uresHatter = [];
   for (let a = 0; a < ep.length; a++) {
     const e = ep[a];
     if (!e || e.berbeadva || e.kikapcsolva) continue;
     const t = EPULETEK[e.tipusIdx];
-    if (t.szemelyzet > 0 && e.dolgozok.length === 0) ures.push(t.nev);
+    if (t.szemelyzet === 0 || e.dolgozok.length > 0) continue;
+    (t.igeny ? uresSzolg : uresHatter).push(t.nev);
   }
-  if (ures.length > 0) {
+  if (uresSzolg.length > 0) {
     ki.push({
-      sulyossag: 'baj', ikon: '👷', cim: `${ures.length} épület személyzet nélkül`,
-      szoveg: `${ures.slice(0, 3).join(', ')}${ures.length > 3 ? ' és mások' : ''} 15 %-on üzemel. ` +
-        'A személyzet nélküli épület rosszabb, mint a semmi: helyet foglal, energiát eszik, és sorba állítja a vendégeket.',
+      sulyossag: 'baj', ikon: '👷', cim: `${uresSzolg.length} pult személyzet nélkül`,
+      szoveg: `${uresSzolg.slice(0, 3).join(', ')}${uresSzolg.length > 3 ? ' és mások' : ''} 15 %-on üzemel. ` +
+        'A személyzet nélküli pult rosszabb, mint a semmi: helyet foglal, energiát eszik, és sorba állítja a vendégeket. ' +
+        'A 👷 panelen oszd be a tétleneket, vagy vegyél fel embert.',
+    });
+  }
+  if (uresHatter.length > 0) {
+    ki.push({
+      sulyossag: 'gond', ikon: '🛠️', cim: `${uresHatter.length} háttér-épület személyzet nélkül`,
+      szoveg: `${uresHatter.slice(0, 3).join(', ')}${uresHatter.length > 3 ? ' és mások' : ''} — itt nem áll sor, ` +
+        'de a hatásuk elmarad: a portálkarbantartó mérnök nélkül EGYÁLTALÁN nem farag az instabilitáson, ' +
+        'a takarítókamra kobold nélkül nem takarít, az energiamag pedig szerelő nélkül csak 78 %-ot termel.',
     });
   }
 

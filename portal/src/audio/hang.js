@@ -42,7 +42,7 @@
 // determinizmus-tilalom a `src/sim/`-re vonatkozik) — sőt kell is, a
 // generatív zenéhez és a hangfoszlányokhoz.
 
-import { NAP_TICK, INSTABIL_HATAR } from '../mag/config.js';
+import { NAP_TICK, INSTABIL_HATAR, RACS_SZ, RACS_M } from '../mag/config.js';
 import { HANGOK, AMBIENS, ZENE, ZENE_HANGNEMEK, KEVERES, TER, VALTOZAT_ALAP } from './hang_katalogus.js';
 import { zengetoPuffer, puhaGorbe, panoramazo, terbe } from './hang_ter.js';
 
@@ -91,7 +91,11 @@ export class Hang {
     // ── KAMERA ────────────────────────────────────────────────────────────
     // A térhatás ehhez viszonyít. A `fo.js` írja képkockánként; ha sosem
     // írja, minden hang középen marad — működik, csak nincs iránya.
-    this._kam = { x: 0, z: 0, szog: 0, tav: 46 };
+    // Az alapérték a rács KÖZEPE: ha a bekötés elmarad, minden hang középen
+    // és teljes hangerőn szól — vagyis pontosan úgy, mint térhatás nélkül.
+    // A (0,0) sarok azt jelentené, hogy a bekötetlen állapot csendesebb és
+    // féloldalas, ami néma hibaként ülne meg a játékban.
+    this._kam = { x: RACS_SZ * 0.5, z: RACS_M * 0.5, szog: 0, tav: 46 };
     /** Újrahasznált kimenet a `terbe()`-nek: a `jelez()` nem allokál. */
     this._ter = { pan: 0, tavolsag: 0 };
 

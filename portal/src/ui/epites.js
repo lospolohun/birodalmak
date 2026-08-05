@@ -27,7 +27,13 @@ const KATEGORIAK = [
   { kod: 'kotelezo', nev: '🛡️ Kötelező', sug: 'Amin MINDEN utas átmegy. Enélkül csalódottan indul tovább.', epuletek: ['biztonsag', 'vam', 'poggyasz'] },
   { kod: 'kenyelem', nev: '🪑 Kényelem', sug: 'Türelmet és hangulatot tölt vissza. Alig hoz pénzt, mégis ez tartja a hírnevet.', epuletek: ['varo', 'wc', 'info', 'seprupark', 'hoforras', 'jegkamra'] },
   { kod: 'bevetel', nev: '💰 Bevétel', sug: 'Ebből él az állomás. A portáldíj önmagában kevés.', epuletek: ['etterem', 'bolt', 'konyvesbolt', 'reklam', 'vip'] },
-  { kod: 'szint', nev: '🪜 Szintek', sug: 'Átjárók az emeletek közt. Emeletre váltani a felső sávban (R / F) lehet.', epuletek: ['lepcso', 'teleportlift'] },
+  {
+    kod: 'szint', nev: '🪜 Szintek', epuletek: ['lepcso', 'teleportlift'],
+    // A QA-kör itt akadt el: a mozgólépcső a földszinten „nincs fölötte
+    // szabad padló" hibára fut, és a hibaüzenetből nem derül ki a SORREND.
+    sug: 'Átjáró két szint közt. SORREND: R (1. emelet) → húzz oda padlót → F (földszint) → ide az átjáró. ' +
+      'Az átjáró mindkét szintet elfoglalja, ezért kell fönt is szabad padló.',
+  },
   { kod: 'csatorna', nev: '🚂 Csatornák', sug: 'Utas kapu nélkül: nincs instabilitás, nem fogyaszt kristályt.', epuletek: ['vasut', 'leghajo', 'urkapu'] },
   { kod: 'uzem', nev: '⚙️ Üzem', sug: 'Amitől nem romlik el: áram, kapukarbantartás, takarítás, orvos.', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos'] },
 ];
@@ -102,8 +108,14 @@ export class EpitesSav {
       const t = EPULETEK.find((x) => x.kod === kod);
       if (!t) continue;
       const alcim = `${t.sz}×${t.m} · ⚡${t.energia}${t.szemelyzet ? ' · 👷' + t.szemelyzet : ''}`;
+      // Az átjáró (mozgólépcső, lift) az EGYETLEN épület, aminek a lerakása
+      // előfeltétel-sorrendet kíván — a puszta leírás nem elég hozzá.
+      const sugo = t.atjaro
+        ? `${t.leiras}<br><b>Sorrend:</b> R → 1. emelet → padlót oda → F → ide az átjáró. ` +
+          'Fölötte SZABAD, kiépített emeleti padló kell.'
+        : t.leiras;
       this.lista.appendChild(this._gomb(
-        { fajta: 'epit', tipus: kod, dim: null }, t.ikon, t.nev, alcim, t.leiras, t.ar, t.kutatas,
+        { fajta: 'epit', tipus: kod, dim: null }, t.ikon, t.nev, alcim, sugo, t.ar, t.kutatas,
       ));
     }
     this._gombJeloles();

@@ -180,7 +180,7 @@ export class Panelek {
         sorok.innerHTML =
           `szint <b>${all.szint}/5</b> · díj <b>${dimenzioDij(all)}</b> · ` +
           (d.csatorna ? '' : `instabilitás <b style="color:${inst > 70 ? '#ff5d73' : inst > 40 ? '#ffc247' : '#63d68a'}">${inst.toFixed(0)}%</b> · `) +
-          `utas <b>${all.osszUtas}</b> · bevétel <b>${szam(all.bevetel)}</b>`;
+          `utas <b>${szam(all.osszUtas)}</b> · bevétel <b>${szam(all.bevetel)} 💎</b>`;
         be(t, sorok);
 
         // Díjszabás-csúszka. A visszajelzés azonnali: a felirat megmondja,
@@ -568,13 +568,16 @@ export class Panelek {
     be(m, lista);
     p.appendChild(m);
 
+    // Az ARÁNY a lényeg, nem a nyers szám: „2 300 elégedett" önmagában
+    // semmit nem mond, „2 300 (31 %)" viszont azonnal megmondja, hogy baj van.
     be(p, el('h4', null, 'Utasforgalom'));
+    const arany = sim.osszTavozo > 0 ? Math.round(sim.elegedettTavozok / sim.osszTavozo * 100) + ' %' : '—';
     const f = el('div', 'tetel');
     f.innerHTML =
       `<div class="sorok" style="flex-direction:column;gap:3px">` +
-      `<div>jelen van: <b>${sim.utasSzam}</b> (csúcs: <b>${sim.csucsUtas}</b>)</div>` +
-      `<div>összes távozó: <b>${sim.osszTavozo}</b></div>` +
-      `<div>elégedetten: <b style="color:#63d68a">${sim.elegedettTavozok}</b> · dühösen: <b style="color:#ff5d73">${sim.duhosTavozok}</b></div>` +
+      `<div>jelen van: <b>${szam(sim.utasSzam)}</b> (csúcs: <b>${szam(sim.csucsUtas)}</b>)</div>` +
+      `<div>összes távozó: <b>${szam(sim.osszTavozo)}</b></div>` +
+      `<div>elégedetten: <b style="color:#63d68a">${szam(sim.elegedettTavozok)}</b> (${arany}) · dühösen: <b style="color:#ff5d73">${szam(sim.duhosTavozok)}</b></div>` +
       `</div>`;
     p.appendChild(f);
 
@@ -627,7 +630,7 @@ export class Panelek {
       const t = EPULETEK[ep.tipusIdx];
       const d = el('div', 'tetel');
       d.innerHTML = `<div class="fej"><span>${t.ikon}</span><b>${t.nev}</b><span>${szam(ep.bevetel)} 💎</span></div>` +
-        `<div class="sorok">kiszolgált <b>${ep.kiszolgalt}</b> · sor <b>${ep.sor.length}</b> · terhelés <b>${Math.round(ep.hatekonysag * 100)}%</b></div>`;
+        `<div class="sorok">kiszolgált <b>${szam(ep.kiszolgalt)}</b> · sor <b>${ep.sor.length}</b> · terhelés <b>${Math.round(ep.hatekonysag * 100)} %</b></div>`;
       p.appendChild(d);
     }
   }
@@ -795,7 +798,7 @@ export class Panelek {
 
   // ══════════════════════════════════════════════════════════════════════
   _sugo(p) {
-    be(p, el('h2', null, '❓ Hogyan működik'));
+    be(p, el('h2', null, '❓ Súgó'));
     const reszek = [
       ['🌀 A kapu hozza az utast', 'Minden nyitott dimenziókapu folyamatosan ontja az utasokat. Minél jobb a hírnév és minél olcsóbb a díj, annál többen jönnek. A kapu szintje sokszorozza a forgalmat — és a gazdagabb utasokat is ő hozza.'],
       ['🧭 Az utasnak TERVE van', 'Érkezéskor eldől, mit akar: biztonsági ellenőrzés, esetleg vám, aztán étel, vásárlás, mosdó, pihenés. Ha valamelyikre nincs épület, csalódik. Ha elfogy a türelme, dühösen távozik — és a hírnév a TÁVOZÓK hangulatából épül.'],
@@ -804,6 +807,17 @@ export class Panelek {
       ['🔧 A kapu romlik', 'Minden kapu instabilabb lesz, és a forgalom gyorsítja. A portálkarbantartó + mérnök MINDEN kaput karbantart, tehát egy központi műhely az egész hálózatot tartja. 100 %-nál a kapu összeomlik.'],
       ['💾 A mentés a naplód', 'A játék automatikusan ment minden nap végén, és három kézi hely is van. A mentés a seedet és a parancsaidat tartalmazza, nem a világ pillanatképét — ezért a betöltés újrajátssza a partit, és ezért lesz bitre ugyanaz.'],
       ['⚖️ A döntéseid maradandók', 'A fejezetek végén választanod kell. A véglegesen lezárt világ soha nem nyílik meg újra — ez nem hiba, hanem a történeted.'],
+      // MIÉRT VAN EBBŐL SÚGÓ-TÉTEL: a QA-körben a mozgólépcső lerakása
+      // ezzel bukott el — „a fölötte lévő szinten is kell hozzá szabad,
+      // kiépített padló". A mondat IGAZ, de nem mondja meg, mit csinálj.
+      // Az emeletépítés sorrendje az egyetlen olyan lépés a játékban, amit
+      // magától senki nem talál ki.
+      ['🪜 Emeletet HÁROM lépésben építesz',
+        '<b>1.</b> A felső sávban válts az <b>1. emeletre</b> (gomb, vagy <b>R</b> billentyű). ' +
+        '<b>2.</b> Húzz oda <b>padlót</b> — emeleti padló csak földszinti padló FÖLÉ mehet, tartószerkezet nélkül nincs mire állni. ' +
+        '<b>3.</b> Válts vissza a földszintre (<b>F</b>), és rakd le a <b>mozgólépcsőt</b> vagy a <b>teleport liftet</b> oda, ' +
+        'ahol fölötte SZABAD emeleti padló van. Az átjáró mindkét szintet elfoglalja — ezért kell fönt is hely. ' +
+        'A szintváltás IDŐBE kerül, és az az utas türelméből megy: a magasba építés kényelmet ad, nem gyorsaságot.'],
     ];
     // Az irányítás ELŐRE kerül, nem a szöveges magyarázatok mögé. Aki a
     // súgót megnyitja, az tíz esetből kilencszer azt keresi, melyik gomb mit
@@ -849,7 +863,7 @@ export class Panelek {
       `<div>helyzet: <b>${ep.x},${ep.y}</b> · méret <b>${ep.sz}×${ep.m}</b></div>` +
       `<div>terhelés: <b>${Math.round(ep.hatekonysag * 100)}%</b> · személyzet <b>${ep.dolgozok.length}/${t.szemelyzet}</b></div>` +
       (t.igeny ? `<div>sorban áll: <b>${ep.sor.length}</b> · bent: <b>${ep.bent.length}/${t.kapacitas}</b></div>` : '') +
-      `<div>kiszolgált: <b>${ep.kiszolgalt}</b> · bevétel <b>${szam(ep.bevetel)} 💎</b></div>` +
+      `<div>kiszolgált: <b>${szam(ep.kiszolgalt)}</b> · bevétel <b>${szam(ep.bevetel)} 💎</b></div>` +
       `</div>`;
     p.appendChild(d);
 

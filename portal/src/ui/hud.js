@@ -283,7 +283,25 @@ export class Hud {
 
     this._fejezetet();
     this._riasztast();
+    this._elrendezest();
     this._naplot();
+  }
+
+  /**
+   * A felső sáv valódi magassága → `--felso-magas`.
+   *
+   * MIÉRT MÉRÜNK, HA VAN CSS: mert a sáv tartalma a nyelvtől, a
+   * betűmérettől és az ablak szélességétől is függ, és ha egyszer tördel, a
+   * második sor pontosan oda kerül, ahol a fejezet-kártya áll. Egy fix
+   * `top: 56px` ezt sosem tudja lekövetni — a MÉRT magasság igen. Ötven
+   * képkockánként egyszer olvasunk `offsetHeight`-et, ami elhanyagolható.
+   */
+  _elrendezest() {
+    if ((this._meresOra = (this._meresOra || 0) + 1) % 50 !== 1) return;
+    const m = document.getElementById('felso').offsetHeight;
+    if (this._felsoMagas === m) return;
+    this._felsoMagas = m;
+    document.documentElement.style.setProperty('--felso-magas', (m + 4) + 'px');
   }
 
   /**
@@ -298,15 +316,12 @@ export class Hud {
     const most = this.sim.tick;
     if (this._riasztasTick !== undefined && most - this._riasztasTick < 10) return;
     this._riasztasTick = most;
-    // ⚠️ AZ ELSŐ NAPON NINCS RIASZTÁS, ÉS EZ NEM LUSTASÁG. Az állomás az
-    // ingyen kapott energiamaggal indul, amiben nincs szerelő — a tanácsadó
-    // szabályai szerint ez azonnal `baj` szintű („épület személyzet nélkül").
-    // Vagyis a lüktető piros csík a MÁSODPERC NULLÁN megjelent volna, a
-    // bevezető kártyája MELLETT, ugyanabban az oszlopban. Két, egymással
+    // ⚠️ AZ ELSŐ NAPON NINCS RIASZTÁS, ÉS EZ NEM LUSTASÁG. Az első percben a
+    // BEVEZETŐ a kalauz, és ugyanabban a bal oszlopban ül. Két, egymással
     // versengő „ezt csináld most" doboz az első percben pontosan az a
-    // zsúfoltság, ami ellen az egész elrendezés készült — és megtanítja a
-    // játékost, hogy a piros csík semmit nem jelent. Az első napon a
-    // bevezető a kalauz; a jelzőpont (💡 gomb) addig is ott van.
+    // zsúfoltság, ami ellen az elrendezés készült — ráadásul megtanítaná a
+    // játékost, hogy a piros csík semmit nem jelent. A jelzőpont (💡 gomb)
+    // addig is ott van, ha tényleg történik valami.
     if (this.sim.nap < 2) { this.riasztas.style.display = 'none'; this._riasztasKulcs = null; return; }
     const lista = tanacsok(this.sim, 3);
     const elso = lista.find((t) => t.sulyossag === 'baj');
@@ -363,7 +378,12 @@ export class Hud {
 
   /** @param {string} sz @param {'info'|'jo'|'gond'|'baj'} fajta */
   uzen(sz, fajta = 'info') {
-    const e = el('div', 'uzenet ' + fajta, sz);
+    // Az elutasítás oka a sim-ből jön, és ott mondat-töredék („nincs elég
+    // pénz") — a naplósorok viszont mondatok. A képernyőn ez a kettő
+    // egymás alatt áll, és a kisbetűs kezdet olyan, mintha a felület
+    // félbeszakította volna magát. Egy nagybetű: egy gond kevesebb.
+    const t = sz && sz.length > 1 && sz[0] === sz[0].toLowerCase() ? sz[0].toUpperCase() + sz.slice(1) : sz;
+    const e = el('div', 'uzenet ' + fajta, t);
     this.uzenetek.appendChild(e);
     // Négynél többet nem tartunk: az üzenetsáv nem naplónézet, hanem
     // figyelemfelhívás. A teljes napló a panelben van.

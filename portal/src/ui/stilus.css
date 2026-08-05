@@ -58,12 +58,32 @@ html, body {
 
 /* ── FELSŐ SÁV ─────────────────────────────────────────────────────────── */
 
+/* ⚠️ A SÁV TÖRDELÉSE EGY MEGTALÁLT, SÚLYOS HIBA VOLT. 1280 px széles ablakban
+ * a hat szám + a szintválasztó + a négy sebesség-gomb nem fért ki egy sorba,
+ * a `flex-wrap` pedig MÁSODIK SORBA tette a sebességet és a hangkapcsolót —
+ * pont oda, ahol a fejezet-kártya áll. A szünet gomb tehát ELTŰNT a kártya
+ * alatt: 1280-as laptopon a játékot nem lehetett megállítani egérrel.
+ *
+ * Két dolog véd ellene. Itt a sáv szűkül (a játék NEVE eltűnik — az a
+ * lapfülön úgyis ott van, és semmilyen döntést nem támogat), a `hud.js`
+ * pedig MEGMÉRI a sáv magasságát, és a `--felso-magas` változóba írja: a bal
+ * oszlop, az oldalgombok és a panel ehhez igazodnak. Így akkor sem takar ki
+ * semmit, ha egy még keskenyebb ablakban mégis tördel. */
 #felso {
   position: absolute; top: 0; left: 0; right: 0;
   display: flex; align-items: center; gap: 6px;
   padding: 8px 12px;
   background: linear-gradient(180deg, rgba(12, 16, 38, 0.95), rgba(12, 16, 38, 0.55) 75%, transparent);
   flex-wrap: wrap;
+}
+@media (max-width: 1439px) {
+  #jatek-nev { display: none; }
+  #szintek .sarok { display: none; }
+}
+@media (max-width: 1120px) {
+  #felso { gap: 4px; padding: 6px 8px; }
+  .cimke { padding: 4px 8px; gap: 5px; }
+  .cimke .sav { width: 52px; }
 }
 
 .cimke {
@@ -129,10 +149,14 @@ html, body {
  * magától lejjebb. */
 
 #bal {
-  position: absolute; top: 56px; left: 12px; width: 282px;
+  position: absolute; top: var(--felso-magas, 56px); left: 12px; width: 282px;
   display: flex; flex-direction: column; gap: 7px;
   pointer-events: none;
-  max-height: calc(100% - 220px);
+  /* Ha a három kártya mégsem férne el (hosszú célszöveg + riasztás + kis
+   * ablak), akkor GÖRGETHETŐ legyen, ne néma vágás: a bevezető lépése az a
+   * doboz, ami legalul van, és pont az kell a kezdőnek. */
+  max-height: calc(100% - 200px);
+  overflow-y: auto; scrollbar-width: thin;
 }
 #bal > * { pointer-events: auto; }
 
@@ -164,7 +188,7 @@ html, body {
 /* ── OLDALSÓ GOMBOK ────────────────────────────────────────────────────── */
 
 #oldal {
-  position: absolute; top: 56px; right: 12px;
+  position: absolute; top: var(--felso-magas, 56px); right: 12px;
   display: flex; flex-direction: column; gap: 6px;
 }
 #oldal button {
@@ -188,7 +212,7 @@ html, body {
 /* ── PANEL ─────────────────────────────────────────────────────────────── */
 
 #panel {
-  position: absolute; top: 56px; right: 66px; bottom: 150px; width: 390px;
+  position: absolute; top: var(--felso-magas, 56px); right: 66px; bottom: 150px; width: 390px;
   max-width: calc(100% - 90px);
   background: var(--panel2); border: 1px solid var(--keret); border-radius: 12px;
   padding: 12px; overflow-y: auto; display: none;

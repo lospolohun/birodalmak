@@ -96,6 +96,8 @@ const MAX_HOSSZ = 4.0;
 const KIEMELKEDES_DB = 6;
 /** Egyetlen sávban legfeljebb ennyi lehet a teljes keverék energiájából. */
 const SAV_MAX = 0.62;
+/** Ennyivel kell a háttérnek hátralépnie egy 3. elsőbbségű hang alatt. */
+const DUCK_DB = 6;
 /** Sztereó-korreláció: e fölött monó a hangkép, e alatt ellenfázisú. */
 const KORRELACIO_MAX = 0.90;
 const KORRELACIO_MIN = 0.00;
@@ -833,6 +835,19 @@ async function hangkepet(lap, kodok) {
       const hatter = rovidRms(x, 2.0, 3.9);
       const esemeny = rovidRms(x, 4.0, 5.6);
       ki.kiemelkedes = { hatter: dB(hatter), esemeny: dB(esemeny), db: dB(esemeny) - dB(hatter), levagas: levagas(b.L, b.R) };
+
+      // ── A DUCK ÖNMAGÁBAN ────────────────────────────────────────────
+      // A kiemelkedés két úton érhető el: hangosabb esemény, vagy halkabb
+      // háttér. Az előbbi a fenti számban látszik, az utóbbi NEM — a
+      // ducknak nincs saját hangja. Ezért ugyanaz a jelenet még egyszer,
+      // de az eseményt NÉMÁN kérve (`hangero: 0`): a hang nem szól, a
+      // duck viszont lefut. Ami ilyenkor a háttéren látszik, az pontosan
+      // az, amennyivel a világ hátrébb lép a riasztás alatt.
+      const d = await fuss(8, (h) => { h.frissit(NYUZSGO, 1.0); h.jelez('omlas', { keses: 4.0, hangero: 0 }); });
+      const dx = keverek(d);
+      const elotte = rovidRms(dx, 2.5, 3.9);
+      const alatta = rovidRms(dx, 4.3, 5.3);
+      ki.duck = { elotte: dB(elotte), alatta: dB(alatta), db: dB(elotte) - dB(alatta) };
     }
 
     // ── C. TORLÓDÁS — egyetlen képkocka eseményáradata ──────────────────
@@ -940,6 +955,11 @@ async function hangkepet(lap, kodok) {
   if (B.db >= KIEMELKEDES_DB) ok(`a katasztrófa-hang ${sz(B.db, 1)} dB-lel emelkedik ki (≥ ${KIEMELKEDES_DB} dB)`);
   else rossz(`az összeomlás csak ${sz(B.db, 1)} dB-lel hangosabb a háttérnél — elveszik a nyüzsgésben (≥ ${KIEMELKEDES_DB} dB kell)`);
 
+  const D = M.duck;
+  info(`a háttér a riasztás alatt: ${sz(D.elotte, 1)} dB → ${sz(D.alatta, 1)} dB`);
+  if (D.db >= DUCK_DB) ok(`a világ ${sz(D.db, 1)} dB-lel hátrébb lép, amíg a fontos hang szól`);
+  else rossz(`a háttér csak ${sz(D.db, 1)} dB-lel halkul a riasztás alatt — a fontos hang ugyanabba a zajba beszél (≥ ${DUCK_DB} dB kell)`);
+
   // ── torlódás ───────────────────────────────────────────────────────────
   const C = M.torlodas;
   info(`torlódás: ${C.n} esemény EGY képkockában → ${C.elo} élő hangszál · csúcs ${sz(C.csucs)} · +${sz(C.db, 1)} dB a háttér fölött`);
@@ -955,8 +975,12 @@ async function hangkepet(lap, kodok) {
   // ── ismétlődés ─────────────────────────────────────────────────────────
   for (const I of M.ismetlodes) {
     info(`8× „${I.kod}": alaphang szórása ${(I.f.rel * 100).toFixed(2)} % (${Math.round(I.f.atlag)} Hz) · szint ${(I.szint.rel * 100).toFixed(1)} % · szín ${(I.centroid.rel * 100).toFixed(2)} %`);
-    if (I.f.rel < ISMETLES_MIN && I.centroid.rel < ISMETLES_MIN) {
-      rossz(`a „${I.kod}" nyolcszor BITRE ugyanaz — húsz perc alatt idegesítő lesz (kell ≥ ${(ISMETLES_MIN * 100).toFixed(2)} % változatosság)`);
+    // A mérce az ALAPHANG szórása, nem a hangszíné. A hangszín zajos
+    // rétegektől akkor is szór, ha a hang dallamos magja bitre ugyanaz —
+    // az eredeti katalógusban pont ez adott hamis zöldet: a „kassza"
+    // hangszíne 6 %-ot mozgott, az alaphangja meg pontosan nullát.
+    if (I.f.rel < ISMETLES_MIN) {
+      rossz(`a „${I.kod}" alaphangja ${(I.f.rel * 100).toFixed(2)} %-ot szór — nyolcszor gyakorlatilag ugyanaz, húsz perc alatt idegesítő lesz (kell ≥ ${(ISMETLES_MIN * 100).toFixed(2)} %)`);
     } else if (I.f.rel > ISMETLES_MAX) {
       rossz(`a „${I.kod}" alaphangja ${(I.f.rel * 100).toFixed(2)} %-ot szór — ez már elhangolt, nem változatos (max ${(ISMETLES_MAX * 100).toFixed(0)} %)`);
     } else {

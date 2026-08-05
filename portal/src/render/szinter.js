@@ -245,9 +245,13 @@ export class Szinter {
       // örök éjszaka volt, ez fel sem tűnt (a fekete fekete marad); a nappali
       // égnél viszont azonnal látszott, hogy a „világoskék" szürkéskék lesz.
       // A `linearToOutputTexel`-t a renderelő minden fragment-shaderbe beteszi.
-      // A ködsáv PROCEDURÁLIS: érték-zaj három oktávban, egy nagy kör mentén
-      // besűrítve. Nincs hozzá képfájl — ugyanaz a szabály, mint a többi
-      // felületnél (`render/texturak.js`): a `dist/` bemásolható marad.
+      //
+      // ── A KÖDSÁV ─────────────────────────────────────────────────────────
+      // Érték-zaj három oktávban, egy megdöntött nagy kör mentén besűrítve.
+      // Nincs hozzá képfájl — ugyanaz a szabály, mint minden más felületnél
+      // (`render/texturak.js`): a `dist/` bemásolható marad. Csak ÉJJEL
+      // látszik, a csillagokkal azonos görbén: egy csillagtalan galaxis
+      // hajnalban rosszabb volna, mint a semmi.
       fragmentShader: `
         uniform vec3 also; uniform vec3 kozep; uniform vec3 felso;
         uniform float por;
