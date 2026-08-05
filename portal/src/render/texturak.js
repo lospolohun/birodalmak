@@ -137,20 +137,51 @@ function foltok(r, w, h, v, db, rMin, rMax, szinFv) {
   }
 }
 
+/** sRGB bájt → lineáris, előre kiszámolva. A 8 bites bemenet miatt elég 256 elem. */
+const LINEARIS = (() => {
+  const t = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const s = i / 255;
+    t[i] = s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  }
+  return t;
+})();
+
 /**
- * A vászon átlagos fényessége 0..1-ben (sRGB-ben mérve).
+ * A vászon átlagos fényessége 0..1-ben, LINEÁRIS térben.
  *
- * MIÉRT KELL: a textúra SZOROZÓDIK a példányszínnel. Egy 0,82 átlagú kőlap
- * 18 %-kal sötétebbre viszi az egész padlót — és pont ez az a fajta csendes
- * romlás, amit a látvány-sáv csillagainál már egyszer elkaptunk (ott a
- * „díszítés" ténylegesen SÖTÉTÍTETT). Az `allomas3d.js` ezzel a számmal
- * kompenzál, tehát a textúra bekapcsolása nem visz el fényt, csak mintát ad.
+ * ⚠️ MIÉRT LINEÁRISAN, ÉS MIÉRT NEM A NYERS BÁJTOKON: a szorzás, ami minket
+ * érdekel (textúra × példányszín), a GPU-n LINEÁRIS térben történik. Egy 0,36
+ * sRGB-jű fugavonal lineárisan 0,10 — vagyis háromszor sötétebb, mint amit a
+ * bájtok átlaga sugallna. Az első változat sRGB-ben átlagolt, és emiatt
+ * ALULBECSÜLTE a textúra sötétítő hatását.
+ *
+ * MIÉRT KELL EGYÁLTALÁN: a textúra SZOROZÓDIK a példányszínnel, tehát önmagában
+ * mindig sötétít. Ez pont az a fajta csendes romlás, amit a látvány-sáv
+ * csillagainál már egyszer elkaptunk — ott a „díszítés" ténylegesen elvitt
+ * fényt, és hónapokig senkinek nem tűnt fel. Az `allomas3d.js` ezzel a számmal
+ * kompenzál: a textúra mintát ad, nem árnyékot.
  */
 function atlagFenyesseg(r, w, h) {
   const d = r.getImageData(0, 0, w, h).data;
   let s = 0;
-  for (let i = 0; i < d.length; i += 4) s += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-  return s / (w * h) / 255;
+  for (let i = 0; i < d.length; i += 4) {
+    s += 0.2126 * LINEARIS[d[i]] + 0.7152 * LINEARIS[d[i + 1]] + 0.0722 * LINEARIS[d[i + 2]];
+  }
+  return s / (w * h);
+}
+
+/**
+ * A fénykompenzáció szorzója egy textúra lineáris átlagából.
+ *
+ * A kompenzációt sRGB-ben adjuk be (`setRGB(..., SRGBColorSpace)`), a hatása
+ * viszont lineárisan érvényesül — a 2,2-es kitevő ezt a két teret köti össze.
+ * Enélkül a naiv `1/átlag` másfélszeres túlkompenzáció lenne, és a textúra
+ * bevezetése KIFEHÉRÍTETTE volna a padlót (mérve: +23 %).
+ */
+export function fenyKompenzacio(linearisAtlag) {
+  const a = Math.max(0.25, Math.min(1, linearisAtlag || 1));
+  return Math.min(1.35, Math.pow(a, -1 / 2.2));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

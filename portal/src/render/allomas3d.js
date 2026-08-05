@@ -46,7 +46,8 @@ import { DIMENZIOK } from '../sim/dimenziok.js';
 import { hash2 } from '../mag/rng.js';
 import { epuletMertanok, epuletDiszek } from './epulet_mertan.js';
 import {
-  texturak, uvtPotol, vilagUvre, EPULET_ANYAG, ALAP_ANYAG, PADLO_UV_SKALA,
+  texturak, uvtPotol, vilagUvre, fenyKompenzacio,
+  EPULET_ANYAG, ALAP_ANYAG, PADLO_UV_SKALA,
 } from './texturak.js';
 
 const MAX_EPULET = 600;
@@ -75,13 +76,15 @@ export class Allomas3d {
     // GPU-feltöltés. A `frissit()` SOHA nem nyúl ide.
     this.tex = texturak(THREE);
     /**
-     * A padlótextúra átlagos fényessége. A textúra SZOROZÓDIK a cellaszínnel,
-     * tehát önmagában sötétítene — ezzel osztunk vissza. (A látvány-sáv
-     * csillagai pont ezen buktak el: a „dísz" ténylegesen elvitt fényt.)
-     * A felső korlát azért van, hogy egy elrontott, sötét textúra ne tudja
-     * kiégetni a padlót.
+     * A padló fénykompenzációja. A kőlaptextúra SZOROZÓDIK a cellaszínnel, tehát
+     * önmagában sötétítene — ez a szorzó adja vissza a fényt. A számítás a
+     * `texturak.js`-ben lakik, mert ott van a textúra lineáris átlaga is; a
+     * naiv `1/átlag` másfélszeresen túlkompenzálna (sRGB kontra lineáris tér).
+     *
+     * A szonda 3. vizsgálata pontosan ezt méri: textúrával ÉS kompenzációval a
+     * padló ugyanolyan világos, mint textúra és kompenzáció nélkül volt.
      */
-    this.padloFenyKomp = Math.min(1.35, 1 / Math.max(0.5, this.tex.padlo.atlag || 1));
+    this.padloFenyKomp = fenyKompenzacio(this.tex.padlo.atlag);
 
     this._alaplemezt();
     this._padlot();
