@@ -36,7 +36,8 @@
     "portal:mertan": "node portal/tools/mertan_szonda.mjs",
     "portal:hang": "node portal/tools/hang_szonda.mjs",
     "portal:kiadas": "node portal/tools/kiadas_ellenorzo.mjs",
-    "portal:latvany": "node portal/tools/latvany_szonda.mjs"
+    "portal:latvany": "node portal/tools/latvany_szonda.mjs",
+    "portal:csomag": "npm run portal:build && npm run portal:kiadas && node portal/tools/csomag.mjs"
   },
   "dependencies": {
     "three": "^0.170.0",

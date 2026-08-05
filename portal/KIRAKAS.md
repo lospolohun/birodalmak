@@ -36,15 +36,17 @@ konzolhiba** — és pontosan ugyanez gyökérből is. A két eset megkülönbö
 ## A lépések
 
 ```bash
-# 1. a gépeden, a repó gyökeréből
 npm ci
-npm run portal:build          # → portal/dist/
-
-# 2. ellenőrzés kirakás előtt (ez a kapu, ne hagyd ki)
-npm run portal:kiadas
+npm run portal:csomag
 ```
 
-Ha a `portal:kiadas` **KIADHATÓ**-t ír, mehet:
+Ez a három lépést csinálja meg egyben: **build** → **kiadás-ellenőrzés** (a
+forrást vizsgálja) → **csomag-ellenőrzés** (a kimenetet vizsgálja: minden
+hivatkozott fájl megvan-e, relatívak-e az útvonalak, nem szivárgott-e ki
+forrástérkép, mekkora lesz tömörítve). A végén kiírja a pontos másolási
+lépést.
+
+Ha **A CSOMAG KIRAKHATÓ** felirat jön, mehet:
 
 ```
 portal/dist/index.html   →   skynet.lospolo.hu/<alkönyvtár>/index.html
