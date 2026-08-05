@@ -55,6 +55,57 @@
 // minden gépen ugyanabban a pillanatban. Ezért a szűrő a `parancsok.js`
 // `vegrehajt()`-jának első sorában van, és nem a sorba állításnál.
 //
+// ── ⚠️ A KIESÉS RAGADÓS — AKI EGYSZER KIESETT, NEM JÖN VISSZA (v0.18/2) ───
+// A `kiesett[]` jelzőt a `lep()` tickenként ÚJRASZÁMOLJA, és eredetileg tisztán
+// a MOSTANI világból: „volt központja, és most egy sem áll". Két csapatnál ez
+// észrevétlenül helyes volt — ott az első kiesés EGYBEN a meccs vége, tehát a
+// jelzőnek nincs ideje visszabillenni.
+//
+// Háromnál viszont van. A meccs megy tovább (a szabály „legfeljebb egy csapat
+// maradt talpon"), és ha a kiesett fél ÚJ központot húz fel — van még munkása,
+// van még nyersanyaga —, a központ-számlálója megint 1 lesz, és a jelző
+// visszaáll nullára. Mérve, ezen az osztályon, három csapaton: `kiesett`
+// [1,0,0] → a következő ticken [0,0,0]. A kiesett csapat FELTÁMADT, a meccs
+// megint nem tud véget érni, és mivel a jelző a hashben van, egy másik gép
+// egyetlen tickkel eltérő építéssel MÁS állapotot lát ugyanarról a meccsről.
+//
+// Ezért a jelző mostantól magába is visszacsatol. ⚠️ Ez NEM „több csapatos
+// mód": a fenti szabály-bekezdés a v0.17 óta KIMONDJA, hogy a szabály három-
+// négy félnél is ugyanez marad, és egy kimondott szabály, ami nem igaz,
+// rosszabb, mint egy ki nem mondott. Két csapatnál a változás
+// BIZONYÍTHATÓAN semleges: `kiesett[cs] === 1` ott csak olyan tickben állhat
+// elő, amelyikben `vesztes >= 1`, tehát `csapatDb - vesztes <= 1` — vagyis
+// ugyanabban a tickben véget is ér a meccs, és a `lep()` többé nem fut le.
+// A determinizmus-szonda mind a 15 vizsgálata bitre ugyanazt adja.
+//
+// ── ⚠️ A `felad()` KETTŐS VÉDELME: MIÉRT MARAD A `this.vege` ÁG ───────────
+// A `felad()`-nak ma PONTOSAN EGY hívója van: a `parancsok.js` `feladas` ága.
+// Ott viszont a `vegrehajt()` ELSŐ sora egy általános kapu — a meccs vége után
+// minden parancs elvész —, tehát a `felad()`-on belüli `this.vege` vizsgálat
+// PARANCSBÓL sosem sül el. Aki lefedettséget mér, holt ágnak fogja látni.
+// Mégis marad, és nem kényelemből:
+//
+//   1. A `feladta[]` HASH-MEZŐ, és a `felad()` az EGYETLEN írója. Egy vég
+//      utáni írás tehát elmozdítaná a hasht — miközben a `lep()` a `vege`
+//      után azonnal kilép, tehát a belőle következő `kiesett[]`-et már senki
+//      nem hozná helyre. Egyetlen gépen elsülve ez azonnali, NÉMA desync, és a
+//      legrosszabb fajta: egy MÁR ELDŐLT meccsben keletkezik, ahol senki nem
+//      keresi. Kimérve, közvetlen hívással a vég után: gát nélkül a `feladta`
+//      [0,0] → [0,1]; a gáttal [0,0] marad, és a hash sem mozdul.
+//   2. A védelem az OSZTÁLYÉ, nem a hívóé. A `Gyozelem` exportált, a `felad()`
+//      publikus és dokumentált; ha egy jövőbeli hívó (v0.8 hálózati réteg,
+//      meccs-hurok, szonda) a parancs-sor mellett nyúl hozzá, az osztálynak
+//      akkor is helyesnek kell maradnia. A parancs-úti kapu VISZONT nem
+//      költözhet ide: hogy miért pont a `vegrehajt()` első sorában a helye,
+//      azt a fenti „A PARANCS-ELUTASÍTÁS…" bekezdés indokolja.
+//   3. Az ára egy `||` egy olyan úton, ami meccsenként néhányszor fut.
+//
+// ⚠️ AMI EBBŐL A MÉRÉSRE KÖVETKEZIK: a `feladasElutasitva` a FUTÓ meccs alatti
+// hibás feladást számolja (tartományon kívüli csapatszám, kétszeri feladás) —
+// a vég utánit SOHA. Aki a vég utáni elutasításra épít gátat, az
+// `elutasitottParancs`-ot nézze. A v0.17 szondája első futásra pont ebbe futott
+// bele, és egy örökre nullán álló, ZÖLD gátat kapott volna.
+//
 // ── NULLA ALLOKÁCIÓ ───────────────────────────────────────────────────────
 // A `lep()` tickenként fut, tehát semmit nem foglal: a központ-számláló egy
 // előre lefoglalt `Int32Array`, amit `fill(0)` ürít. Épületből néhány tucat
@@ -135,6 +186,13 @@ export class Gyozelem {
    * ugyanazon az úton megy, mint a lerombolt központ — beleértve azt is, hogy
    * a `vegeTick` a feladás tickje lesz, nem a következőé.
    *
+   * ⚠️ A `this.vege` VIZSGÁLAT PARANCSBÓL ELÉRHETETLEN, ÉS SZÁNDÉKOSAN AZ. A
+   * `parancsok.js` általános kapuja előbb elfogja a vég utáni feladást; ez itt
+   * a MÁSODIK védvonal, arra az esetre, ha valaki a parancs-sor mellett hívná
+   * a metódust. Az indoklás — és hogy melyik számlálóra szabad gátat építeni —
+   * a fejléc „A `felad()` KETTŐS VÉDELME" szakaszában áll. Ne vedd ki: a
+   * `feladta[]` hash-mező, és ez az egyetlen írója.
+   *
    * @param {number} csapat
    * @returns {boolean} elfogadtuk-e
    */
@@ -173,14 +231,30 @@ export class Gyozelem {
       if (kdb[cs] > 0) this.voltKozpont[cs] = 1;
       // A feladás és a központ-vesztés ugyanaz a kiesés — csak az OKA más.
       const kozpontVesztes = this.voltKozpont[cs] === 1 && kdb[cs] === 0;
-      const ki = this.feladta[cs] === 1 || kozpontVesztes;
+      // ⚠️ `this.kiesett[cs] === 1` — A KIESÉS RAGADÓS. Enélkül egy kiesett
+      // csapat FELTÁMAD, ha új központot épít; a fejléc „A KIESÉS RAGADÓS"
+      // szakasza méri is. Két csapatnál semleges (ott a kiesés tickje egyben
+      // a meccs vége), háromnál viszont ez tartja igaznak a szabályt.
+      const ki = this.kiesett[cs] === 1 || this.feladta[cs] === 1 || kozpontVesztes;
       this.kiesett[cs] = ki ? 1 : 0;
       if (!ki) { utolsoElo = cs; continue; }
       vesztes++;
       // Az OK a LEGKISEBB indexű kiesett csapatéból jön. Nem ízlés: ha ketten
       // esnek ki ugyanazon a ticken, valamilyen rögzített szabály kell, hogy
       // két gép ne más okot írjon ki ugyanarra a meccsre.
-      if (okKod === VEG_OK.NINCS) okKod = kozpontVesztes ? VEG_OK.KOZPONT : VEG_OK.FELADAS;
+      //
+      // ⚠️ A LEVEZETÉS UGYANAZ, MINT AZ `okCsapat()`-BAN, ÉS EZ NEM VÉLETLEN.
+      // Két helyen levezetett „miért esett ki" előbb-utóbb elcsúszik, és akkor
+      // a `this.ok` mást mondana, mint a csapatonkénti olvasat — ugyanarról a
+      // meccsről. A `feladta[]` az ELSŐDLEGES: az a játékos kimondott tette, és
+      // ragadós jelző, tehát a vég UTÁN is ugyanaz a válasz jön belőle. A
+      // központ-vesztés viszont a világ pillanatnyi ténye, amit a vég után már
+      // nem lehet visszakérdezni.
+      //
+      // ⚠️ SORREND: az `okCsapat()` a `kiesett[cs]`-ből indul, azt pedig két
+      // sorral feljebb állítottuk 1-re. Ha a hívás följebb kerülne, `NINCS`-et
+      // adna, és a meccs ok nélkül érne véget.
+      if (okKod === VEG_OK.NINCS) okKod = this.okCsapat(cs);
     }
 
     // A meccs akkor ér véget, ha legfeljebb EGY csapat maradt talpon. Két
@@ -196,10 +270,43 @@ export class Gyozelem {
   }
 
   /**
-   * A réteg mentendő állapota. A `mentes.js` ma még NEM tárolja (más gazdája
-   * van a fájlnak), és amíg nem teszi, egy KÉSZ meccs mentése a betöltés után
-   * futóként támadna fel. Ez a két metódus azért van itt, hogy a bekötés
-   * egyetlen hívás legyen, ne egy mező-vadászat.
+   * MIÉRT esett ki EZ a csapat — `VEG_OK.*`, vagy `VEG_OK.NINCS`, ha talpon van.
+   *
+   * ── MIÉRT KELL, HA MÁR VAN `this.ok` ────────────────────────────────────
+   * A `this.ok` EGY szám az EGÉSZ meccsre: a legkisebb indexű kiesett csapaté.
+   * Két félnél ez majdnem mindig elég — de DÖNTETLENNÉL félrevezet, és a
+   * döntetlen elérhető állapot. Mérve, ezen az osztályon: a 0. csapat FELADJA,
+   * az 1. UGYANAZON a ticken elveszti a központját → `ok = FELADAS`, a felület
+   * pedig azt írja ki, hogy „mindkét fél feladta a meccset". Az egyik félről ez
+   * hazugság, és a sim eredmény-jelentése nem hazudhat.
+   *
+   * ── MIÉRT SZÁRMAZTATOTT, ÉS MIÉRT NINCS HOZZÁ ÚJ MEZŐ ───────────────────
+   * A válasz maradéktalanul benne van két, MÁR HASHELT és MÁR MENTETT jelzőben
+   * (`kiesett`, `feladta`). Egy csapatonkénti ok-tömb csak a hash-halmazt
+   * hizlalná és a mentésben is karbantartandó lenne, holott egyetlen új bitet
+   * sem hordozna — a `sim.js` `allapotHash()`-éhez tehát NEM kell hozzányúlni.
+   *
+   * @param {number} csapat
+   * @returns {number} `VEG_OK.*`
+   */
+  okCsapat(csapat) {
+    const cs = csapat | 0;
+    if (cs < 0 || cs >= this.csapatDb || this.kiesett[cs] !== 1) return VEG_OK.NINCS;
+    return this.feladta[cs] === 1 ? VEG_OK.FELADAS : VEG_OK.KOZPONT;
+  }
+
+  /**
+   * A réteg mentendő állapota — a `mentes.js` `gyozelem` blokkja ezt írja ki.
+   *
+   * ⚠️ A HÁROM SZÁMLÁLÓ IS BENNE VAN (v0.18/2). A v0.17-ben szándékosan
+   * maradtak ki, azzal az indokkal, hogy „a mentés halmaza pontosan a hash
+   * halmaza". Ez a szabály a `mentes.js`-re nézve nem volt igaz: a fájl a
+   * v0.6 óta menti az AI, a civ, az egyedi egység, a technológia, a képzés és
+   * a harc működés-számait is, egyik sincs a hashben. A helyes szabály — és
+   * ami most a `mentes.js` fejlécében is ki van mondva — az, hogy a mentés
+   * a HASH-MEZŐKET a folytatás helyessége miatt viszi, a MŰKÖDÉS-SZÁMOKAT
+   * pedig azért, hogy a betöltött meccs jelentése ne hazudjon a rétegek
+   * munkájáról. A vég miatt eldobott parancsok száma pont ilyen szám.
    */
   mentesAllapot() {
     return {
@@ -207,10 +314,21 @@ export class Gyozelem {
       voltKozpont: Array.from(this.voltKozpont),
       feladta: Array.from(this.feladta),
       kiesett: Array.from(this.kiesett),
+      elutasitottParancs: this.elutasitottParancs,
+      feladasDb: this.feladasDb,
+      feladasElutasitva: this.feladasElutasitva,
     };
   }
 
-  /** @param {ReturnType<Gyozelem['mentesAllapot']>} a */
+  /**
+   * @param {ReturnType<Gyozelem['mentesAllapot']>} a
+   *
+   * ⚠️ MINDEN MEZŐ HIÁNYT TŰR. Egy RÉGI (v5-ös) mentésben a három számláló még
+   * nincs benne, és a `mentes.js` az ilyet szándékosan BETÖLTHETŐNEK tartja —
+   * ott az indoklás. Itt annyi a dolgunk, hogy a hiányból nulla legyen, ne
+   * `NaN`: a számlálókat a szonda és a jelentés olvassa, és egy `NaN` végig
+   * fertőzné az összegzést.
+   */
   betoltesAllapot(a) {
     if (!a) return false;
     this.gyoztes = a.gyoztes | 0;
@@ -221,17 +339,25 @@ export class Gyozelem {
       this.feladta[cs] = a.feladta && a.feladta[cs] ? 1 : 0;
       this.kiesett[cs] = a.kiesett && a.kiesett[cs] ? 1 : 0;
     }
+    this.elutasitottParancs = a.elutasitottParancs | 0;
+    this.feladasDb = a.feladasDb | 0;
+    this.feladasElutasitva = a.feladasElutasitva | 0;
     return true;
   }
 
   /** Olvasat a szondának és a UI-nak. Sosem a forró úton hívjuk. */
   osszesites() {
+    // CSAPATONKÉNTI OK — döntetlennél a közös `ok` az egyik félről hazudik,
+    // lásd az `okCsapat()` fejlécét. A UI ebből tudja megírni az igaz mondatot.
+    const okok = new Array(this.csapatDb);
+    for (let cs = 0; cs < this.csapatDb; cs++) okok[cs] = this.okCsapat(cs);
     return {
       vege: this.vege,
       gyoztes: this.gyoztes,
       vegeTick: this.vegeTick,
       ok: this.ok,
       okNev: VEG_OK_NEV[this.ok] || '',
+      okok,
       kiesett: Array.from(this.kiesett),
       feladta: Array.from(this.feladta),
       elutasitottParancs: this.elutasitottParancs,

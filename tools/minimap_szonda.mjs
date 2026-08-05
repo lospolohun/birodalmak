@@ -97,6 +97,30 @@ sor('gazdaság-világ', gazd.tick + ' tick',
 sor('sereg-világ', sereg.tick + ' tick', seregDb + ' egység');
 sor('felállás ideje', (Date.now() - t0) + ' ms', '');
 
+// ── ⚠️ ÉLŐ VILÁGON MÉRÜNK-E? (v0.18) ──────────────────────────────────────
+// A gazdaság-világ 3 600 ticket lép, és a v0.17 óta a meccsnek VÉGE LEHET. Ha
+// a mérés közben eldől, az `ai.lep()` kilép, a szondaparancsok elutasításba
+// futnak, és a világ MEGDERMED: nem épül új épület, nem születik új egység.
+// A minimap fedés-, épület-pont- és ritkítás-számai attól még kijönnének —
+// csak épp egy halott világról szólnának, és semmi nem szólna érte.
+//
+// A `TODO.md` „a munkások VÉGLEG tétlenné válnak" tétele pontosan ezért volt
+// TÉVES DIAGNÓZIS: egy 16 000 tickes futás VÉGÉT mérte, holott a meccs a
+// 10 740. ticken lezárult. A szám tehát nem elhagyható — ki kell írni.
+for (const [nev, s] of [['gazdaság', gazd], ['sereg', sereg]]) {
+  const g = s.gyozelem;
+  sor(nev + '-világ: él-e a meccs', g.vege ? '⚠️ VÉGE @' + g.vegeTick : 'végig futott',
+    g.vege
+      ? (s.tick - g.vegeTick) + ' tick esett a VÉG UTÁNRA — dermedt világ'
+      : 'mind a ' + s.tick + ' lelépett tick ÉLŐ világból jön');
+}
+gat(!gazd.gyozelem.vege && !sereg.gyozelem.vege,
+  'A MÉRÉS VILÁGA A FELÁLLÁS KÖZBEN VÉGET ÉRT.',
+  'gazdaság: ' + (gazd.gyozelem.vege ? '@' + gazd.gyozelem.vegeTick : 'fut') + ' · sereg: '
+  + (sereg.gyozelem.vege ? '@' + sereg.gyozelem.vegeTick : 'fut')
+  + ' — a v0.17 óta a meccsnek van vége, és onnantól a világ dermedt. A minimap '
+  + 'számai ilyenkor nem arról szólnak, amiről a fejléc állítja.');
+
 const terep = new Uint8ClampedArray(KEPPONT * 4);
 const hatter = new Uint8ClampedArray(KEPPONT * 4);
 const kep = new Uint8ClampedArray(KEPPONT * 4);

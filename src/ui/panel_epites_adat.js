@@ -27,16 +27,29 @@
 //   NINCS_MUNKAS CSAK A UI gátolja. A sim `epit` parancsa nem kér munkást.
 //                Ez UX-szabály (előbb választasz parasztot, aztán építesz),
 //                nem balansz — és egy kattintással orvosolható.
-//   KORSZAK      CSAK A UI gátolná — ezért ALAPBÓL KI VAN KAPCSOLVA.
+//   KORSZAK      a sim gátolja (`parancsok.js` → `epit`, a levonás ELŐTT) —
+//                de az ÉLŐ tábla ma csupa nulla, tehát a gyakorlatban egyik
+//                épületet sem köti korszakhoz. Az `epuletek.js` mondja el a
+//                mért okot; a panel ettől függetlenül MINDIG a simet követi.
 //
-// A korszak-gát külön magyarázatot érdemel. A `parancsok.js` `epit` ága NEM
-// néz korszakot, és a gépi ellenfél (`ai.js` BUILD_ORDER) sem: az AI akkor
-// épít íjászdát, amikor telik rá. Ha a panel korszakhoz kötné az épületeket,
-// az EGYEDÜL AZ EMBERT büntetné, a gépet nem — vagyis a UI csendben átírná a
-// balanszot. Ezért az `EP_KORSZAK` alapból csupa nulla (= a sim mai szabálya),
-// az ág viszont teljes értékű, és a szonda BEFECSKENDEZETT táblával bizonyítja,
-// hogy tényleg elsül. Amikor a korszak-követelmény bekerül a simbe, itt egy sor
-// változik: az `EP_KORSZAK` felveszi az `EP_KORSZAK_JAVASLAT` értékeit.
+// ── ⚠️ A KORSZAK-GÁT: A PANEL A SIM PÉLDÁNYÁTÓL KÉRDEZI, NEM MÁSOLATBÓL ────
+//
+// A v0.16-ban a követelmény CSAK itt létezett (`EP_KORSZAK_JAVASLAT`),
+// kikapcsolva — jó okkal: a sim `epit` ága nem nézett korszakot, a gépi
+// ellenfél sem, tehát egy UI-oldali gát CSAK AZ EMBERT büntette volna. A v0.18
+// óta a szabály a SIMBEN van (`epuletek.js` → `EP_KORSZAK` / `korszakKell()`),
+// és ez a réteg onnan olvassa.
+//
+// ⚠️ A `sim.epuletek.korszakKell()`-t hívjuk, NEM a modul-szintű táblát. A
+// követelmény PÉLDÁNYONKÉNTI adat (`Epuletek.korszakIgeny`), amit a
+// meccs-felállás és a determinizmus-szonda átállíthat — egy modul-szintű
+// másolat pont akkor hazudna, amikor a legfontosabb: egy bekapcsolt gátú
+// meccsen a gomb engedné, amit a sim eldob. A képzés-panel ugyanígy kérdez a
+// `Kepzes.korszakIgeny`-től.
+//
+// A modul-szintű `EP_KORSZAK` így már csak TARTALÉK arra az esetre, ha a hívó
+// nem ad sim-et (a `frissitAllapot` sim nélkül nem hívható, de a táblát a
+// szonda és a hossz-őr olvassa).
 //
 // ── ⚠️ A TIZENEGY HOSSZÚ TÁBLÁK ───────────────────────────────────────────
 // Minden `EPULET`-indexelt tábla PONTOSAN 11 elemű. Egy rövid tábla `undefined`
@@ -45,7 +58,7 @@
 // egy hangos hiba az indulásnál, mint egy hiányzó gomb a pénztárnál.
 
 import {
-  EPULET, EPULET_NEV, EP_AR, EP_MERET, EP_NEPESSEG,
+  EPULET, EPULET_NEV, EP_AR, EP_MERET, EP_NEPESSEG, EP_KORSZAK as SIM_EP_KORSZAK,
 } from '../sim/epuletek.js';
 import { KORSZAK, KORSZAK_NEV } from '../sim/gazdasag.js';
 import { NYERS_NEV } from '../sim/eroforras.js';
@@ -82,18 +95,29 @@ export const EP_IDO_TUKOR = [200, 100, 30, 60, 100, 250, 250, 250, 300, 160, 240
 export const EP_LERAKO_TUKOR = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 /**
- * KORSZAK-KÖVETELMÉNY. Alapból csupa nulla — lásd a fejléc magyarázatát:
- * a sim ma nem korlátoz, tehát a panel sem korlátozhat.
+ * KORSZAK-KÖVETELMÉNY — A SIM TÁBLÁJA, nem külön másolat (v0.18).
+ *
+ * ⚠️ EZ A SOR A HÁROM ELŐFELTÉTEL HARMADIKA. Amíg itt saját tömb állt, a panel
+ * és a sim két külön igazságot mondott, és a `p:epites` 6. vizsgálata pontosan
+ * ezt az elcsúszást mérte ki (11/11 → 5/11 egyezés): a gomb ZÖLD volt olyan
+ * épületre, amit a `parancsok.js` `epit` ága a levonás előtt eldobott. A
+ * játékos ilyenkor nem hibaüzenetet kap, hanem SEMMIT — kattint, és nem
+ * történik semmi.
+ *
+ * Ez csak a MODUL-szintű alapérték; a futó panel a sim PÉLDÁNYÁTÓL kérdez
+ * (`sim.epuletek.korszakKell`), mert a követelmény meccsenként állítható.
  */
-export const EP_KORSZAK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const EP_KORSZAK = SIM_EP_KORSZAK;
 
 /**
- * JAVASLAT arra az esetre, ha a korszak-követelmény bekerül a SIMBE. Addig
- * senki nem használja élesben — a szonda viszont EZZEL fecskendezi be a gátat,
- * tehát nem elméleti tábla: minden körben ki van próbálva.
- *
- * A logika a hagyományos RTS-ütem: a gazdaság a sötét korban indul, a
- * fegyvernemek a hajnalban nyílnak, az ostrom és a védmű a kristály korban.
+ * @deprecated A v0.18 óta a követelmény a SIMÉ (`EP_KORSZAK`). A név azért
+ * marad, mert a `p:epites` szondája és a v0.16-os hívások erre hivatkoznak —
+ * és mert a szondának KELL egy második, a világtól FÜGGETLEN tábla ahhoz, hogy
+ * a befecskendezett gátat (`korszakTabla` opció) egyáltalán ki tudja próbálni.
+ * Ma pontosan EZ a helyzet: az éles tábla csupa nulla, tehát ez a tömb az
+ * egyetlen bizonyíték arra, hogy a korszak-indok (`INDOK.KORSZAK`) egyáltalán
+ * elsül. Töröld le, és a szonda 3. vizsgálata némán zöld marad egy halott ág
+ * fölött — a `p:epites` egyik legrégebbi tanulsága.
  */
 export const EP_KORSZAK_JAVASLAT = [
   KORSZAK.SOTET,     // KOZPONT
@@ -302,7 +326,16 @@ export function frissitAllapot(sim, csapat, opciok, ki) {
   const o = opciok || {};
   const g = sim.gazdasag;
   const ep = sim.epuletek;
-  const korszakTabla = o.korszakTabla || EP_KORSZAK;
+  // ⚠️ A SORREND A SZERZŐDÉS: a hívó befecskendezett táblája (szonda) legyen
+  // az első, utána a sim PÉLDÁNYA, és csak legvégül a modul-szintű alapérték.
+  // A példány azért van a tábla ELŐTT, mert a követelmény meccsenként
+  // állítható (`Epuletek.korszakGat`) — egy modul-szintű olvasat pont a
+  // bekapcsolt gátú meccsen hazudna.
+  // ⚠️ NEM ZÁRVÁNY (`(t) => …`), HANEM KÉT HELYI VÁLTOZÓ. A `frissitAllapot`
+  // a HUD forró útja, minden képkockán lefut, és a panel-szerződés 3. pontja
+  // nulla allokációt ír elő — egy körönként újragyártott nyílfüggvény pont az.
+  const korszakTabla = o.korszakTabla || null;
+  const korszakForras = (!korszakTabla && typeof ep.korszakKell === 'function') ? ep : null;
   const munkasKell = o.munkasKell !== false;
   const munkasDb = o.munkasDb | 0;
 
@@ -324,7 +357,8 @@ export function frissitAllapot(sim, csapat, opciok, ki) {
     const el = a.elemek[k];
     const t = el.tipus;
     Civ.arSzazalek(EP_AR[t], arSzaz, el.ar);
-    el.korszakKell = korszakTabla[t] | 0;
+    el.korszakKell = korszakTabla ? (korszakTabla[t] | 0)
+      : (korszakForras ? korszakForras.korszakKell(t) : (EP_KORSZAK[t] | 0));
 
     let hianyDb = 0;
     for (let f = 0; f < 4; f++) {

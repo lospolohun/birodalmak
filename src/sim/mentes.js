@@ -17,6 +17,39 @@
 // megmondja a pontos ticket. Nincs szükség kézzel karbantartott mező-listára:
 // a szonda a listát magát vizsgálja.
 //
+// ── ⚠️ A HASH NEM AZ EGÉSZ SZABÁLY: A MŰKÖDÉS-SZÁMOK IS IDE TARTOZNAK ─────
+// A fenti bekezdés a mentés MINIMUMÁT mondja ki, és sokáig úgy hangzott, mintha
+// a maximumát is: „a mentés halmaza pontosan a hash halmaza". Ez a fájlra nézve
+// SOSEM volt igaz — a v0.6 óta itt van az AI hét számlálója, a civ, az egyedi
+// egység, a technológia, a képzés és a harc működés-száma, és egyik sincs a
+// hashben. A v0.17 mégis erre az indoklásra hivatkozva hagyta ki a győzelmi
+// réteg számlálóit, a v0.18 pedig ugyanígy a sor-törlését és a korszak-gátét.
+//
+// A tényleges — és mostantól kimondott — szabály KÉT halmaz uniója:
+//
+//   1. HASH-MEZŐK, mert nélkülük a folytatás elcsúszik az eredetitől. Ezt a
+//      10. és a 14. vizsgálat hash-összevetése őrzi.
+//   2. MŰKÖDÉS-SZÁMOK (kumulatív számlálók), mert nélkülük a betöltött meccs
+//      JELENTÉSE hazudik a rétegek munkájáról. ⚠️ Erre a hash VAK: a
+//      mentés-szonda akkor is zöld, ha mindegyik kimarad.
+//
+// A 2. pont nem elméleti. A hang-réteg (`src/audio/hang.js`) ezekből a
+// kumulatív számokból KÜLÖNBSÉGGEL képez eseményt, és a negatív különbséget
+// eldobja (`d <= 0 → continue`). A `lovedek.kilott` / `talalt` volt az egyetlen
+// olyan számláló, amit a hang olvas, de a mentés nem vitt: betöltés után a sim
+// nulláról indult, a hang előző pillanatképe viszont a mentéskori értéken állt,
+// tehát az íjhúr és a becsapódás hangja NÉMA maradt, amíg a számláló vissza nem
+// kapaszkodott. A többi hang-forrás (sebzés, halott, képzés, csere, gyűjtés)
+// mind mentve volt — vagyis a hiba pont annyira volt szűk, hogy senkinek ne
+// tűnjön fel.
+//
+// AMI TOVÁBBRA IS KIMARAD, ÉS MIÉRT:
+//   · `Kod.valtozat` — RENDER-jelző, nem világ-állapot; a betöltés szándékosan
+//     LÉPTETI, hogy a render újratöltsön.
+//   · `MezoTar.szamitasok` — futás-költség mérőszáma, amit a `Sim` maga nulláz
+//     minden szonda-lépcsőnél; egy mentésbe zárt értéke a következő mérést
+//     hamisítaná meg.
+//
 // ── AMI SZÁNDÉKOSAN NINCS BENNE ───────────────────────────────────────────
 //   · `MezoTar` mező-TARTALMA — a járhatóságból és a célcellából számolható.
 //     ⚠️ A CÉLCELLÁK ÉS AZ LRU-BÉLYEGEK VISZONT BENNE VANNAK, és ez a v0.7/2
@@ -61,13 +94,46 @@
 import { KESLELTETES } from './sim.js';
 
 /** A mentés-formátum verziója. Növeld, ha a mezők halmaza változik. */
-export const MENTES_VERZIO = 5;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4) · v0.17: `gyozelem` (5)
+export const MENTES_VERZIO = 6;   // v0.9: `civ` (2), `egyedi` (3) · v0.10: `terkep` (4) · v0.17: `gyozelem` (5) · v0.18: működés-számlálók (6)
+
+/**
+ * RÉGI FORMÁTUMOK, amiket még be tudunk tölteni.
+ *
+ * ── ⚠️ EZ A LISTA NEM ÖRÖKLŐDIK, VERZIÓNKÉNT KELL MEGINDOKOLNI ────────────
+ * A v0.17 tanulsága az volt, hogy egy elavult mentés némán ROSSZ világot ad
+ * vissza: a győzelmi mezők nélkül egy lejátszott meccs FUTÓKÉNT támadt fel. A
+ * kapu ezért alapból elutasít, és csak akkor enged át egy régi verziót, ha
+ * bizonyítható, hogy a különbség a SZIMULÁCIÓT nem érinti.
+ *
+ * Az 5 → 6 lépés ilyen: kizárólag KUMULATÍV MŰKÖDÉS-SZÁMLÁLÓK kerültek bele
+ * (sor-törlés, korszak-elutasítás, be/kiszállás, lövedék, gépi korszak- és
+ * egyedi-rendelés, a győzelmi réteg három száma). Egyiket sem olvassa egyetlen
+ * sim-kódút sem — csak írja őket —, tehát egy v5-ös mentésből folytatott meccs
+ * BITRE ugyanaz, mint az eredeti; annyi történik, hogy ezek a számok nulláról
+ * indulnak, és a jelentés ennyivel kevesebbet tud a mentés ELŐTTI szakaszról.
+ * Ez sokkal jobb, mint kidobni a játékos állását.
+ *
+ * ⚠️ HA EGY JÖVŐBELI LÉPÉS HASH-MEZŐT AD HOZZÁ, a régi verziót VEDD KI innen.
+ * Ott ugyanis a hiányzó mező már a folytatást csúsztatja el — és pont az a
+ * hiba jön vissza, ami miatt a `MENTES_VERZIO` egyáltalán létezik.
+ */
+const REGI_VERZIOK = [5];
 
 /** Typed array → sima tömb, csak az első `db` elem. */
 function ki(tomb, db) {
   const a = new Array(db);
   for (let i = 0; i < db; i++) a[i] = tomb[i];
   return a;
+}
+
+/**
+ * KUMULATÍV SZÁMLÁLÓ-TÖMB visszatöltése a helyén (sima `[a, b]` és typed array
+ * egyaránt). A hiányzó forrás NEM hiba: egy régi (v5) mentésben ezek a blokkok
+ * még nincsenek benne, és a helyes válasz a nulla — nem az `undefined`, amiből
+ * az első `++` `NaN`-t csinálna, és onnantól a jelentés minden összege `NaN`.
+ */
+function beSzam(cel, forras) {
+  for (let i = 0; i < cel.length; i++) cel[i] = (forras && forras[i]) | 0;
 }
 
 /** Sima tömb → typed array, a maradékot nullázva. */
@@ -188,6 +254,9 @@ export function mentes(sim) {
     beszallas: {
       bent: ki(sim.beszallas.bent, db), hol: ki(sim.beszallas.hol, db),
       letszam: ki(sim.beszallas.letszam, epDb),
+      // Kumulatív működés-számok: a pillanatnyi létszám nem árulja el, hogy a
+      // be- és kiszállás ága lefutott-e (aki be-, majd kiszállt, nem hagy nyomot).
+      beDb: sim.beszallas.beDb, kiDb: sim.beszallas.kiDb,
     },
 
     lovedek: {
@@ -196,6 +265,10 @@ export function mentes(sim) {
       celGen: ki(lv.celGen, lv.db), sebzes: ki(lv.sebzes, lv.db),
       csapat: ki(lv.csapat, lv.db), elet: ki(lv.elet, lv.db),
       szogX: ki(lv.szogX, lv.db), szogY: ki(lv.szogY, lv.db),
+      // ⚠️ EZT A KETTŐT A HANG-RÉTEG OLVASSA, KÜLÖNBSÉGKÉNT. Lásd a fejlécet:
+      // nélkülük a betöltött meccsben az íjhúr és a becsapódás NÉMA marad,
+      // amíg a számláló vissza nem kapaszkodik a mentéskori értékére.
+      kilott: lv.kilott, talalt: lv.talalt,
     },
 
     epuletek: {
@@ -207,6 +280,9 @@ export function mentes(sim) {
       hp: ki(ep.hp, epDb), maxHp: ki(ep.maxHp, epDb),
       elo: ki(ep.elo, epDb), nyitva: ki(ep.nyitva, epDb),
       lovesHatra: ki(ep.lovesHatra, epDb),
+      // v0.18: a korszak-gát elutasításai. Csapatonkénti működés-szám — ebből
+      // látszik, hogy a gát elsült-e egyáltalán.
+      korszakElutasitva: ep.korszakElutasitva.slice(),
     },
 
     eroforras: { keszlet: ki(sim.eroforrasok.keszlet, sim.eroforrasok.db) },
@@ -222,6 +298,10 @@ export function mentes(sim) {
     kepzes: {
       sor: Array.from(kp.sor), sorDb: Array.from(kp.sorDb), hatra: Array.from(kp.hatra),
       keszult: kp.keszult.slice(), elutasitva: kp.elutasitva.slice(),
+      // v0.18: a sor-törlés két száma. A törlés HATÁSA (`sor`, `sorDb`, `hatra`)
+      // a hashben van, ezek viszont csak a jelentésben — tehát ha kimaradnának,
+      // a mentés-szonda némán zöld maradna.
+      torolve: kp.torolve.slice(), torlesElutasitva: kp.torlesElutasitva.slice(),
     },
 
     technologia: {
@@ -243,6 +323,11 @@ export function mentes(sim) {
       had: Array.from(ai.had), frissitesIdo: Array.from(ai.frissitesIdo),
       felderitDb: Array.from(ai.felderitDb), felfedezDb: Array.from(ai.felfedezDb),
       tamadasDb: Array.from(ai.tamadasDb), vedekezesDb: Array.from(ai.vedekezesDb),
+      // ⚠️ A GÉP KORSZAKVÁLTÁS-SZÁMA (v0.16) ÉS EGYEDI RENDELÉSE (v0.9/2) —
+      // ez a kettő maradt ki a többi AI-számláló mellől. A `korszakDb` épp azt
+      // különbözteti meg, hogy a gép NEM PRÓBÁLKOZOTT vagy elbukott: a
+      // `gazdasag.korszak` végállapota mindkét esetben ugyanaz a nulla.
+      korszakDb: Array.from(ai.korszakDb), egyediDb: Array.from(ai.egyediDb),
     },
 
     // A CIV-RÉTEG (v0.9). A civ-INDEXEN kívül az ELŐRE SZÁMOLT tömböket is
@@ -282,10 +367,12 @@ export function mentes(sim) {
     // pedig ott van. Enélkül egy LEJÁTSZOTT meccs mentése a betöltés után
     // futóként támadna fel, és a hash az első ticken elcsúszna.
     //
-    // ⚠️ A réteg három SZÁMLÁLÓJA (`elutasitottParancs`, `feladasDb`,
-    // `feladasElutasitva`) szándékosan MARAD KI: azok diagnosztika, nincsenek a
-    // hashben, és a `mentesAllapot()` sem adja őket. A halmaz tehát pontosan a
-    // hash halmaza — a kettő továbbra is egymást ellenőrzi.
+    // ⚠️ v0.18: A HÁROM SZÁMLÁLÓ IS BENNE VAN (`elutasitottParancs`,
+    // `feladasDb`, `feladasElutasitva`). A v0.17 azzal hagyta ki őket, hogy „a
+    // halmaz pontosan a hash halmaza" — csakhogy ez a fájlra sosem volt igaz
+    // (lásd a fejléc „A HASH NEM AZ EGÉSZ SZABÁLY" szakaszát), és a kivétel épp
+    // azt a réteget érte, ahol a működés-szám a LEGTÖBBET mondja: hogy a vég
+    // utáni parancsokat tényleg eldobta-e valaki.
     gyozelem: sim.gyozelem.mentesAllapot(),
 
     kod: {
@@ -312,7 +399,11 @@ export function mentes(sim) {
  */
 export function betoltes(sim, m) {
   if (!m || typeof m !== 'object') return { ok: false, hiba: 'üres mentés' };
-  if (m.verzio !== MENTES_VERZIO) {
+  // ⚠️ A KAPU ALAPBÓL ELUTASÍT, és csak a `REGI_VERZIOK` névre szóló kivételét
+  // engedi át — az indoklás ott áll, verziónként. Ami nincs a listán, azt nem
+  // „igazítjuk": a v0.17-ben pont egy csendben átengedett régi mentés támasztott
+  // fel egy lejátszott meccset futóként.
+  if (m.verzio !== MENTES_VERZIO && REGI_VERZIOK.indexOf(m.verzio | 0) < 0) {
     return { ok: false, hiba: 'ismeretlen mentés-verzió: ' + m.verzio };
   }
   if ((m.seed >>> 0) !== sim.seed) {
@@ -379,6 +470,8 @@ export function betoltes(sim, m) {
   be(sim.beszallas.bent, m.beszallas.bent);
   be(sim.beszallas.hol, m.beszallas.hol);
   be(sim.beszallas.letszam, m.beszallas.letszam);
+  sim.beszallas.beDb = m.beszallas.beDb | 0;
+  sim.beszallas.kiDb = m.beszallas.kiDb | 0;
 
   const lv = sim.lovedekek;
   lv.db = m.lovedek.db | 0;
@@ -386,6 +479,8 @@ export function betoltes(sim, m) {
   be(lv.celGen, m.lovedek.celGen); be(lv.sebzes, m.lovedek.sebzes);
   be(lv.csapat, m.lovedek.csapat); be(lv.elet, m.lovedek.elet);
   be(lv.szogX, m.lovedek.szogX); be(lv.szogY, m.lovedek.szogY);
+  lv.kilott = m.lovedek.kilott | 0;
+  lv.talalt = m.lovedek.talalt | 0;
 
   const ep = sim.epuletek;
   const b = m.epuletek;
@@ -394,6 +489,7 @@ export function betoltes(sim, m) {
   be(ep.tipus, b.tipus); be(ep.csapat, b.csapat); be(ep.epulHatra, b.epulHatra);
   be(ep.hp, b.hp); be(ep.maxHp, b.maxHp); be(ep.elo, b.elo);
   be(ep.nyitva, b.nyitva); be(ep.lovesHatra, b.lovesHatra);
+  beSzam(ep.korszakElutasitva, b.korszakElutasitva);
 
   be(sim.eroforrasok.keszlet, m.eroforras.keszlet);
   // A KIMERÜLT LELŐHELY CELLA-MUTATÓJÁT is helyre kell tenni: a `cellaNode`
@@ -415,6 +511,8 @@ export function betoltes(sim, m) {
   be(kp.sor, m.kepzes.sor); be(kp.sorDb, m.kepzes.sorDb); be(kp.hatra, m.kepzes.hatra);
   kp.keszult = m.kepzes.keszult.slice();
   kp.elutasitva = m.kepzes.elutasitva.slice();
+  beSzam(kp.torolve, m.kepzes.torolve);
+  beSzam(kp.torlesElutasitva, m.kepzes.torlesElutasitva);
 
   const tc = sim.technologia;
   be(tc.allapot, m.technologia.allapot); be(tc.hatra, m.technologia.hatra);
@@ -435,6 +533,7 @@ export function betoltes(sim, m) {
   be(ai.had, a.had); be(ai.frissitesIdo, a.frissitesIdo);
   be(ai.felderitDb, a.felderitDb); be(ai.felfedezDb, a.felfedezDb);
   be(ai.tamadasDb, a.tamadasDb); be(ai.vedekezesDb, a.vedekezesDb);
+  be(ai.korszakDb, a.korszakDb); be(ai.egyediDb, a.egyediDb);
 
   const cv = sim.civ;
   be(cv.civ, m.civ.civ); be(sim.civValasztas, m.civ.valasztas);

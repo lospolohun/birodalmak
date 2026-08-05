@@ -32,6 +32,10 @@
 //   2. ⚠️ VALÓDI MECCS, 9 000 tick, két gépi ellenféllel és kikényszerített
 //      összecsapással. A gazdaság, a népesség, a hadsereg, az épületek, a
 //      felfedezettség és a harc görbéinek MOZOGNIA kell — számokban.
+//      ⚠️ v0.18: a vizsgálat KIÍRJA, hogy a 9 000 mért tickből hány esett a
+//      meccs VÉGE UTÁNRA, és gát is van rá. A v0.17 óta a meccsnek van vége,
+//      és onnantól az `ai.lep()` kilép — egy átnyúló futásban a görbék halott
+//      percekkel hígulnának, miközben a jelentés „valódi meccset" írna.
 //   3. ⚠️ SZABOTÁZS-PRÓBA: ugyanaz a felállás AI és parancs nélkül. Ott MINDEN
 //      görbének laposnak kell maradnia. Ha itt bármi mozog, a gyűjtő zajt mér,
 //      és a 2. gát zöldje semmit nem ér.
@@ -140,6 +144,12 @@ const szuk = new StatisztikaGyujto(sim, { maxMinta: 16 });
 gat(gyujto.db === 1 && gyujto.tickek[0] === 0,
   'A 0. TICK ALAPVONALA HIÁNYZIK.', 'db=' + gyujto.db);
 
+/**
+ * ⚠️ A MECCS VÉGÉNEK TICKJE, ha a mérés közben eldőlt. Lásd a lenti
+ * „élő-e a meccs" blokkot — ez a szám dönti el, hogy a 2. vizsgálat számai
+ * miről szólnak.
+ */
+let meccsVegeTick = -1;
 const kezdes = Date.now();
 for (let t = 0; t < MECCS_TICK; t++) {
   // Kikényszerített összecsapás: az AI önmagában csak a 12 000. tick körül
@@ -153,6 +163,7 @@ for (let t = 0; t < MECCS_TICK; t++) {
     sim.parancs({ fajta: 'korszak', csapat: 1 });
   }
   sim.lep();
+  if (meccsVegeTick < 0 && sim.gyozelem.vege) meccsVegeTick = sim.gyozelem.vegeTick;
   gyujto.mintaz(sim);
   szuk.mintaz(sim);
 }
@@ -180,6 +191,37 @@ function _osszecsapas(s) {
 }
 
 sor('lelépett tick', MECCS_TICK, idoSzoveg(sim.tick) + ' játékidő · ' + futasMs + ' ms');
+
+// ── ⚠️ ÉLŐ MECCSEN MÉRTÜNK-E? (v0.18) ─────────────────────────────────────
+// A 7. vizsgálatban ott a gát, hogy a meccs nem érhetett véget — de az öt
+// képernyővel lentebb van, és a bukás-üzenete nem mondja meg, MI a baja a
+// 2. vizsgálat számainak. Ezért a szám ITT is kiíródik, ott, ahol a MOZGÓ
+// GÖRBÉKET mérjük.
+//
+// A csapda konkrét, nem elméleti. A `TODO.md` „a munkások VÉGLEG tétlenné
+// válnak" tétele azért volt TÉVES DIAGNÓZIS, mert egy 16 000 tickes futás
+// VÉGÉT mérte, holott a meccs a 10 740. ticken lezárult, és onnantól az
+// `ai.lep()` (helyesen) kilép. Ugyanez itt: a vég utáni tickeken nem épül
+// épület, nem képződik egység, nem gyűlik nyersanyag — a görbék attól még
+// „mozgónak" látszanának a meccs ELSŐ feléből, és a jelentés 9 000 tick
+// valódi meccset állítana ott, ahol a fele halott világ volt.
+//
+// ⚠️ Ez a meccs SZÁNDÉKOSAN kényszerített összecsapásokkal megy (3 500-tól
+// 500 tickenként), tehát a központ-vesztés valós lehetőség. A mai mérés
+// szerint mindkét központ áll a 9 000. ticken — ez a gát azt őrzi, hogy egy
+// balansz-hangolás ezt ne vigye el némán.
+const halottTick = meccsVegeTick >= 0 ? MECCS_TICK - meccsVegeTick : 0;
+sor('a meccs vége', meccsVegeTick >= 0 ? '⚠️ VÉGE @' + meccsVegeTick : 'végig futott',
+  halottTick > 0
+    ? halottTick + ' tick (' + Math.round(halottTick * 100 / MECCS_TICK) + ' %) esett a VÉG UTÁNRA'
+    : 'mind a ' + MECCS_TICK + ' mért tick ÉLŐ meccsből jön');
+gat(halottTick === 0,
+  'A MÉRÉS ' + halottTick + ' TICKJE EGY MÁR ELDŐLT MECCSBŐL JÖN (vége @' + meccsVegeTick + ').',
+  'A v0.17 óta a meccsnek van hivatalos vége, és a lefutott meccsben az AI '
+  + 'kilép. A 2. vizsgálat „mozog a görbe" számai ettől csendben hígulnak, a '
+  + '7. vizsgálat pedig ugyanezért fog bukni. Nem a gátat kell kivenni: vagy '
+  + 'rövidebb `MECCS_TICK` kell, vagy enyhébb kikényszerített összecsapás.');
+
 sor('minta', gyujto.db, 'mintaköz ' + gyujto.mintaTick + ' tick');
 sor('idősor memóriája', szamSzoveg(gyujto.memoriaBajt) + ' B', 'FIX, a meccs hosszától független');
 

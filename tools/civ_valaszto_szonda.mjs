@@ -33,6 +33,21 @@
 //      különböző `[hatás, index, érték]` hármas. Egy lusta generátor, ami
 //      mindenre ugyanazt adja, az összes fenti gáton átmenne.
 //
+// ── ⚠️ AMIT EZ A SZONDA SZÁNDÉKOSAN NEM MÉR (v0.18-as audit) ──────────────
+// Ez a szonda EGYETLEN tickt sem léptet: nincs benne `Sim`, nincs `lep()`. A
+// v0.18-as mérés-audit ezért ide nem tett gátat — a „hosszú futás átnyúlik a
+// meccs végén, és a halott percek belekerülnek az átlagba" csapda itt nem
+// létezik, mert nincs futás. (A csapdáról: a `TODO.md` „a munkások VÉGLEG
+// tétlenné válnak" tétele azért volt téves diagnózis, mert egy 16 000 tickes
+// futás végét mérte, holott a meccs a 10 740. ticken lezárult.)
+//
+// A civ-BALANSZ számai — amiket az `ATADO.md` idéz (−1,3 % / +15,8 %) — VISZONT
+// hosszú, 16 000 tickes gépi meccsekből jönnek, csak nem itt, hanem a
+// determinizmus-szonda civ-körében. Ha valaki azokat újra méri, ELŐBB nézze
+// meg a `sim.gyozelem.vegeTick`-et. Mérve (v0.18, SEED 20260803): a v0.9-es
+// civ-forgatókönyv 16 000 tickig NEM dől el, tehát a mai számok élő meccsből
+// valók — de ez a forgatókönyv tulajdonsága, nem örök igazság.
+//
 // HASZNÁLAT:  node tools/civ_valaszto_szonda.mjs
 // Kilépési kód: 0 = rendben, 1 = bukás.
 

@@ -25,6 +25,14 @@
 //   14. A MECCS VÉGE — győzelem, feladás, és a vég UTÁNI parancsok elutasítása
 //   15. v0.18 — képzési sor törlése és korszak-gát az építésnél
 //
+// ⚠️ A 9. KÖR MOSTANTÓL A GÉP KORSZAKVÁLTÁSÁT ÉS PIACI CSERÉJÉT IS MÉRI
+// (v0.18/2). Az ÁTADÓ nyitott listája ezt a két számot úgy írta le, hogy „a
+// kapun KÍVÜL van, tehát ha elromlik, semmi nem szól" — a v0.17 azt állította,
+// hogy a gép 0 → 11 korszakváltást csinál, a szonda pedig egy sort sem írt ki
+// róla. Mindkettő HAJTOTT felállásban dől el (bő készlet, illetve kézzel
+// lerakott piac): a meccs-számokra épített gát csak azt mérné, megtámadták-e
+// a gépet, nem azt, hogy működik-e az ág.
+//
 // ⚠️ A DETERMINIZMUS-KAPU NEM MŰKÖDÉS-KAPU. A semmittevés tökéletesen
 // reprodukálható: a v0.3 gazdasága, a v0.4 épület-célzása és beszállásolása
 // egyaránt ZÖLD kapu mellett volt halott. Ezért az 5–9. kör mindegyike
@@ -1126,8 +1134,18 @@ if (ketV06.ok) {
   // A hullám legjobb megközelítése az ELLENSÉGES központhoz, futás közben mérve.
   const kozelites = [1e9, 1e9];
   const kozpont = [null, null];
+  // ⚠️ A MÉRÉS A MECCS VÉGÉN ÁLL MEG, NEM A TICK-SZÁMNÁL (v0.18).
+  //
+  // A v0.17 óta a meccsnek VÉGE LEHET, és a vég után az `Ai.lep()` első sora
+  // kilép — vagyis onnantól ez a hurok HALOTT MECCSET mérne. Egy jelentés,
+  // ami a 16 000. tick állapotát írja le, miközben a meccs a 10 740.-en
+  // eldőlt, nem a gépi ellenfélről szól, hanem a romokról: a munkások addigra
+  // elestek, az épületek ledőltek. Ez a projektben már megdöntött egy egész
+  // teendő-tételt („véglegesen tétlen munkások" — valójában a meccs volt vége).
+  let vegeTick = -1;
   for (let t = 1; t <= FORGATOKONYVEK.v06.tickek; t++) {
     s.lep();
+    if (s.gyozelem && s.gyozelem.vege) { vegeTick = s.gyozelem.vegeTick; break; }
     if ((t % 100) !== 0) continue;
     for (let cs = 0; cs < 2; cs++) {
       if (!kozpont[cs]) {
@@ -1162,12 +1180,39 @@ if (ketV06.ok) {
   console.log('');
   sor('nehézség', NEHEZSEG_NEV[a0.nehezseg] + ' / ' + NEHEZSEG_NEV[a1.nehezseg],
     '(indulás: ' + kezdo + ' egység összesen)');
+  // ⚠️ MINDEN ALATTA ÁLLÓ SZÁM EHHEZ A TICKHEZ TARTOZIK. Ha a meccs a kör
+  // vége előtt eldőlt, a jelentés a VÉG pillanatát írja le — lásd a mérő-hurok
+  // megjegyzését arról, miért nem a 16 000. tick a mérce.
+  sor('mérve eddig a tickig', vegeTick >= 0 ? vegeTick : FORGATOKONYVEK.v06.tickek,
+    vegeTick >= 0 ? 'a MECCS VÉGE (győztes: '
+      + (s.gyozelem.gyoztes < 0 ? 'döntetlen' : s.gyozelem.gyoztes) + ')'
+      : 'a meccs nem dőlt el');
   sor('döntési kör', a0.dontes + ' / ' + a1.dontes, 'a nehezebb sűrűbben gondolkodik');
   sor('kiadott gyűjtés-parancs', a0.gyujt + ' / ' + a1.gyujt);
   sor('kiadott építés / képzés', a0.epit + '·' + a0.kepzes + ' / ' + a1.epit + '·' + a1.kepzes);
   sor('élő munkás', mnk[0] + ' / ' + mnk[1], 'a gép ennyit tart fenn');
   sor('összegyűjtött nyersanyag', gyujtott0 + ' / ' + gyujtott1);
   sor('népesség', g0.nepesseg + '/' + g0.nepessegMax + '  ·  ' + g1.nepesseg + '/' + g1.nepessegMax);
+  // ⚠️ A KORSZAKVÁLTÁS ÉS A PIACI CSERE SZÁMA — A KAPUN BELÜLRE HOZVA (v0.18).
+  //
+  // Az ÁTADÓ nyitott listáján ez a két szám úgy szerepelt, mint ami „a kapun
+  // KÍVÜL van, tehát ha elromlik, semmi nem szól" — és pontosan ez is történt:
+  // a v0.17 azt ÁLLÍTOTTA, hogy a gép 0 → 11 korszakváltást csinál, a szonda
+  // viszont EGY SORT SEM írt ki róla, a v0.17-es jegyzőkönyv sem tudta
+  // reprodukálni, és a v0.18/2-ben újramérve NEM IS REPRODUKÁL: ezen a
+  // felálláson 0/0 jön ki, a változtatás előtti fán is. Egy szám, ami két
+  // körön át doksiban élt és a valóságban nem — pont ezért van most itt.
+  //
+  // A `korszak` a KIADOTT parancs (a szándék), a `korszak[cs]` az ELÉRT kor
+  // (az eredmény) — a kettő együtt árulja el, ha a gép próbálkozik, de
+  // elutasításba fut. ⚠️ Ez a sor NEM gát: a könnyű szint szándékosan nem
+  // vált, a nehéz pedig ostrom alatt (helyesen) nem tartalékol. A GÁT lentebb
+  // van, hajtott felállásban.
+  sor('korszakváltás: parancs / kor', a0.korszak + '·' + s.gazdasag.korszak[0]
+    + ' / ' + a1.korszak + '·' + s.gazdasag.korszak[1],
+    'a könnyű szint SZÁNDÉKOSAN nem vált (KORSZAK_CEL[0] = 0)');
+  sor('piaci csere', a0.csere + ' / ' + a1.csere,
+    'a gép a saját piacán vált a szűkös nyersanyagra');
 
   // ÉPÜLT-E ANNYI HÁZ, AMENNYIT RENDELT? Ez a szám a v0.6/1 legdrágább hibáját
   // őrzi. A gép a BAL-FELSŐ cellát adta át az `epit`-nek, ami viszont a
@@ -1425,6 +1470,141 @@ if (ketV06.ok) {
       console.log('     A parancs csendben eldobódik — legvalószínűbb ok, hogy a');
       console.log('     koordináta a rossz rendszerben megy át (sarok kontra középpont),');
       console.log('     vagy hogy a gép foglalt helyre rendel újra meg újra.');
+      bukas++;
+    }
+  }
+
+  // ── v0.18 — A KÉT ÚJ AI-ÁG HAJTOTT PRÓBÁJA ─────────────────────────
+  //
+  // ⚠️ MIÉRT KÜLÖN, HAJTOTT FELÁLLÁSBAN, ÉS NEM A FENTI SZÁMOKON. A fenti
+  // meccsen a nehéz gépet az első perctől nyomás alatt tartják, és emiatt
+  // (helyesen, a `HAD.VEDEKEZIK` szabály szerint) SOSEM tartalékol
+  // korszakváltásra — mérve 14 seeden, 28 oldalon: nulla váltás. Egy gát,
+  // ami arra a meccsre épülne, tehát csak azt mérné, hogy megtámadták-e a
+  // gépet, nem azt, hogy MŰKÖDIK-E az ág.
+  //
+  // Ez a két próba ezért a v0.4/v0.5 kézi forgatókönyveinek mintáját követi:
+  // megteremti a FELTÉTELT, és utána kérdez rá az EREDMÉNYRE. Így a szám
+  // stabil — és pont ez a kettő volt az, amit az ÁTADÓ „a kapun KÍVÜL van,
+  // tehát ha elromlik, semmi nem szól" címmel a nyitott listára tett.
+  {
+    const { NEHEZSEG } = await import(pathToFileURL(join(SIM_DIR, 'ai.js')).href);
+    console.log('');
+
+    // (A) KORSZAKVÁLTÁS. Egyetlen gépi oldal (nincs háború) és bő nyitó
+    // készlet — a kérdés kizárólag az, hogy a gép ELINDÍTJA-E a váltást.
+    const sA = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+    sA.szondaFelallas(24, { munkasMinden: 1 });
+    sA.ai.beallit(1, NEHEZSEG.NEHEZ);
+    for (let f = 0; f < 4; f++) sA.gazdasag.keszlet[4 + f] = f === 0 ? 3000 : 2000;
+    let elsoValtas = -1;
+    let vegeA = -1;
+    for (let t = 1; t <= 8000; t++) {
+      sA.lep();
+      if (elsoValtas < 0 && sA.ai.korszakDb[1] > 0) elsoValtas = t;
+      if (sA.gyozelem.vege) { vegeA = sA.gyozelem.vegeTick; break; }
+    }
+    sor('hajtott korszakváltás', sA.ai.korszakDb[1] + ' parancs → ' + sA.gazdasag.korszak[1]
+      + '. kor', 'első parancs t=' + elsoValtas);
+    if (sA.ai.korszakDb[1] === 0) {
+      console.log('\n  ⛔ A GÉP BŐ KÉSZLETTEL SEM ADOTT BE KORSZAKVÁLTÁST.');
+      console.log('     A `_korszakot` öt kapuja közül valamelyik mindig zár. Sorban:');
+      console.log('     fut-e már váltás · van-e hova lépni · a szint plafonja');
+      console.log('     (`KORSZAK_CEL`) · érett-e a gazdaság (`MUNKAS_CEL` kétharmada)');
+      console.log('     · telik-e rá. A v0.17-ig azért volt nulla, mert `korszak`');
+      console.log('     parancsfajta-ág NEM IS LÉTEZETT az `ai.js`-ben.');
+      bukas++;
+    } else if (sA.gazdasag.korszak[1] === 0) {
+      console.log('\n  ⛔ A GÉP BEADTA A VÁLTÁST, DE NEM LETT BELŐLE KORSZAK.');
+      console.log('     A parancs elhal a `Gazdasag.korszakIndit`-ban — a gép olyan');
+      console.log('     árat lát, ami nem egyezik azzal, amit a sim levon.');
+      bukas++;
+    }
+
+    // (A/2) A MECCS VÉGE UTÁN A GÉP HALLGAT (v0.17-es gát, v0.18/2-ben a kapun
+    // BELÜLRE hozva).
+    //
+    // ⚠️ EZ AZ ÁG EDDIG A TELJES KAPU-KORPUSZON HOLT KÓD VOLT, ÉS PONT EZ A
+    // BAJ VELE. Ahol AI fut (9. és 12. vizsgálat), ott a meccs 16 000 tick
+    // alatt nem dől el; ahol a meccs eldől (14. vizsgálat), ott az AI nincs is
+    // bekapcsolva. Az `ai.js` „a vége után ne rendelj" sora tehát bent volt a
+    // fában, és SOHA nem futott le — a hozzá tartozó mért szám (49 kukába ment
+    // parancs) sem reprodukálható. Ez a felállás az első a kapun belül, ahol
+    // MINDKETTŐ igaz: gép irányít, ÉS a meccs véget ér.
+    //
+    // Amit véd: a v0.8 lockstepjén a gép parancsai a HÁLÓZATON is végigmennek.
+    // Egy már eldőlt meccsben körönként kimenő, biztosan eldobandó csomag nem
+    // esztétikai kérdés — sávszélesség és zaj a desync-naplóban.
+    sor('  a meccs vége', vegeA >= 0 ? 'tick ' + vegeA : 'NEM DŐLT EL 8000 tick alatt',
+      'gép irányít ÉS a meccs eldől — ez a felállás hozza be a v0.17-es gátat');
+    if (vegeA < 0) {
+      console.log('\n  ⛔ A HAJTOTT FELÁLLÁS NEM DŐLT EL 8000 TICK ALATT.');
+      console.log('     Enélkül a „vég után a gép hallgat" ág NEM FUT LE, és a szonda');
+      console.log('     zölden igazolna egy soha meg nem hívott gátat. Ha a balansz');
+      console.log('     tényleg lassult, emeld a tick-korlátot ITT — de előbb nézd meg,');
+      console.log('     nem a gép támadó ága némult-e el (`_hadmuvelet`).');
+      bukas++;
+    } else {
+      const elotteA = [sA.ai.dontesDb[1], sA.ai.epitDb[1], sA.ai.kepzesDb[1],
+        sA.ai.kutatasDb[1], sA.ai.korszakDb[1], sA.ai.gyujtDb[1], sA.ai.csereDb[1]];
+      for (let t = 0; t < 1000; t++) sA.lep();
+      const utanaA = [sA.ai.dontesDb[1], sA.ai.epitDb[1], sA.ai.kepzesDb[1],
+        sA.ai.kutatasDb[1], sA.ai.korszakDb[1], sA.ai.gyujtDb[1], sA.ai.csereDb[1]];
+      let mozdult = 0;
+      for (let i = 0; i < elotteA.length; i++) if (utanaA[i] !== elotteA[i]) mozdult++;
+      sor('  vég után 1000 tick', mozdult === 0 ? 'a gép NEM döntött' : mozdult + ' SZÁMLÁLÓ NŐTT',
+        'döntés/építés/képzés/kutatás/korszak/gyűjtés/csere');
+      if (mozdult > 0) {
+        console.log('\n  ⛔ A GÉP A MECCS VÉGE UTÁN IS DOLGOZIK: ' + mozdult + ' számláló nőtt');
+        console.log('     1000 tickkel a ' + vegeA + '. tick UTÁN. Az `Ai.lep()` első sora');
+        console.log('     (`if (this.sim.gyozelem && this.sim.gyozelem.vege) return;`) nem');
+        console.log('     fog — vagy kikerült, vagy a `gyozelem` nincs bekötve a simbe.');
+        console.log('     A `parancsok.js` úgyis eldobná ezeket, de a v0.8-ban addigra');
+        console.log('     már végigmentek a hálózaton.');
+        bukas++;
+      }
+    }
+
+    // (B) PIACI CSERE. Kész piac + fa-bőség + étel-szűke: a gépnek cserélnie
+    // KELL. Enélkül a piac (175 fa) olyan épület, amit a gép megvesz és
+    // sosem használ — a v0.6 óta pontosan ez volt a helyzet.
+    const sB = new Sim({ seed: SEED, n: 256, maxEgyseg: 2000 });
+    sB.szondaFelallas(24, { munkasMinden: 1 });
+    sB.ai.beallit(1, NEHEZSEG.NEHEZ);
+    let kozp1 = -1;
+    for (let i = 0; i < sB.epuletek.db; i++) {
+      if (sB.epuletek.csapat[i] === 1 && sB.epuletek.tipus[i] === EPULET.KOZPONT) { kozp1 = i; break; }
+    }
+    // A piacot KÉZZEL rakjuk le, készen: a kör nem az építésről szól, és egy
+    // fel nem épült piac itt csendben elnémítaná a cserét.
+    let piacIdx = -1;
+    for (let r = 4; r < 20 && piacIdx < 0; r++) {
+      for (let d = -r; d <= r && piacIdx < 0; d++) {
+        const bx = sB.epuletek.cx[kozp1] + r, by = sB.epuletek.cy[kozp1] + d;
+        if (sB.epuletek.lerakhato(EPULET.PIAC, bx, by)) {
+          piacIdx = sB.epuletek.lerak(EPULET.PIAC, bx, by, 1, true);
+        }
+      }
+    }
+    sB.gazdasag.keszlet[4 + 0] = 0;      // étel: szűkösség
+    sB.gazdasag.keszlet[4 + 1] = 3000;   // fa: bőség
+    for (let t = 1; t <= 2000; t++) { sB.lep(); if (sB.gyozelem.vege) break; }
+    sor('hajtott piaci csere', sB.ai.csereDb[1] + ' beadva',
+      'átment: ' + sB.gazdasag.csereDb[1] + ' · kapott: '
+      + sB.gazdasag.csereKapott[1] + ' egység');
+    if (piacIdx < 0) {
+      console.log('\n  ⛔ A SZONDA NEM TUDOTT PIACOT LERAKNI — a próba vak.');
+      bukas++;
+    } else if (sB.ai.csereDb[1] === 0) {
+      console.log('\n  ⛔ A GÉP FA-BŐSÉG ÉS ÉTEL-SZŰKE MELLETT SEM CSERÉLT A PIACÁN.');
+      console.log('     A `_kereskedik` ága néma. A piac a `BUILD_ORDER`-ben van, tehát');
+      console.log('     a gép MEGVESZI (175 fa) és sosem használja — mérve: 965 fa állt');
+      console.log('     a raktárában, miközben az étele végig 0 és 30 között tapadt.');
+      bukas++;
+    } else if (sB.gazdasag.csereKapott[1] === 0) {
+      console.log('\n  ⛔ A CSERE-PARANCS KIMENT, DE SEMMI NEM JÖTT BELŐLE.');
+      console.log('     A `parancsok.js` `csere` ága kész piacot keres — nézd meg, hogy');
+      console.log('     a gép ugyanazt a feltételt nézi-e, mint a végrehajtás.');
       bukas++;
     }
   }
@@ -2332,7 +2512,7 @@ if (ketV17f.ok) {
 // Ugyanannyi tick, mint a determinizmus-kör: ami itt lefut, annak ott is le
 // KELL futnia (a v0.5 körének tanulsága).
 {
-  const { VEG_OK } = await import(pathToFileURL(join(SIM_DIR, 'gyozelem.js')).href);
+  const { VEG_OK, Gyozelem } = await import(pathToFileURL(join(SIM_DIR, 'gyozelem.js')).href);
   const { mentes, betoltes } = await import(pathToFileURL(join(SIM_DIR, 'mentes.js')).href);
 
   // — 1. A KÖZPONT ELVESZTÉSE —
@@ -2436,6 +2616,54 @@ if (ketV17f.ok) {
     bukas++;
   }
 
+  // — 4. A `felad()` KÖZVETLEN HÍVÁSA A VÉG UTÁN —
+  // Parancs-útról ez az ág ELÉRHETETLEN (a `vegrehajt()` általános kapuja előbb
+  // fog), ezért lefedettség-mérésen holt kódnak látszik. De a `feladta[]`
+  // HASH-MEZŐ, és a `felad()` az egyetlen írója: egy vég utáni írás némán
+  // elmozdítaná a hasht egy MÁR ELDŐLT meccsben, ahol senki nem keresi — a
+  // `lep()` ugyanis a vége után kilép, tehát a belőle következő `kiesett[]`-et
+  // már semmi nem hozná helyre. Közvetlenül próbáljuk ki: így a „holt ág" a
+  // kapun BELÜL van.
+  {
+    const h0 = s3.allapotHash();
+    const r0 = s3.gyozelem.felad(0);
+    const r1 = s3.gyozelem.felad(1);
+    const h1 = s3.allapotHash();
+    sor('vég utáni közvetlen felad()', (r0 || r1) ? '⛔ ELFOGADVA' : 'elutasítva',
+      'hash 0x' + h0.toString(16).padStart(8, '0') + ' → 0x' + h1.toString(16).padStart(8, '0'));
+    if (r0 || r1 || h0 !== h1) {
+      console.log('\n  ⛔ A `Gyozelem.felad()` A MECCS VÉGE UTÁN IS ÍRT.');
+      console.log('     A `feladta[]` a hashben van, a `lep()` viszont a vége után kilép,');
+      console.log('     tehát a `kiesett[]`-et már senki nem hozná helyre: néma desync.');
+      bukas++;
+    }
+  }
+
+  // — 5. A KIESÉS RAGADÓS —
+  // ⚠️ MÉRT HIBA JAVÍTÁSA. A `kiesett[]`-et a `lep()` tickenként a MOSTANI
+  // világból számolta újra, tehát a kiesett csapat FELTÁMADT, ha új központot
+  // épített. A jelző a hashben van: két gép egyetlen tickkel eltérő építéssel
+  // más állapotot látna ugyanarról a meccsről. Két csapatnál a hiba nem jön elő
+  // (ott a kiesés tickje egyben a meccs vége), ezért kell HÁROM csapat.
+  {
+    const hamis = { epuletek: { db: 3, elo: Uint8Array.from([1, 1, 1]),
+      tipus: Uint8Array.from([EPULET.KOZPONT, EPULET.KOZPONT, EPULET.KOZPONT]),
+      csapat: Uint8Array.from([0, 1, 2]) } };
+    const g3 = new Gyozelem(3, hamis);
+    g3.lep(1);
+    hamis.epuletek.elo[0] = 0; g3.lep(2);
+    const kiEsett = g3.kiesett[0];
+    hamis.epuletek.elo[0] = 1; g3.lep(3);      // ÚJ központ a kiesett csapatnak
+    sor('kiesés ragadóssága (3 csapat)', kiEsett + ' → ' + g3.kiesett[0],
+      'új központ épült a kiesés után');
+    if (kiEsett !== 1 || g3.kiesett[0] !== 1) {
+      console.log('\n  ⛔ A KIESETT CSAPAT FELTÁMADT.');
+      console.log('     A `kiesett[]` a hashben van — ez desync-forrás, és a meccs');
+      console.log('     megint nem tudna véget érni.');
+      bukas++;
+    }
+  }
+
   if (bukas === vegeBukas) {
     console.log('\n  ✓ A meccs mindkét okból véget ér, a vég utáni parancsok elhalnak,');
     console.log('    és egy lejátszott meccs mentése bitre ugyanazt az állapotot adja.');
@@ -2460,18 +2688,25 @@ vegeBukas = bukas - vegeBukas;
 //      tilt. A kör ezért mindkét irányt bizonyítja — a sötét korban elutasít,
 //      a korszak megemelése után ugyanaz a parancs átmegy.
 //
-// ⚠️ A GÁT EBBEN A KÖRBEN BE VAN KAPCSOLVA, A JÁTÉKBAN NEM. Az indoklás és a
-// mért számok az `epuletek.js` `EP_KORSZAK` tábláját megelőző blokkban állnak:
-// élesen ma a gépi ellenfelet szüntetné meg, mert az egyetlen korszakot sem
-// vált. A kód viszont KÉSZ, tehát a kapun BELÜL a helye.
+// ⚠️ A GÁT EBBEN A KÖRBEN BE VAN KAPCSOLVA — A JÁTÉKBAN AZ ÉLŐ TÁBLA DÖNT.
+// Az indoklás és a mért számok az `epuletek.js` `EP_KORSZAK` tábláját megelőző
+// blokkban állnak. A kör ATTÓL FÜGGETLENÜL járatja az ágat, hogy a világon be
+// van-e kapcsolva: egy ki nem próbált szabály az élesítés napján derülne ki.
+//
+// ⚠️ ÉS A VILÁG ÁLLAPOTÁT IS MÉRJÜK, NEM CSAK KIÍRJUK (v0.18/2). Az élesítés
+// EGY sor az `epuletek.js`-ben, és pont az ilyen egysoros kapcsoló az, ami
+// észrevétlenül vissza tud fordulni. Ezért a kör alján egy külön próba egy
+// ALAPÉRTELMEZETT sim-en (`korszakGat` hívás NÉLKÜL) ellenőrzi, hogy a világ
+// tényleg azt csinálja, amit az élő tábla ígér — mindkét irányban.
 cim('15) v0.18 SOR-TÖRLÉS ÉS KORSZAK-GÁT — a két új parancs-ág');
 const t15 = Date.now();
 let ujBukas = bukas;
+const gatEles = EP_KORSZAK.some((x) => x > 0);
 
 const ketV18 = ketFutas(FORGATOKONYVEK.v18);
 sor('forgatókönyv', FORGATOKONYVEK.v18.nev);
 sor('korszak-gát a körben', 'BEKAPCSOLVA', 'igény: ' + EP_KORSZAK_IGENY.join(','));
-sor('korszak-gát a játékban', EP_KORSZAK.some((x) => x > 0) ? 'BEKAPCSOLVA' : 'kikapcsolva',
+sor('korszak-gát a játékban', gatEles ? 'ÉLESÍTVE' : 'kikapcsolva',
   'élő tábla: ' + EP_KORSZAK.join(','));
 let kevertV18 = { ok: true, tick: 0 };
 if (ketV18.ok) {
@@ -2717,10 +2952,69 @@ if (ketV18.ok) {
     bukas++;
   }
 
+  // — 6. A VILÁG ÁLLAPOTA EGYEZIK AZ ÉLŐ TÁBLÁVAL (v0.18/2) —
+  //
+  // ⚠️ EDDIG MINDEN FENTI PRÓBA BEFECSKENDEZETT TÁBLÁVAL MENT (`korszakGat`).
+  // Az így bizonyított ág tökéletesen működhet úgy is, hogy a VILÁGON semmit
+  // nem csinál — pontosan ez a helyzet ma. Ez a próba ezért `korszakGat`
+  // hívás NÉLKÜL indít simet, tehát azt méri, ami a játékosnak is jut, és
+  // MINDKÉT irányban buktat: ha az élő tábla csupa nulla, tiltás sem lehet;
+  // ha nem az, akkor kell tiltásnak lennie.
+  const s5 = new Sim({ seed: SEED, n: 128, maxEgyseg: 200 });
+  s5.szondaFelallas(8, { munkasMinden: 1 });
+  for (let f = 0; f < 4; f++) s5.gazdasag.keszlet[f] = 5000;
+  const s5Hely = (tipus) => {
+    const meret = EP_MERET[tipus];
+    for (let y = 5; y < s5.n - 6; y++) {
+      for (let x = 5; x < s5.n - 6; x++) {
+        if (s5.epuletek.lerakhato(tipus, x - (meret >> 1), y - (meret >> 1))) {
+          return { x: x + 0.5, y: y + 0.5 };
+        }
+      }
+    }
+    return null;
+  };
+  // Az OSTROMMŰHELY a legmagasabb igényű tétel az IGÉNY-táblában (kristály
+  // kora) — ha valaha lesz élesítés, ez az, aminek sötét korban BIZTOSAN
+  // tiltottnak kell lennie.
+  const h5 = s5Hely(EPULET.OSTROMMUHELY);
+  const db5 = s5.epuletek.db;
+  if (h5) {
+    s5.parancs({ fajta: 'epit', csapat: 0, tipus: EPULET.OSTROMMUHELY, x: h5.x, y: h5.y });
+    for (let i = 0; i <= 3; i++) s5.lep();
+  }
+  const felepult5 = s5.epuletek.db > db5;
+  sor('ALAPÉRTELMEZETT sim: ostromműhely', felepult5 ? 'felépült' : 'TILTVA',
+    'sötét korban, `korszakGat` hívás nélkül · elutasítva: '
+    + s5.epuletek.korszakElutasitva[0]);
+  if (gatEles && felepult5) {
+    console.log('\n  ⛔ AZ ÉLŐ TÁBLA KORSZAKOT KÉR, A VILÁG MÉGIS ENGEDI.');
+    console.log('     Az `EP_KORSZAK` nem csupa nulla, tehát az alapértelmezett sim-nek');
+    console.log('     is tiltania kellene — az `Epuletek` konstruktora viszont nem');
+    console.log('     ebből a tábláról indul, vagy a `korszakIgeny` valahol nullázódik.');
+    bukas++;
+  }
+  if (!gatEles && !felepult5) {
+    console.log('\n  ⛔ AZ ÉLŐ TÁBLA CSUPA NULLA, A VILÁG MÉGIS TILT.');
+    console.log('     Valaki a `korszakIgeny`-t a táblától FÜGGETLENÜL állítja be —');
+    console.log('     a `parancsok.js` `epit` ága így olyan szabályt érvényesít, amit');
+    console.log('     az `epuletek.js` fejléce szerint ma nem érvényesítünk.');
+    bukas++;
+  }
+  if (!gatEles) {
+    console.log('     ℹ️  A gát a VILÁGON kikapcsolva — ez MÉRT DÖNTÉS, nem félkész munka.');
+    console.log('        Az `epuletek.js` `EP_KORSZAK` fölötti blokk közli a számokat:');
+    console.log('        a v0.6-os körön 14 seeden a nehéz gép álló épülete 8,6 → 6,6,');
+    console.log('        a KATONAI épülete 3,4 → 1,9 (−43 %), és 28 mért oldalon EGYSZER');
+    console.log('        SEM váltott korszakot, tehát a kapu nem „később" nyílik, hanem');
+    console.log('        soha. Az ág ettől még él — fent, bekapcsolt táblával bizonyítva.');
+  }
+
   if (bukas === ujBukas) {
     console.log('\n  ✓ A sor-törlés determinisztikus, nem teremt nyersanyagot, viszont');
     console.log('    felszabadítja a népesség- és a sor-helyet; a korszak-gát pedig');
-    console.log('    mindkét irányban elsül, és nem vonja le a tiltott épület árát.');
+    console.log('    mindkét irányban elsül, nem vonja le a tiltott épület árát, és a');
+    console.log('    VILÁG állapota egyezik az élő táblával.');
   }
 }
 sor('lefutott', ((Date.now() - t15) / 1000).toFixed(1) + ' mp');

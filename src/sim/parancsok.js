@@ -492,6 +492,14 @@ function korszak(sim, p) {
  * dolga (a csomag küldőjének egyeznie kell a `csapat`-tal) — ugyanaz a
  * szabály, mint az `epit` vagy a `kepzes` csapat-mezőjénél.
  *
+ * ⚠️ A VÉG UTÁNI FELADÁST NEM EZ AZ ÁG UTASÍTJA EL, hanem a `vegrehajt()`
+ * legelső sora — ide már el sem jut. Ezért NEM a `gyozelem.feladasElutasitva`
+ * nő ilyenkor, hanem az `elutasitottParancs`: aki a vég utáni elutasításra épít
+ * gátat, az utóbbit nézze (a v0.17 szondája első futásra ebbe futott bele). A
+ * `Gyozelem.felad()` saját `this.vege` vizsgálata emiatt parancs-útról
+ * elérhetetlen — hogy MIÉRT marad ott mégis, azt a `gyozelem.js` fejlécének
+ * „A `felad()` KETTŐS VÉDELME" szakasza indokolja.
+ *
  * @param {{csapat:number}} p
  */
 function feladas(sim, p) {

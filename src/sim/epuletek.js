@@ -92,33 +92,74 @@ export const EP_NEPESSEG = [10, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0];
 //   EP_KORSZAK        ami MA ÉL. A `Epuletek` példány ebből indul.
 //   EP_KORSZAK_IGENY  a bizonyított követelmény, amit a panel javasol.
 //
-// ⚠️ MIÉRT NEM AZ IGÉNY AZ ÉLES TÁBLA — MÉRVE, NEM VÉLVE. A követelmény
-// bekapcsolva a gépi ellenfelet nem „visszafogja", hanem MEGSZÜNTETI mint
-// ellenfelet, mert a gép a nyitott lista P1-e szerint egyetlen korszakot sem
-// vált (mérve: 16 000 tick, nehéz szint, 0 váltás) — vagyis a kapu SOHA nem
-// nyílik ki előtte. A `v0.6` körön mérve, ugyanaz a seed, csak a tábla más:
+// ⚠️ MIÉRT NEM AZ IGÉNY AZ ÉLES TÁBLA — MÉRVE, NEM VÉLVE.
 //
-//                              ma        IGÉNY-nyel
-//   nehéz gép álló épülete     13        4      (elveszett: íjászda, istálló,
-//                                               piac, 2 torony, 1 laktanya)
-//   ebből katonai              5         1
-//   építési parancs → épület   12→12     156→4  (148 elutasítva korszak miatt)
-//   élő munkás a végén         12        0
-//   élő katona a végén         ~20       2
+// A v0.18/2 körben MIND A HÁROM ELŐFELTÉTELT megcsináltuk, és a gátat utána
+// ÚJRA MÉRTÜK. A kép sokat javult, de a döntés NEM változott — az alábbi
+// számok mondják meg, miért.
 //
-// A 156-os szám a legbeszédesebb: az `ai.js` `_buildOrder`-e az első meg nem
-// épülő tétel után `return`-öl, tehát ÖRÖKRE beragad az íjászdánál, és a
-// mögötte álló ház, piac, torony sorra sem kerül. A `npm run det` 9. vizsgálata
-// ezt magától kiírta („A 1. GÉP ÉPÍTÉSI PARANCSAI ELVESZNEK: 156 rendelésből 4
-// épület lett"), a 8. pedig a néma piacot és tornyot.
+// ── AMI ELKÉSZÜLT ────────────────────────────────────────────────────────
+//   (2) ✅ `ai.js` `_buildOrder`: a korszak-tiltott tételen `continue`, nem
+//       `return`. Ettől a nehéz gép építési parancsa 156 → 8 lett, és a 148
+//       korszak-elutasítás NULLÁRA esett: a gép nem ragad be az íjászdánál, és
+//       a v0.8 lockstepjén nem küld körönként halott csomagot a hálózatra.
+//   (3) ✅ `panel_epites_adat.js`: a panel a sim PÉLDÁNYÁTÓL kérdez
+//       (`sim.epuletek.korszakKell`), nem másolatból él. A gomb így nem
+//       engedheti azt, amit a sim eldob — akkor sem, ha a gát meccsenként
+//       állítható.
+//   (1) 🟡 FÉLIG — ÉS AZ ELŐZŐ KÖR SZÁMA ITT HIBÁS VOLT. Az átadó és a
+//       teendő-lista azt állította, hogy a gép „0 → 11 korszakváltást csinál
+//       14 mért oldalon, legkorábbi t=9105". EZ NEM REPRODUKÁL. A szonda alap-seedjén
+//       (20260803) MIND A KÉT hosszú körön 0/0 váltás jön ki, és ugyanez igaz a
+//       VÁLTOZTATÁS ELŐTTI fára is — tehát nem regresszió, hanem téves szám.
+//       Ami IGAZ: a gép ott, ahol békén hagyják, MÁR KORÁBBAN IS váltott (a
+//       v0.9-es körön a 20260804/05 seeden oldalanként 2 váltás), a v0.6-oson
+//       viszont 14 seeden, 28 mért oldalon EGYSZER SEM — sem éles, sem
+//       kikapcsolt gáttal.
+//       Amit ez a kör hozzátett: a gép végre HASZNÁLJA a piacát
+//       (`_kereskedik` — a v0.6 óta megvette és sosem cserélt rajta), és ha a
+//       korszak zárja el a build ordert, alacsonyabb sereg-küszöbtől
+//       tartalékol (`KORSZAK_VEDELEM`, ma tétlen kód). Az ág maga a
+//       determinizmus-szonda 9. körében HAJTOTT felállásban is le van mérve:
+//       az első `korszak` parancs a 2584. ticken megy ki, és a gép a kristály
+//       koráig jut — ez a szám eddig SEHOL nem volt a kapun belül.
 //
-// A követelmény tehát KÉSZ, de HÁROM dolog kell, mielőtt élesíthető:
-//   1. a gép tudjon korszakot váltani (a feladatlista P1-e, `ai.js`);
-//   2. az `ai.js` `_buildOrder`-e a korszak-tiltott tételen LÉPJEN TOVÁBB
-//      (`continue`), ne `return`-öljön;
-//   3. a `panel_epites_adat.js` `EP_KORSZAK`-ja vegye át ezt a táblát,
-//      különben a gomb engedi, amit a sim eldob — a `p:epites` 6. vizsgálata
-//      pontosan ezt az elcsúszást fogja meg (mérve: 11/11 → 5/11 egyezés).
+// ── ÉS AMIÉRT EZ MÉGSEM ELÉG (v0.6 kör, 14 seed, A MECCS VÉGÉIG mérve) ────
+//
+// ⚠️ „A MECCS VÉGÉIG", ÉS EZ NEM SZŐRSZÁLHASOGATÁS. Az előző kör 13 → 4-es
+// száma 16 000 tickig mért, miközben a meccs a 10 047.-en eldőlt: a futás
+// 37 %-a a vég UTÁNRA esett, ahol az `Ai.lep()` már kilép, a munkások pedig
+// halottak. A gát hatása így nagyobbnak látszott, mint amekkora. Minden alábbi
+// szám a `sim.gyozelem.vegeTick`-ig gyűlt, vagy 16 000-ig, ha a meccs nem
+// dőlt el.
+//
+//                                   gát ki    gát ÉLES
+//   nehéz gép álló épülete (átlag)   8,6       6,6     (−23 %)
+//   ebből KATONAI (átlag)            3,4       1,9     (−43 %)
+//   korszakváltás 28 mért oldalon    0         0
+//   ostromműhelyes nép egyedi
+//     egysége (v0.9/2, v09 kör)      0–10      0       (11 futásból mind)
+//
+// A −43 % nem „visszafogás", hanem VÉGLEGES veszteség: a v0.6-os körön a gép
+// SOHA nem éri el a hajnal korát, tehát az íjászda és az istálló nem „később"
+// épül fel, hanem SOHA. Az ok mérve: a váltás 500 étel, a nehéz gép pedig
+// 16 000 tick alatt összesen ~2000 ételt termel (0,127 étel/tick), és közben
+// végig ostrom alatt áll — a tartalék a `HAD.VEDEKEZIK` szabály szerint
+// (helyesen) ki van kapcsolva. A kapu tehát nyitható, csak nem AKKOR, amikor
+// a gépet az első perctől nyomás alatt tartják.
+//
+// ⚠️ A DÖNTÉS EZÉRT: MARAD KIKAPCSOLVA. Egy gát, amit a gép a referencia-
+// forgatókönyvben egyszer sem tud kinyitni, nem korszak-ív, hanem tartós
+// büntetés a gépre — és a v0.9/2 egyedi egysége (ostromműhely = kristály kora)
+// EGY KÉSZ ALRENDSZER, ami tőle némán nullára megy. „A félkész élesítés
+// rosszabb, mint a bekapcsolatlan gát."
+//
+// ── MI HIÁNYZIK MÉG AZ ÉLESÍTÉSHEZ (a következő körnek) ──────────────────
+// Egyetlen szám: a `gazdasag.js` `KORSZAK_AR` ELSŐ sora (500 étel) a gép egy
+// meccsnyi étel-termelésének a negyede–fele. Vagy az ár csökken, vagy a gép
+// étel-gazdasága nő (a beragadó munkások a nyitott lista P1-e), vagy a
+// hajnal kora nem kérhet ételt. Ez a három közül BÁRMELYIK megnyitja a kaput;
+// addig a tábla itt áll, kipróbálva, de kikapcsolva.
 //
 // Élesíteni EGY sor: az `EP_KORSZAK` értékei legyenek az `EP_KORSZAK_IGENY`-é.
 // A determinizmus-szonda 15. köre addig is BEKAPCSOLVA járatja az ágat
@@ -144,7 +185,14 @@ export const EP_KORSZAK_IGENY = [
   1,  // PIAC          — hajnal kora
 ];
 
-/** AMI MA ÉL: nincs korszak-követelmény. Lásd fent, hogy miért. */
+/**
+ * AMI MA ÉL: nincs korszak-követelmény. Lásd fent, hogy miért — és hogy MI
+ * KELL még hozzá, hogy ez a sor `EP_KORSZAK_IGENY`-re válthasson.
+ *
+ * ⚠️ EBBŐL OLVAS A PANEL IS (`panel_epites_adat.js` → `EP_KORSZAK`), tehát ez
+ * az egy sor kapcsolja a világot ÉS a felületet. A futó panel a sim
+ * PÉLDÁNYÁTÓL kérdez, hogy a meccsenként állítható gátat is kövesse.
+ */
 export const EP_KORSZAK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 // ── ⚠️ HOSSZ-ŐR ───────────────────────────────────────────────────────────

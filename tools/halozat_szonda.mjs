@@ -21,6 +21,13 @@
 // végre — vagyis hogy a `helyiParancs → socket → relay → fogad →
 // parancsTickre` út VÉGIG lefusson.
 //
+// ⚠️ v0.18: és hogy a MECCS MÉG ÉLJEN a mérés végén. A v0.17 óta a lefutott
+// meccsben a `vegrehajt()` minden parancsot eldob — a „végrehajtott parancs"
+// gát ilyenkor a hálózatot vádolná egy világ-állapot miatt, a hash-egyezés
+// pedig továbbra is tökéletes lenne, mert egy halott meccs bitre
+// reprodukálható. A `gyozelem.vegeTick` és a vég miatt eldobott parancsok
+// száma ezért ki van írva.
+//
 // HASZNÁLAT:  node tools/halozat_szonda.mjs [--port=8791] [--kor=200]
 // Kilépési kód: 0 = rendben, 1 = bukás.
 
@@ -208,6 +215,34 @@ if (la.vegrehajtottParancs === 0 || lb.vegrehajtottParancs === 0) {
 }
 if (la.hashVizsgalat === 0 || lb.hashVizsgalat === 0) {
   console.log('\n  ⛔ A DESYNC-DETEKTOR EGYSZER SEM FUTOTT LE a hálózaton át.');
+  bukas++;
+}
+
+// ── ⚠️ ÉLŐ MECCSEN MÉRTÜNK-E? (v0.18) ─────────────────────────────────────
+//
+// A v0.17 óta a meccsnek VÉGE LEHET, és a vég után a `parancsok.js`
+// `vegrehajt()` ELSŐ sora minden parancsot eldob (`elutasitottParancs++`).
+// Ennek itt sajátos következménye van: a fenti „egyetlen parancs sem hajtódott
+// végre" gát elsülne — de a HIBAÜZENETE a hálózatot vádolná, holott a lánc
+// tökéletesen működött, csak a világ már eldőlt. Egy fél órás hibakeresés a
+// socket körül, egy olyan hiba miatt, ami nem is a hálózaté.
+//
+// Ráadásul a hash-egyezés ilyenkor is tökéletes: EGY HALOTT MECCS BITRE
+// REPRODUKÁLHATÓ. Pont az a csapda, amiért a `TODO.md` „a munkások VÉGLEG
+// tétlenné válnak" tétele TÉVES DIAGNÓZIS volt.
+//
+// A mai felállásban ez nem fenyeget (800 tick, csak `menet` parancsok, se AI,
+// se harc), de a számot akkor is ki kell írni — a hallgatás az, ami a következő
+// olvasót félrevezeti.
+const gyA = A.sim.gyozelem.osszesites(), gyB = B.sim.gyozelem.osszesites();
+sor('a meccs él-e', (gyA.vege ? '⚠️ VÉGE @' + gyA.vegeTick : 'fut') + ' / '
+  + (gyB.vege ? '⚠️ VÉGE @' + gyB.vegeTick : 'fut'),
+  'vég miatt eldobott parancs: ' + gyA.elutasitottParancs + ' / ' + gyB.elutasitottParancs);
+if (gyA.vege || gyB.vege || gyA.elutasitottParancs > 0 || gyB.elutasitottParancs > 0) {
+  console.log('\n  ⛔ A HÁLÓZATI PRÓBA MECCSE VÉGET ÉRT MÉRÉS KÖZBEN.');
+  console.log('     A vég után a `vegrehajt()` MINDEN parancsot eldob, tehát a fenti');
+  console.log('     „végrehajtott parancs" szám nem a szállításról szól többé — és a');
+  console.log('     hash-egyezés sem, mert egy halott meccs bitre reprodukálható.');
   bukas++;
 }
 

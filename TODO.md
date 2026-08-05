@@ -2,8 +2,16 @@
 
 Állapot: **v0.18.0** (a 2026-08-04-i felhős kör két menete). A helyzetkép és a
 MIÉRT-ek az [`ATADO.md`](ATADO.md)-ben, a mérések a
-[`qa/V0.17_EREDMENY.md`](qa/V0.17_EREDMENY.md)-ben; ez a lista csak azt mondja
+[`qa/V0.17_EREDMENY.md`](qa/V0.17_EREDMENY.md)-ben és a
+[`qa/V0.18_EREDMENY.md`](qa/V0.18_EREDMENY.md)-ben; ez a lista csak azt mondja
 meg, **mit kell csinálni és milyen sorrendben**.
+
+⚠️⚠️ **MIELŐTT BÁRMILYEN HOSSZÚ FUTÁSON MÉRSZ, OLVASD EL EZT.** A v0.17 óta a
+meccsnek VÉGE LEHET, és az `ai.lep()` ilyenkor kilép. Egy 16 000 tickes futás
+utolsó ezrei ezért HALOTT MECCS lehetnek — a bennük mért „a gép nem csinál
+semmit" nem hiba, hanem a lefutott játék. Ez a v0.18-ban **egy egész TODO-tételt
+megdöntött**, és **három további doksi-számot vont vissza**. A szabály:
+**nézd meg a `sim.gyozelem.vegeTick`-et**, és a számaidat ahhoz viszonyítsd.
 
 ⚠️ **A verzió-számozás átrendeződött.** A `PLAN.md` funkciónként osztotta ki a
 számokat, a fejlesztés viszont körönként haladt, és a v0.12-ről a v0.16-ra
@@ -23,7 +31,7 @@ Sáv: **SIM** = `src/sim/` (determinizmus-szabály!) · **UI** = `src/ui/` ·
 ## P0 — enélkül nem játék
 
 ### [x] SIM · A játékot MOST MÁR meg lehet nyerni
-Új réteg: `src/sim/gyozelem.js`. Ellenőrizve a fán, `npm run det` **14/14**.
+Új réteg: `src/sim/gyozelem.js`. Ellenőrizve a fán, `npm run det` **15/15**.
 
 - [x] Győzelmi szabály: a központ elvesztése. ⚠️ A feltétel nem „nincs
       központja", hanem „**volt** és most nincs" (`voltKozpont`) — enélkül a
@@ -85,10 +93,16 @@ A háromból kettő lezárva.
 
 ## P1 — a v0.17-ben lezárult
 
-- [x] **SIM/AI · A gép sosem váltott korszakot.** Nem KÉSETT: az `ai.js`-ben
+- [~] **SIM/AI · A gép sosem váltott korszakot.** Nem KÉSETT: az `ai.js`-ben
       **nem is létezett `korszak` parancsfajta-ág**, tehát a gép soha, semennyi
-      étellel nem tudott volna váltani. Most van (`src/sim/ai.js:568`),
-      0 → 11 korszakváltás 14 mért oldalon, legkorábbi t=9105.
+      étellel nem tudott volna váltani. Az ág azóta megvan (`src/sim/ai.js`).
+      ⚠️⚠️ **A HOZZÁ TARTOZÓ SZÁM VISSZAVONVA.** A v0.17 jelentése „0 → 11
+      korszakváltás 14 mért oldalon, legkorábbi t=9105"-öt írt. A v0.18-as
+      mérés-audit ezt **nem tudta reprodukálni: ma 0/0 jön ki mindkét hosszú
+      körön, a COMMITOLT fán is** — tehát nem egy azóta bekerült változtatás
+      rontotta el. A parancs-ág LÉTEZIK, de hogy a gép a gyakorlatban vált-e,
+      az BIZONYÍTATLAN. Amíg nincs rá szonda-szám, ne építs rá — a korszak-gát
+      élesítésének ez az ELSŐ előfeltétele.
 - [x] **SIM · A kristály és a fény korához nem volt technológia kötve.** A
       hatból négy az 1. korban nyílt. Újraosztva (kristály = páncélozás,
       fény = falazás). ⚠️ **Nem bővítve**: egy hetedik sor a UI hat elemű
@@ -99,14 +113,18 @@ A háromból kettő lezárva.
 - [x] **QA · favicon.** Adat-URI-ként az `index.html`-ben — megszünteti az örök
       „1 konzol-hiba" hamis riasztást, és nem töri meg a „nincs képfájl"
       ígéretet.
-- [x] **SIM/AI · Az `AI.lep()` a meccs vége után is dolgozott.** Mérve a
-      v0.6-os forgatókönyvön: a győztes gép a 12 169. tickig 12 építési
-      parancsot adott ki, a 16 000. tickig **61-et** — vagyis 49 olyat, amit a
-      végrehajtás azonnal a kukába tett. A v0.8 lockstepjén ezek a HÁLÓZATON is
-      végigmentek volna, egy már eldőlt meccsben. Gát ellenőrizve:
-      `src/sim/ai.js:481`. Mellékhaszon: a szonda „elveszett építési parancs"
-      gátja megint arról szól, amiről szólnia kell — a koordináta-hibáról, nem
-      a lefutott meccsről.
+- [~] **SIM/AI · Az `AI.lep()` a meccs vége után is dolgozott.** A gát bent van
+      (`src/sim/ai.js`), és elvileg helyes: a vég után kiadott parancsokat a
+      végrehajtás úgyis eldobja, a v0.8 lockstepjén viszont a HÁLÓZATON is
+      végigmennének.
+      ⚠️ **A SZÁMA VISSZAVONVA, ÉS A GÁT MA HOLT KÓD.** A jelentett „12 169.
+      tickig 12 parancs, 16 000-ig 61 — vagyis 49 a kukába" nem reprodukál. A
+      v0.18-as audit ennél többet mond: a gát a **teljes kapu-korpuszon** soha
+      nem sül el, mert ahol AI fut, ott a meccs nem dől el, ahol pedig eldől
+      (a v0.17-es körök), ott `ai.aktiv = [0,0]`.
+      **Amire szükség van:** egy forgatókönyv, amiben AI FUT és a meccs EL IS
+      DŐL — az egyszerre hozná a kapun belülre ezt a gátat és adna valódi
+      terepet a korszakváltás mérésének.
 - [x] **UI · Épület-kijelölés — TELJES.** A `bevitel.js` konstruktora
       ALAPÉRTELMEZÉSBEN beköti az `epuletKereso`-t a `gazdasag3d.js`
       `epuletTalalat()`-jára. ⚠️ Az nem `Raycaster`, hanem sugár × SIM-IGAZSÁG
@@ -280,7 +298,29 @@ hétszer égett meg zöld kapu melletti halott rendszeren.
       olcsó lándzsás + törlés = félidős lovag.
       Mérve: 40 rendelés–törlés kör, 5000 → 3000 étel, **nulla növekedés**;
       9/10 törlés átment, 11/10 elutasítva (idegen sor, tartományon kívüli index).
-- [~] **Korszak-gát az építésnél — A SIMBEN KÉSZ, DE NINCS ÉLESÍTVE.**
+- [~] **Korszak-gát az építésnél — A SIMBEN KÉSZ, DE SZÁNDÉKOSAN NINCS ÉLESÍTVE.**
+      ⚠️ A v0.18 zárásakor a HÁROM ELŐFELTÉTELBŐL KETTŐ ELKÉSZÜLT: a
+      `_buildOrder` már `continue`-ol a tiltott tételen (a nehéz gép építési
+      parancsa 156 → 8, a korszak-elutasítás 148 → 0 — nem ragad be az
+      íjászdánál), és a `panel_epites_adat.js` a sim tábláját veszi át, sőt a
+      futó panel a PÉLDÁNYTÓL kérdez, mert a gát meccsenként állítható.
+      **A harmadik (a gép tudjon korszakot váltani) NEM teljesült**, és a
+      mérés a MECCS VÉGÉIG, 14 seeden ezt adja: álló épület 8,6 → 6,6,
+      ebből KATONAI **3,4 → 1,9 (−43 %)**, korszakváltás 28 mért oldalon 0 → 0,
+      és az egyedi egység rendelése 0–10 → **0 mind a 11 futásban**.
+      A −43 % nem visszafogás, hanem VÉGLEGES veszteség: a gép soha nem éri el
+      a hajnal korát, tehát az íjászda és az istálló nem „később" épül fel,
+      hanem SOHA.
+      **Az ok mérve:** a váltás 500 étel, a nehéz gép 0,127 étel/tick-et termel,
+      és végig ostrom alatt áll, ahol a `HAD.VEDEKEZIK` — helyesen — kikapcsolja
+      a tartalékot. A feltétel tehát NEM a nehézségtől függ, hanem attól,
+      nyomás alatt van-e a gép. Bármelyik nyitja a kaput: a `KORSZAK_AR`
+      csökkentése, a gép étel-gazdaságának javítása, vagy hogy a hajnal kora ne
+      ételt kérjen.
+      ✅ Mellékeredmény: a gép **végre használja a piacát** (`_kereskedik`) — a
+      v0.6 óta megvette 175 fáért és sosem cserélt rajta, miközben 965 fa állt
+      a raktárában, az étel meg 0–30 közt tapadt.
+      (a régi leírás:)
       `EP_KORSZAK_IGENY`, `korszakKell()`, `korszakGat()`, `korszakElutasitva`,
       és az ellenőrző sor a `parancsok.js` `epit` ágában, a levonás ELŐTT.
       Az élő tábla viszont csupa nulla (= a mai szabály), és ez MÉRT DÖNTÉS:

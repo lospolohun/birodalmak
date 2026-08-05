@@ -242,19 +242,46 @@ gat(korszakosan.indokDb[INDOK.KORSZAK] === vartKorszakTilt,
 gat(fenyKorban.indokDb[INDOK.KORSZAK] === 0,
   'A FÉNY KORÁBAN IS TILT A KORSZAK-GÁT — vagyis a korszakot nem is nézi.');
 
-// (c) ⚠️ AZ ALAPÉRTELMEZETT TÁBLA CSUPA NULLA — ezt HANGOSAN rögzítjük.
+// (c) ⚠️ A PANEL A SIM PÉLDÁNYÁTÓL KÉRDEZ — EZT KÜLÖN BIZONYÍTJUK (v0.18/2).
+//
+// A v0.16-ban ez a réteg SAJÁT `EP_KORSZAK` tömböt tartott, és az volt a
+// kockázat, hogy a kettő szétcsúszik: a gomb ZÖLD egy olyan épületre, amit a
+// `parancsok.js` `epit` ága a levonás előtt eldob. A játékos ilyenkor nem
+// hibaüzenetet kap, hanem SEMMIT — kattint, és nem történik semmi.
+//
+// Ezért két külön kérdés van itt, és mindkettőre kell válasz:
+//   · az élő TÁBLA (`EP_KORSZAK`) és a gombok viselkedése összefügg-e;
+//   · a panel követi-e a sim PÉLDÁNYÁNAK gátját (`Epuletek.korszakGat`),
+//     ami meccsenként állítható — a modul-szintű tábla ettől nem mozdul.
 const alapTabla = epitesLista(sim, 0, { munkasDb: 1 });
 const korszakGatAktiv = EP_KORSZAK.some((x) => x > 0);
-sor('EP_KORSZAK alapból', korszakGatAktiv ? 'AKTÍV' : 'csupa nulla (kikapcsolva)',
+sor('EP_KORSZAK alapból', korszakGatAktiv ? 'ÉLESÍTVE' : 'csupa nulla (kikapcsolva)',
   alapTabla.indokDb[INDOK.KORSZAK] + ' tiltva');
-gat(korszakGatAktiv === (alapTabla.indokDb[INDOK.KORSZAK] > 0)
-  || !korszakGatAktiv,
-  'AZ EP_KORSZAK TÁBLA ÉS A VISELKEDÉS NEM FÜGG ÖSSZE.');
+gat(korszakGatAktiv === (alapTabla.indokDb[INDOK.KORSZAK] > 0),
+  'AZ EP_KORSZAK TÁBLA ÉS A VISELKEDÉS NEM FÜGG ÖSSZE.',
+  'tábla: [' + EP_KORSZAK.join(',') + '], tiltva: ' + alapTabla.indokDb[INDOK.KORSZAK]);
+
+// A PÉLDÁNY-KÖVETÉS: a sim gátját átállítjuk, a panel VÁLTOZATLAN modul-szintű
+// táblával kérdez — és mégis követnie kell. Ha nem, a panel másolatból él.
+const peldanySim = ujSim();
+peldanySim.epuletek.korszakGat(EP_KORSZAK_JAVASLAT);
+const peldanyLista = epitesLista(peldanySim, 0, { munkasDb: 1 });
+let vartPeldanyTilt = 0;
+for (let t = 0; t < EPULET_DB; t++) if (EP_KORSZAK_JAVASLAT[t] > KORSZAK.SOTET) vartPeldanyTilt++;
+sor('a sim PÉLDÁNYÁNAK gátja', peldanyLista.indokDb[INDOK.KORSZAK] + ' tiltva',
+  'várt ' + vartPeldanyTilt + ' (korszakGat a sim-en, nem a panelen)');
+gat(peldanyLista.indokDb[INDOK.KORSZAK] === vartPeldanyTilt,
+  'A PANEL NEM KÖVETI A SIM PÉLDÁNYÁNAK KORSZAK-GÁTJÁT.',
+  'A `frissitAllapot` a modul-szintű táblából dolgozik, nem a '
+  + '`sim.epuletek.korszakKell()`-ből — egy meccsenként állított gát mellett '
+  + 'a gomb engedné, amit a sim eldob.');
 if (!korszakGatAktiv) {
-  console.log('     ℹ️  Az `EP_KORSZAK` szándékosan csupa nulla: a `parancsok.js` `epit`');
-  console.log('        ága sem néz korszakot, és az `ai.js` sem. Egy UI-only gát CSAK az');
-  console.log('        embert büntetné. Az ág ettől még él — fent, befecskendezett táblával');
-  console.log('        bizonyítva. Ha a korszak bekerül a simbe: EP_KORSZAK = EP_KORSZAK_JAVASLAT.');
+  console.log('     ℹ️  Az `EP_KORSZAK` a SIMÉ (`src/sim/epuletek.js`), és ma csupa nulla —');
+  console.log('        MÉRT döntés, nem félkész munka: élesítve a nehéz gép katonai');
+  console.log('        épülete 3,4 → 1,9 esne (14 seed, v0.6-os kör), és 28 mért oldalon');
+  console.log('        egyszer sem vált korszakot, tehát a kapu SOHA nem nyílna ki előtte.');
+  console.log('        Az ág ettől még él: fent befecskendezett táblával, itt pedig a sim');
+  console.log('        PÉLDÁNYÁNAK gátjával bizonyítva. Élesíteni egy sor az epuletek.js-ben.');
 }
 
 // (d) TELE — az épület-tár betelt

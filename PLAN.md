@@ -25,7 +25,7 @@ Minden lépcső saját kiadási kapuval zárul — a minta a TELEPESEK
 | v0.15 | — | **kimaradt** (a számozás ugrott, lásd alább) |
 | v0.16 | **A játékréteg:** nyolc UI-panel, ikon-készlet, nyolc látvány-sáv, terep-paletta | **kész** — lásd alább |
 | v0.17 | **A meccs vége:** győzelmi feltétel, feladás, a vég utáni parancsok elutasítása | **kész** (`qa/V0.17_EREDMENY.md`) |
-| v0.18 | Sor-törlés, korszak-gát az építésnél, épület-kijelölés, törmelék-látvány | **kész** — lásd alább |
+| v0.18 | Sor-törlés, korszak-gát az építésnél, épület-kijelölés, törmelék-látvány | **kész** (`qa/V0.18_EREDMENY.md`) — lásd alább |
 | v0.19 | **QA-kör:** teljes átvizsgálás — determinizmus, teljesítmény, balansz, UX, hibalista | a statikus kapu megvan (`npm run kiadas`), az FPS/UX-kör NEM |
 | v0.20 | **Nyelvek: magyar + angol** — teljes fordítás, nyelvválasztó a menüben | |
 | v0.21 | **Kirakás SkyNetre:** `skynet.lospolo.hu/aotc` — deploy-lánc, alkönyvtáras build | |

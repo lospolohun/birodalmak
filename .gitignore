@@ -1,4 +1,8 @@
 node_modules/
 dist/
+# A szondák és az agentek külön kimenetbe építenek (`--outDir dist-xy`), hogy ne
+# tapossák egymást. Ezek ugyanúgy build-kimenetek, tehát ugyanúgy nem tartoznak
+# a verziókövetésbe — enélkül egy elfelejtett `dist-qa/` bekerül a commitba.
+dist-*/
 .DS_Store
 *.log

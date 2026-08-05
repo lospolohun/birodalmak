@@ -52,6 +52,12 @@
 //      (harc és gazdaság), és ESEMÉNYENKÉNT számolja meg, mi szólalt meg.
 //      Az összesített szám erre vak: azt egyetlen bőbeszédű forrás is
 //      megtölti, miközben hat másik némán hiányzik.
+//      ⚠️ v0.18: a két világ MEGÁLL a meccs végén, és a kihagyott tickek száma
+//      kiíródik. A v0.17 óta a meccsnek van vége, és onnantól az `ai.lep()`
+//      kilép — a vég utáni tickeken NINCS gyűjtés, építés és képzés. Egy
+//      átnyúló futás tehát halott percekkel hígítaná ezeket a számokat, és a
+//      szonda mégis „4 000 tick valódi meccset" írna. Mérve (v0.18): a
+//      gazdaság-világ az 5 662. ticken érne véget — 1 662 tick a tartalék.
 //  10. A KLIENS-HÍD (`src/ui/hang_hid.js`). A négy kliens-esemény nem a
 //      simből jön (a kijelölés nem világállapot), tehát a 9. vizsgálat vak
 //      rájuk. Itt kijelölünk, parancsot adunk, és — ami a legfontosabb —
@@ -600,7 +606,25 @@ const KEP_TICKENKENT = 3;
  *
  * A hívó úgy hajtja meg, ahogy a `main.js` teszi: tickeket léptet, és
  * képkockánként meghívja a `frissit()`-et a SAJÁT (valós idejű) órájával.
- * @returns {{hang, vak, sim}}
+ *
+ * ── ⚠️ A MECCS VÉGÉN MEGÁLLUNK, ÉS EZ v0.18-AS TANULSÁG ───────────────────
+ * A v0.17 óta a meccsnek VÉGE LEHET, és az `ai.lep()` első sora azóta kilép a
+ * lefutott meccsben. Egy hosszú futás VÉGE tehát már nem ugyanaz, mint
+ * korábban: a vég utáni tickeken a gép nem gyűjt, nem épít, nem képez — vagyis
+ * a 9. vizsgálat KÖTELEZŐ esemény-számai csendben hígulnának, és a jelentés
+ * „4 000 tick valódi meccset" írna oda, ahol a fele halott világ volt.
+ *
+ * Ez nem elméleti: a GAZDASÁG világa (`szondaFelallasV06`, seed 20260804) a
+ * v0.18-ban MÉRVE az 5 662. ticken ér véget — a 4 000-es futás alatt 1 662
+ * tick a tartalék. Egy balansz-hangolás ezt bármikor elviheti.
+ *
+ * Ezért a hurok a `gyozelem.vege`-nél MEGÁLL: amit a szonda mér, az mindig ÉLŐ
+ * meccsből jön. A kihagyott tickek száma kiíródik (`kihagyott`) — a számot
+ * LÁTHATÓVÁ kell tenni, nem elrejteni, különben a következő olvasó megint azt
+ * hiszi, hogy a teljes hossz lefutott.
+ *
+ * @returns {{hang, vak, sim, kert:number, lelepett:number, kihagyott:number,
+ *            vegeTick:number}}
  */
 function vilagotJatszik({ felallit, fut, tickek, parancsKoz = 100 }) {
   const sim = new Sim({ seed: 20260804, n: 256, maxEgyseg: 2000 });
@@ -615,17 +639,24 @@ function vilagotJatszik({ felallit, fut, tickek, parancsKoz = 100 }) {
 
   let most = 0;
   let kor = 0;
+  let lelepett = 0;
   const kozep = sim.n * 0.5;
   for (let t = 0; t < tickek; t++) {
+    if (sim.gyozelem.vege) break;      // lásd a fejlécet: halott meccset nem mérünk
     if (fut && (t % parancsKoz) === 0) { fut(sim, kor); kor++; }
     sim.lep();
+    lelepett++;
     for (let f = 0; f < KEP_TICKENKENT; f++) {
       most += KEPKOCKA_MS;
       hang.frissit(sim, most, kozep, kozep);
       vak.frissit(vakSim, most, kozep, kozep);
     }
   }
-  return { hang, vak, sim };
+  return {
+    hang, vak, sim,
+    kert: tickek, lelepett, kihagyott: tickek - lelepett,
+    vegeTick: sim.gyozelem.vegeTick,
+  };
 }
 
 const HARC = vilagotJatszik({
@@ -640,6 +671,36 @@ const GAZDASAG = vilagotJatszik({
   fut: null,
   tickek: 4000,
 });
+
+// ── ⚠️ A MÉRÉS ALAPJA: ÉLŐ MECCS-E, ÉS MENNYI TARTALÉK VAN? ───────────────
+// Ez a négy sor a v0.18 legfontosabb módszertani hozadéka. A `TODO.md` „a
+// munkások VÉGLEG tétlenné válnak" tétele azért volt TÉVES DIAGNÓZIS, mert egy
+// 16 000 tickes futás VÉGÉT mérte, miközben a meccs a 10 740. ticken lezárult.
+// Ugyanez a csapda itt is nyitva állt: ha a világ a mérés közben ér véget, a
+// gép leáll, és a KÖTELEZŐ események számai a halott percekkel hígulnak —
+// miközben a szonda változatlanul „4 000 tick valódi meccset" ír a fejlécébe.
+//
+// A hurok ezért megáll a vég pillanatában (lásd `vilagotJatszik`), ITT pedig
+// kiírjuk, MENNYI TARTALÉK maradt. A tartalék a szám, ami előre szól: amíg
+// nagy, a mérés biztonságos; ha nullára fogy, a következő balansz-hangolás
+// némán elviszi a 9. vizsgálat alól a talajt.
+console.log('  a mérés alapja — ÉLŐ meccs-e (v0.18):');
+for (const [nev, v] of [['harc', HARC], ['gazdaság', GAZDASAG]]) {
+  const vege = v.sim.gyozelem.vege;
+  sor('  ' + nev + '-világ', v.lelepett + ' / ' + v.kert + ' tick',
+    vege
+      ? '⚠️ A MECCS VÉGET ÉRT @' + v.vegeTick + ' — ' + v.kihagyott + ' tick kihagyva'
+      : 'végig élő meccs · tartalék: ismeretlen (nem dőlt el)');
+}
+gat(HARC.kihagyott === 0 && GAZDASAG.kihagyott === 0,
+  'A MÉRÉS VILÁGA A FUTÁS KÖZBEN VÉGET ÉRT (harc: ' + HARC.kihagyott
+  + ' tick, gazdaság: ' + GAZDASAG.kihagyott + ' tick kihagyva).',
+  'A v0.17 óta a meccsnek van vége, és az `ai.lep()` a lefutott meccsben kilép. '
+  + 'A vég utáni tickeken nincs gyűjtés, építés és képzés, tehát a KÖTELEZŐ '
+  + 'esemény-számok NEM arról szólnak, amiről a fejléc állítja. Nem a szondát '
+  + 'kell átírni: vagy rövidebb futás kell, vagy a forgatókönyv felállását kell '
+  + 'úgy hangolni, hogy a meccs kitartson a mérés végéig.');
+console.log('');
 
 const osszes = new Int32Array(ESEMENY_DB);
 for (const v of [HARC, GAZDASAG]) {

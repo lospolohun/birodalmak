@@ -145,6 +145,14 @@ const BOSEG = 700;
  * nullán álló nyersanyaghoz azonnal embert küldjünk.
  */
 const SZUKOSSEG = 120;
+/**
+ * EGY PIACI CSERE TÉTELE (v0.18). Fix szám, nem a fölösleg hányada: a cserét a
+ * gép döntési körönként legfeljebb egyszer adja be, tehát az ütemet a
+ * `DONTES_KOZ` szabja meg, és a nagy tétel egy csapásra billentené át a
+ * `_celArany` visszacsatolását az ellenkező irányba. 200 egység a 70 %-os
+ * aránnyal 140-et hoz — épp egy korszakváltás árának a negyede.
+ */
+const CSERE_TETEL = 200;
 /** A célarány súlya bőségben, illetve szűkében — SZÁZALÉK, egész osztással. */
 const BO_SULY = 45;
 const SZUK_SULY = 165;
@@ -328,6 +336,39 @@ const TAMADAS_KUSZOB = [9, 14, 20];
  */
 const VISSZAVONULAS = [4, 4, 3];
 
+/**
+ * A KORSZAK-TARTALÉK VÉDELMI PADLÓJA, ha az ÉLES korszak-gát zárja el a build
+ * order következő tételét (v0.18). A `TAMADAS_KUSZOB` fele: „fél hullám
+ * otthon".
+ *
+ * ⚠️ MIÉRT NEM A `VISSZAVONULAS` (4/4/3), AMI KÉZENFEKVŐBB LETT VOLNA. Az a
+ * szám azt mondja meg, mikor MENEKÜL egy már kint lévő hullám — nem azt, hogy
+ * mennyi elég otthon. Mérve, a v0.6-os körön (seed 20260803, éles gát): hármas
+ * padlóval a nehéz gép tartaléka a 4433. ticken bekapcsolt, a serege ott is
+ * ragadt NÉGY katonánál, és a 5833. tickre a könnyű gép a bázisán volt — a
+ * gazdasága a 7233. tickre elfogyott. Tízes padlóval ugyanaz a gép előbb
+ * felhúzza a védelmet, és csak utána spórol.
+ *
+ * ⚠️ ÉS MIÉRT NEM A FÉL SEREG-CÉL, ami a szabad építkezés melletti küszöb: azt
+ * a gép ZÁRT gát mögött SOSEM éri el (mérve: sereg-csúcs 14, küszöb 16), mert
+ * a hadserege maga is a zárt épületek mögött van. Kör, aminek nincs kijárata.
+ *
+ * ⚠️ ŐSZINTÉN A HATÁSÁRÓL: HAT ÉLES-GÁTAS FUTÁSBÓL EGYEN LÁTSZOTT (v0.9-es kör,
+ * seed 20260804, 0. csapat: 0 → 1 váltás). A többin a gép vagy amúgy is váltott
+ * (v0.9), vagy végig ostrom alatt állt, és akkor a `HAD.VEDEKEZIK` szabály
+ * — helyesen — előbb kapcsol ki mindent (v0.6, 14 seed, 0 váltás). A sor tehát
+ * nem balansz-hangolás, hanem HOLTPONT-OLDÁS: a fenti körnek nincs kijárata,
+ * és egy ilyet nem szabad bent hagyni akkor sem, ha ma ritkán fordul elő.
+ */
+const KORSZAK_VEDELEM = [4, 7, 10];
+
+// ⚠️ EZ A KÜSZÖB MA TÉTLEN, ÉS EZ SZÁNDÉKOS. Az `epuletek.js` élő
+// `EP_KORSZAK` táblája csupa nulla, tehát a `_korszakZarBuild` MINDIG hamis, és
+// a tartalék a régi fél-sereg-cél küszöbön marad — a mai balansz bitre
+// változatlan. A sor akkor kel életre, amikor a korszak-gátat élesítik; addig
+// KI VAN PRÓBÁLVA (a determinizmus-szonda 15. köre bekapcsolva járatja a
+// gátat), de nem hat. Ez a különbség „félkész" és „előkészített" között.
+
 /** Ekkora sugárban számít a bázis VESZÉLYBEN lévőnek. */
 const VEDELEM_SUGAR = 28;
 
@@ -369,6 +410,12 @@ export class Ai {
      * váltás előtt lerohanják, mindkettő ugyanaz a nulla.
      */
     this.korszakDb = new Int32Array(this.csapatDb);
+    /**
+     * Hány PIACI CSERÉT adott be (v0.18). Külön szám, mert a
+     * `gazdasag.csereDb` a JÁTÉKOS cseréit is számolja: egy közös számláló
+     * mellett a gépi ág némán elhalhatna egy kézi forgatókönyv mögött.
+     */
+    this.csereDb = new Int32Array(this.csapatDb);
 
     /**
      * Újrahasznált ár-puffer a civ-szorzókhoz (v0.9).
@@ -449,6 +496,7 @@ export class Ai {
     this.kepzesDb.fill(0);
     this.kutatasDb.fill(0);
     this.korszakDb.fill(0);
+    this.csereDb.fill(0);
     this.egyediDb.fill(0);
     this.ismertX.fill(-1);
     this.ismertY.fill(-1);
@@ -518,6 +566,9 @@ export class Ai {
     this._korszakot(cs);
     // …és ami a váltásból még hiányzik, arra ettől a ponttól SPÓROLUNK.
     this._korszakTartalek(cs);
+    // v0.18 — A PIAC A TARTALÉK UTÁN JÖN: a csere a `_tartalekAr`-t olvassa,
+    // hogy a félretett nyersanyagot ne adja el 30 %-os veszteséggel.
+    this._kereskedik(cs);
     this._celArany(cs);
     this._munkaraFog(cs, bx, by);
     this._atcsoportosit(cs, bx, by);
@@ -601,7 +652,26 @@ export class Ai {
     const t = this._tartalekAr;
     t[0] = 0; t[1] = 0; t[2] = 0; t[3] = 0;
     if (this.had[cs] === HAD.VEDEKEZIK) return;
-    if (this._seregDb < (SEREG_CEL[this.nehezseg[cs]] >> 1)) return;
+    // ⚠️ HA A KORSZAK A SZŰK KERESZTMETSZET, A SEREG-KÜSZÖB ALACSONYABB (v0.18).
+    //
+    // A fenti fél-sereg-cél mérés eredménye, és VÁLTOZATLANUL az marad arra az
+    // esetre, amikor a gép szabadon építkezhet: ott a korszak fejlesztés, és a
+    // fejlesztés annak jár, aki kivívta magának a nyugalmat.
+    //
+    // Az ÉLES korszak-gát mellett viszont a korszak nem fejlesztés, hanem
+    // KAPU: a `_buildOrder` következő tétele mögötte áll, tehát amíg a gép nem
+    // vált, a hadserege sem tud nőni (nincs íjászda, nincs istálló). A fél
+    // sereg-célt így SOSEM érné el — mérve, a v0.6-os körön: a nehéz gép
+    // seregének csúcsa 14, a küszöb 16, vagyis a tartalék EGYSZER SEM kapcsolt
+    // be, és a gép örökre a sötét korban maradt. Kör, aminek nincs kijárata.
+    //
+    // A küszöb tehát ilyenkor a `KORSZAK_VEDELEM`-re esik („fél hullám
+    // otthon"). Az ottani megjegyzés mondja el, miért nem a `VISSZAVONULAS`
+    // lett, ami elsőre kézenfekvőbbnek látszott — és mit mértünk vele.
+    const kuszob = this._korszakZarBuild(cs)
+      ? KORSZAK_VEDELEM[this.nehezseg[cs]]
+      : (SEREG_CEL[this.nehezseg[cs]] >> 1);
+    if (this._seregDb < kuszob) return;
     if (g.korszakHatra[cs] > 0) return;
     const k = g.korszak[cs];
     if (k >= KORSZAK.FENY || k >= KORSZAK_AR.length) return;
@@ -621,6 +691,86 @@ export class Ai {
       if (!megvan && !birja) continue;
       t[f] = ar[f];
     }
+  }
+
+  /**
+   * A KORSZAK ZÁRJA-E EL A BUILD ORDER KÖVETKEZŐ TÉTELÉT? (v0.18)
+   *
+   * ⚠️ EZ NEM UGYANAZ, MINT „VAN TILTOTT ÉPÜLET". Csak az számít, amit a gép
+   * TÉNYLEG AKAR: amiből még nincs elég (`EPULET_CEL`). Ha a különbséget nem
+   * tennénk meg, a nehéz gép a kész íjászdája mellett is örökké „zártnak"
+   * látná magát, és a tartaléka soha nem kapcsolna ki — a korszakváltás után
+   * pont az a spórolás maradna, ami ellen a fél sereg-cél küszöb született.
+   *
+   * A bejárás ugyanaz a lista, ugyanabban a sorrendben, mint a `_buildOrder`-é
+   * — szándékosan: ha a kettő elcsúszna, a gép arra spórolna, amit nem is
+   * rendel meg. Legfeljebb hat tétel, döntési körönként egyszer.
+   */
+  _korszakZarBuild(cs) {
+    const sim = this.sim;
+    const sor = BUILD_ORDER[this.nehezseg[cs]];
+    const korszak = sim.gazdasag.korszak[cs];
+    const egyediEp = sim.egyedi.kepzoEpulet(cs);
+    for (let k = 0; k <= sor.length; k++) {
+      const egyediHely = (k === 1 && egyediEp >= 0);
+      const tipus = egyediHely ? egyediEp : sor[k > 1 ? k - 1 : k];
+      if (tipus === undefined || tipus < 0) continue;
+      const cel = egyediHely ? 1 : EPULET_CEL[tipus];
+      if (this._epuletDb(cs, tipus) >= cel) continue;
+      if (korszak < sim.epuletek.korszakKell(tipus)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * PIACI CSERE — A GÉP HASZNÁLJA A SAJÁT PIACÁT (v0.18).
+   *
+   * ⚠️ A PIAC A `BUILD_ORDER` ÓTA ÉPÜL, ÉS A GÉP SOSEM CSERÉLT RAJTA. Ez a
+   * fajta hiba a projekt visszatérő vendége: a rendszer kész, a kapu zöld, és
+   * senki nem használja. Mérve, a v0.6-os körön 16 000 tickig: a nehéz gépnek
+   * a végén **965 fa** állt a raktárában, miközben az étel VÉGIG 0 és 30
+   * között tapadt, és a korszakváltás 500 ételen múlt. A piacát közben
+   * felépítette és kifizette (175 fa).
+   *
+   * A szabály ugyanaz a visszacsatolás, ami a munkaerő-elosztásé
+   * (`_celArany`): ami a `BOSEG` fölé torlódott, azt odaadjuk azért, amiből a
+   * `SZUKOSSEG` alatt vagyunk. Nem új küszöbök — ugyanaz a kettő.
+   *
+   * ⚠️ A TARTALÉKOT NEM ADJUK EL. A `_tartalekAr` a korszakra félretett
+   * mennyiség; ha az is cserélhető lenne, a gép a saját váltását adná el
+   * 30 % veszteséggel, körönként újra.
+   *
+   * A tételt SZÁNDÉKOSAN a bőség-küszöb FÖLÖTT hagyjuk (`BOSEG + CSERE_TETEL`):
+   * így a csere után is marad annyi, amennyiből a legdrágább rendelés kifutna,
+   * és a gép nem cseréli el a következő raktára árát.
+   */
+  _kereskedik(cs) {
+    const sim = this.sim;
+    const g = sim.gazdasag;
+    const ep = sim.epuletek;
+    // Kész piac nélkül a parancs a `parancsok.js`-ben úgyis elvész — a gép
+    // pedig ne adjon be olyat, amiről tudja, hogy elhal (ugyanaz az elv, mint
+    // a képzés és a korszakváltás előzetes ár-vizsgálatánál).
+    let vanPiac = false;
+    for (let k = 0; k < ep.db; k++) {
+      if (ep.csapat[k] === cs && ep.kesz(k) && ep.tipus[k] === EPULET.PIAC) { vanPiac = true; break; }
+    }
+    if (!vanPiac) return;
+
+    const o = cs * 4;
+    const t = this._tartalekAr;
+    // A LEGNAGYOBB fölösleg és a LEGNAGYOBB hiány. A bejárás növekvő index
+    // szerint megy, és döntetlennél a KISEBB index nyer — a sorrend fix, tehát
+    // gépfüggetlen.
+    let ad = -1, kap = -1;
+    for (let f = 0; f < 4; f++) {
+      const k = g.keszlet[o + f];
+      if (k - t[f] >= BOSEG + CSERE_TETEL && (ad < 0 || k > g.keszlet[o + ad])) ad = f;
+      if (k <= SZUKOSSEG && (kap < 0 || k < g.keszlet[o + kap])) kap = f;
+    }
+    if (ad < 0 || kap < 0 || ad === kap) return;
+    sim.parancs({ fajta: 'csere', csapat: cs, ad, kap, mennyiseg: CSERE_TETEL });
+    this.csereDb[cs]++;
   }
 
   /**
@@ -870,6 +1020,19 @@ export class Ai {
       // nullát mond rá (az ostromműhelyre mond nullát).
       const cel = egyediHely ? 1 : EPULET_CEL[tipus];
       if (this._epuletDb(cs, tipus) >= cel) continue;
+      // ⚠️ A KORSZAK-TILTOTT TÉTELEN TOVÁBBLÉPÜNK, NEM ÁLLUNK MEG (v0.18).
+      // Ez a sor a különbség a „visszafogott" és a „megszűnt" gépi ellenfél
+      // között. A `_telikTartalekkal` alatti `return` azt jelenti: „erre
+      // spórolunk, addig semmi mást" — pénzhiánynál ez helyes, mert a hiány
+      // MAGÁTÓL elmúlik. A korszak-hiány NEM múlik el magától: a gép a saját
+      // kapuja mögött várna a világ végezetéig. Mérve, a v0.6-os körön, éles
+      // táblával: a `return` mellett a nehéz gép 156 építési parancsából 148
+      // futott korszak-elutasításba, mert ÖRÖKRE beragadt az íjászdánál, és a
+      // mögötte álló piac meg torony sorra sem került.
+      //
+      // A `continue` a lista MÖGÖTTES tételeit engedi el — nem „megkerüli" a
+      // gátat: a tiltott tétel akkor épül meg, amikor a korszak megjön.
+      if (sim.gazdasag.korszak[cs] < sim.epuletek.korszakKell(tipus)) continue;
       if (!this._telikTartalekkal(cs, this._epAr(cs, tipus))) {
         // ⚠️ AZ EGYEDI KÉPZŐRE NEM GYŰJTÜNK, A TÖBBIRE IGEN. A `return` azt
         // jelenti: „erre spórolunk, addig semmi mást". Az ostromműhely 250 kő,
@@ -1327,6 +1490,7 @@ export class Ai {
       kepzes: this.kepzesDb[csapat],
       kutatas: this.kutatasDb[csapat],
       korszak: this.korszakDb[csapat],
+      csere: this.csereDb[csapat],
       felderit: this.felderitDb[csapat],
       felfedez: this.felfedezDb[csapat],
       tamadas: this.tamadasDb[csapat],

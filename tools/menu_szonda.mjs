@@ -733,6 +733,27 @@ gat(vilagHiba === 0, vilagHiba + ' VILÁG NEM AZT KAPTA, AMIT A MENÜBEN VÁLASZ
     'Ez az a szám, ami elárulja, hogy a meccs tényleg elindult. A v0.3 óta '
     + 'tudjuk: a semmittevés is tökéletesen reprodukálható.');
 
+  // ── ⚠️ ÉS ÉLŐ MECCSEN MÉRTÜK-E? (v0.18) ────────────────────────────────
+  // A fenti három gát VISELKEDÉST mér, nem szerkezetet. A v0.17 óta viszont a
+  // meccsnek VÉGE LEHET, és a lefutott meccsben az `ai.lep()` első sora kilép:
+  // onnantól a gép nem dönt, nem gyűjt, nem épít. Ha a mérés átnyúlna a vég
+  // utánra, a „gyűjtött is" gát a meccs ELSŐ feléből maradt számot mutatná, és
+  // a jelentés utolsó sora („a gépi ellenfél 1200 tick alatt gyűjtött is")
+  // olyat állítana, amit nem mért.
+  //
+  // 1200 tick ma bőven a biztonságos oldalon van — a leghosszabb szonda-világ
+  // is csak az 5 662. tick körül dől el —, de a számot akkor is ki kell írni.
+  // A `TODO.md` „a munkások VÉGLEG tétlenné válnak" tétele pontosan azért volt
+  // TÉVES DIAGNÓZIS, mert egy hosszú futás VÉGÉT mérte egy már eldőlt meccsen.
+  const gy = s.gyozelem;
+  sor('a meccs vége', gy.vege ? '⚠️ VÉGE @' + gy.vegeTick : 'végig futott',
+    gy.vege ? (TICK - gy.vegeTick) + ' tick esett a VÉG UTÁNRA'
+      : 'mind a ' + TICK + ' mért tick ÉLŐ meccsből jön');
+  gat(!gy.vege, 'A LÉPTETÉSI PRÓBA MECCSE VÉGET ÉRT (@' + gy.vegeTick + ').',
+    'A gyűjtés-gát ilyenkor egy dermedt világról mond ítéletet: a v0.17 óta a '
+    + 'lefutott meccsben az `ai.lep()` kilép. Nem a gátat kell kivenni — a '
+    + 'felállásnak vagy a tick-számnak kell a meccs hosszához igazodnia.');
+
   // ⚠️ SZABOTÁZS: elsülne-e egyáltalán a gát? Ugyanaz a világ, LÉPTETÉS NÉLKÜL.
   const sz = meccsSim(v.eredmeny.konfig, MECCS_ADAG);
   let szGyujtott = 0;

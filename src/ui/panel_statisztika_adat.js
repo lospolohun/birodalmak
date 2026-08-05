@@ -614,7 +614,17 @@ export function vegallapot(sim) {
       const vesztes = 1 - gy.gyoztes;
       ok = _nev(vesztes) + ' ' + (okNev || 'kiesett');
     } else {
-      ok = 'Döntetlen — mindkét fél ' + (okNev || 'kiesett') + ' ugyanazon a ticken';
+      // ⚠️ A `gy.ok` EGY szám az EGÉSZ meccsre, a döntetlen viszont VEGYES is
+      // lehet: a 0. csapat feladja, az 1. ugyanabban a tickben elveszti a
+      // központját. Egyetlen okot kiírva a panel az egyik félről HAZUDNA
+      // („mindkét fél feladta a meccset", holott az egyiket lerombolták).
+      // A sim ezért ad csapatonkénti okot (`okCsapat()`), ami a MÁR HASHELT
+      // `kiesett`+`feladta`-ból származik — nulla új állapot.
+      const o0 = VEG_OK_NEV[gy.okCsapat(0)] || 'kiesett';
+      const o1 = VEG_OK_NEV[gy.okCsapat(1)] || 'kiesett';
+      ok = o0 === o1
+        ? 'Döntetlen — mindkét fél ' + o0 + ' ugyanazon a ticken'
+        : 'Döntetlen — ' + _nev(0) + ' ' + o0 + ', ' + _nev(1) + ' ' + o1;
     }
     return {
       vege: true, gyoztes: gy.gyoztes, ok, kiesett: ki,
