@@ -119,6 +119,8 @@ export class EpitesSav {
       ));
     }
     this._gombJeloles();
+    // Fülváltás után a gyorsítótár érvénytelen: új gombok vannak.
+    this._utolsoPenz = undefined;
     this.frissit();
   }
 
@@ -185,8 +187,21 @@ export class EpitesSav {
     return sz;
   }
 
-  /** Olcsó, képkockánkénti állapotfrissítés: mire telik, mi van kikutatva. */
+  /**
+   * Olcsó, képkockánkénti állapotfrissítés: mire telik, mi van kikutatva.
+   *
+   * A tiltás OKÁT szövegként írjuk ki, az pedig karakterlánc-összefűzés —
+   * képkockánként, gombonként. A projekt szabálya a nulla per-képkocka
+   * allokáció, ezért az egész ciklus csak akkor fut le, ha a KÉT bemenet
+   * (a pénz egész része és a kész technológiák száma) tényleg változott.
+   * Álló játékban ez nulla munka.
+   */
   frissit() {
+    const penz = Math.floor(this.sim.penz);
+    const techDb = this.sim.keszTechek ? this.sim.keszTechek.size : 0;
+    if (this._utolsoPenz === penz && this._utolsoTech === techDb) return;
+    this._utolsoPenz = penz;
+    this._utolsoTech = techDb;
     for (const g of this.lista.children) {
       if (g._ar === undefined) continue;
       const kutatasHianyzik = g._kutatas && !this.sim.kesz(g._kutatas);
