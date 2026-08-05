@@ -13,7 +13,7 @@ mentés, régi mentés, betöltés. Közben javítottam a `src/ui/**`-t.
 
 **Mit NEM mértem:** sebességet, FPS-t. A felhőben nincs GPU. Az egyetlen
 sebesség-jellegű szám, ami itt szerepel (ms/képkocka), kizárólag azért van
-benne, mert egy MÁSIK hiba tüneteként jelentkezett — lásd a **K1** tételt —,
+benne, mert egy MÁSIK hiba tüneteként jelentkezett — lásd az **R1** tételt —,
 és nem a játék teljesítményének ítélete.
 
 > ⚠️ **A mérés alatt két másik ügynök dolgozott** a `src/render/` (textúrák) és
@@ -31,12 +31,13 @@ benne, mert egy MÁSIK hiba tüneteként jelentkezett — lásd a **K1** tételt
 | **kritikus** | 3 | összeomló panel · eltűnő szünet gomb · elnyelt kattintás |
 | **súlyos** | 4 | adatvesztő fájl-betöltés · hazudó bérbeadás-szöveg · hazudó tanácsadó · játszhatatlan dolgozó-panel |
 | közepes | 8 | felfedezhetőség, olvashatóság, formázás |
-| kicsi | 5 | apróságok |
+| kicsi | 9 | apróságok |
 | **más sávban** | 3 | render/audio — csak jelentve |
 
-A kritikus és a súlyos tételek mind **javítva**, kivéve amit külön jelzek.
-Minden javítás a `src/ui/**` + `src/ui/stilus.css` + `index.html` +
-`tools/bongeszo_szonda.mjs` fájlkészleten belül maradt.
+A kritikus és a súlyos tételek mind **javítva**. Minden javítás a
+`src/ui/**` (benne a `stilus.css`) és a `tools/bongeszo_szonda.mjs`
+fájlkészleten belül maradt — a `sim/`, a `render/` és az `audio/`
+érintetlen. **A kör végén mind a négy kapu zöld** (7b. szakasz).
 
 ---
 
@@ -393,16 +394,31 @@ A `hud.js` a `vezerlo`-t megkapja, tehát ettől kezdve kirakhatunk hozzá gombo
 
 ## 7b. A KAPUK ÁLLÁSA A KÖR VÉGÉN
 
+
 | kapu | eredmény |
 |---|---|
-| `npx vite build` | ✅ |
-| `det_szonda.mjs` | ✅ **mind a 11 vizsgálat zöld** (80 nap, 3. korszak, 13-féle esemény) |
-| `kiadas_ellenorzo.mjs` | ✅ **7/7 — KIADHATÓ** (nincs külső hivatkozás, nincs `console.log`-nyom) |
-| `bongeszo_szonda.mjs` | ⚠️ **9-ből 7 zöld** — a 4. („halad az idő") és az 5. („érkeznek utasok") elbukik, MINDKETTŐ az R1 következménye: 800 ms/képkocka mellett 2 másodperc alatt 20 tick fut le, és addig nem születik utas. A felület minden vizsgálata (2., 3., 6., 7., 8a., 8.) zöld, konzol-hiba nulla, és a betöltött világ bitre azonos a mentettel. |
+| `npx vite build` | ✅ 909 kB / 255 kB gzip |
+| `det_szonda.mjs` | ✅ **mind a 11 vizsgálat zöld** (80 nap, 3. korszak, 13-féle esemény, a betöltés bitre azonos) |
+| `kiadas_ellenorzo.mjs` | ✅ **7/7 — KIADHATÓ** (nincs külső hivatkozás, nincs ottfelejtett nyom) |
+| `bongeszo_szonda.mjs` | ✅ **mind a 9 vizsgálat zöld**, nulla konzol-hiba, 15 rajzolási hívás |
 
-A böngésző-szonda küszöbét **szándékosan nem vettem lejjebb.** A hibaüzenetét
-viszont pontosítottam, mert a régi („az idő nem halad: 0 → 3") a
-szimulációra mutatott, holott a rajzolás a szűk keresztmetszet.
+⚠️ **A böngésző-szonda a kör közben KÉTSZER volt piros**, és egyik alkalommal
+sem a felület miatt:
+
+- **4. „halad az idő"** — 800 ms/képkockánál 2 másodperc alatt 20 tick futott
+  le a 40 helyett, mert a hurok `dt`-korlátja 250 ms (R1). A küszöböt
+  **nem vettem lejjebb**; a hibaüzenetet viszont kiegészítettem a mért
+  képkocka-idővel, és most kimondja, hogy ilyenkor a RAJZOLÁS a szűk
+  keresztmetszet, nem a sim. A kör végére a rajzolás 416 ms-ra jött vissza,
+  és a vizsgálat magától zöld lett — de **újra piros lesz, ha a render
+  tovább lassul.** Ez így helyes: pontosan ezt kell őriznie.
+- **5. „érkeznek utasok"** — ez viszont a SZONDA hibája volt, és javítottam.
+  Fix két másodpercet várt, majd nézte az utasszámot; az első utas viszont
+  **tickben** érkezik (`ERKEZES_ALAP_TICK = 45`), nem másodpercben. Lassabb
+  rajzolásnál a 43. tickre panaszkodott, hogy „egyetlen utas sem érkezett" —
+  holott az érkezéssel semmi baj nem volt. Most a 200. tickig vár (legfeljebb
+  20 valós másodpercig), és a tickszámot ki is írja. Ez nem enyhítés: a
+  sebességet a 4. vizsgálat őrzi, ez pedig attól függetlenül az érkezést.
 
 ---
 

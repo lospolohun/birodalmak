@@ -132,6 +132,22 @@ try {
   } else rossz(`az idő nem halad: ${t1} → ${t2} (a képkocka-idő rendben van, tehát a sim vagy a hurok áll)`);
 
   cim('5. ÉRKEZNEK UTASOK ÉS RAJZOLÓDNAK');
+  // ⚠️ EZ A VIZSGÁLAT KORÁBBAN A KÉPKOCKA-SEBESSÉGET MÉRTE, NEM AZ ÉRKEZÉST.
+  // Fix két másodperc várakozás után nézte az utasszámot — csakhogy az első
+  // utas TICKBEN érkezik (`ERKEZES_ALAP_TICK = 45`), nem másodpercben. Egy
+  // lassabb rajzolás mellett két másodperc alatt 43 tick futott le, tehát a
+  // szonda azt jelentette, hogy „egyetlen utas sem érkezett" — miközben az
+  // érkezéssel semmi baj nem volt, csak még nem jött el az ideje.
+  //
+  // A helyes kérdés az, hogy a VILÁG adott pontján van-e utas. Ezért
+  // TICKRE várunk (legfeljebb 20 valós másodpercig), nem órára. Ez nem
+  // enyhítés: a sebességet a 4. vizsgálat őrzi, ez pedig attól függetlenül
+  // az érkezést.
+  const CEL_TICK = 200;
+  for (let i = 0; i < 40; i++) {
+    if (await lap.evaluate((t) => window.PHT.sim.tick >= t, CEL_TICK)) break;
+    await varj(500);
+  }
   const allapot = await lap.evaluate(() => {
     // A v0.2 óta fajonként/típusonként külön példányosított mesh van, ezért a
     // „hány lény rajzolódik" kérdést össze kell adni a fajok fölött.
@@ -140,6 +156,7 @@ try {
     let epuletPeldany = 0;
     for (const b of window.PHT.allomas.tipusMesh.values()) epuletPeldany += b.test.count;
     return {
+      tick: window.PHT.sim.tick,
       utas: window.PHT.sim.utasSzam,
       rajzoltTest,
       epuletPeldany,
@@ -148,9 +165,11 @@ try {
       haromszog: window.PHT.szinter.renderelo.info.render.triangles,
     };
   });
-  console.log(`    utas ${allapot.utas} · rajzolt lény ${allapot.rajzoltTest} · padlócella ${allapot.padloCella}`);
+  console.log(`    ${allapot.tick}. tick · utas ${allapot.utas} · rajzolt lény ${allapot.rajzoltTest} · padlócella ${allapot.padloCella}`);
   console.log(`    rajzolási hívás ${allapot.hivas} · háromszög ${allapot.haromszog}`);
-  if (allapot.utas > 0) ok('vannak utasok az állomáson'); else rossz('egyetlen utas sem érkezett');
+  if (allapot.utas > 0) ok(`vannak utasok az állomáson (${allapot.tick}. tick)`);
+  else if (allapot.tick < CEL_TICK) rossz(`húsz másodperc alatt sem ért el a világ a ${CEL_TICK}. tickig (${allapot.tick}) — a hurok áll vagy a rajzolás fojtja`);
+  else rossz(`a ${allapot.tick}. tickre egyetlen utas sem érkezett`);
   if (allapot.padloCella > 300) ok('a padló felépült'); else rossz('a padló nem rajzolódott ki');
   if (allapot.hivas > 0 && allapot.haromszog > 1000) ok('a WebGL rajzol'); else rossz('a WebGL nem rajzolt semmit');
   // ⚠️ A KÜSZÖB A v0.2-BEN MEGVÁLTOZOTT, és ez tudatos csere volt. Amíg minden

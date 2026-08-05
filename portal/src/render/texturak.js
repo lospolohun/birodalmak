@@ -123,7 +123,7 @@ function texturaz(THREE, c, ismetX = 1, ismetY = 1, nagyFelulet = false) {
    * adni: a deszkázat mérve 27 %-kal sötétítette a könyvesboltot, és ezt
    * kizárólag a szonda vette észre.
    */
-  t.atlag = atlagFenyesseg(c.getContext('2d'), c.width, c.height);
+  t.atlag = Number.isFinite(c.phtAtlag) ? c.phtAtlag : atlagFenyesseg(c);
   return t;
 }
 
@@ -141,11 +141,18 @@ function sza(r, g, b, a) { return `rgba(${r | 0},${g | 0},${b | 0},${a})`; }
 function szemcse(r, w, h, v, ero) {
   const kep = r.getImageData(0, 0, w, h);
   const d = kep.data;
+  let s = 0;
   for (let i = 0; i < d.length; i += 4) {
     const z = (v() - 0.5) * ero;
     d[i] += z; d[i + 1] += z; d[i + 2] += z;
+    // A LINEÁRIS átlagot itt vesszük fel, MENET KÖZBEN. Külön menetben ez a
+    // padlónál (1024×1024) újabb négymegabájtos `getImageData` és egymillió
+    // képpont lenne — merő indulási idő. Itt viszont a ciklus úgyis fut, és a
+    // szemcse UTÁNI, tehát VÉGLEGES értékeket látjuk.
+    s += 0.2126 * LINEARIS[d[i]] + 0.7152 * LINEARIS[d[i + 1]] + 0.0722 * LINEARIS[d[i + 2]];
   }
   r.putImageData(kep, 0, 0);
+  return s / (w * h);
 }
 
 /** Lágy foltok radiális átmenetből — ez adja az „organikus" réteget. */
@@ -187,13 +194,27 @@ const LINEARIS = (() => {
  * fényt, és hónapokig senkinek nem tűnt fel. Az `allomas3d.js` ezzel a számmal
  * kompenzál: a textúra mintát ad, nem árnyékot.
  */
-function atlagFenyesseg(r, w, h) {
-  const d = r.getImageData(0, 0, w, h).data;
+function atlagFenyesseg(vasz) {
+  // ⚠️ CSAK TARTALÉK ÚT. A textúrák túlnyomó része a `szemcse()`-től kapja meg
+  // a PONTOS lineáris átlagot (az a ciklus úgyis végigmegy minden képponton).
+  // Ez az ág csak azoknak marad, ahol nincs szemcse — ott kicsinyített
+  // másolaton átlagolunk, mert az `getImageData` a nagy vásznakon önmagában
+  // mérhető indulási idő.
+  //
+  // A kicsinyítés sRGB-ben átlagol, tehát KISSÉ fölé lő a lineáris átlagnak.
+  // Ahol számít (a padló fénykompenzációja), ott a pontos utat használjuk —
+  // mérve: a kicsinyített becslés −6,8 %-ra állította a padlót a −2,4 %
+  // helyett.
+  const K = 64;
+  const kicsi = vaszon(K, K);
+  const kr = kicsi.getContext('2d');
+  kr.drawImage(vasz, 0, 0, K, K);
+  const d = kr.getImageData(0, 0, K, K).data;
   let s = 0;
   for (let i = 0; i < d.length; i += 4) {
     s += 0.2126 * LINEARIS[d[i]] + 0.7152 * LINEARIS[d[i + 1]] + 0.0722 * LINEARIS[d[i + 2]];
   }
-  return s / (w * h);
+  return s / (K * K);
 }
 
 /**
@@ -352,7 +373,7 @@ function padloTextura(THREE) {
   // nem látszik nyolcas ismétlődésnek a nagy csarnok.
   foltok(r, S, S, v, 26, 40, 150, (g) => sza(255, 252, 240, 0.05 + g() * 0.05));
   foltok(r, S, S, v, 18, 30, 110, (g) => sza(60, 70, 100, 0.05 + g() * 0.05));
-  szemcse(r, S, S, v, 13);
+  c.phtAtlag = szemcse(r, S, S, v, 13);
 
   // `nagyFelulet: true` — ez az EGYETLEN felület, amit lapos szögből nézünk,
   // tehát csak ez fizet anizotróp szűrést (lásd a `texturaz` megjegyzését).
@@ -389,7 +410,7 @@ function kolapTextura(THREE) {
     }
   }
   foltok(r, F, F, v, 20, 8, 34, (g) => sza(120, 124, 140, 0.06 + g() * 0.08));
-  szemcse(r, F, F, v, 16);
+  c.phtAtlag = szemcse(r, F, F, v, 16);
   return texturaz(THREE, c);
 }
 
@@ -405,7 +426,7 @@ function vakolatTextura(THREE) {
     r.fillStyle = sza(180, 172, 162, 0.25 + v() * 0.3);
     r.fillRect(x, y, s, s);
   }
-  szemcse(r, F, F, v, 10);
+  c.phtAtlag = szemcse(r, F, F, v, 10);
   return texturaz(THREE, c);
 }
 
@@ -434,7 +455,7 @@ function femTextura(THREE) {
       r.fillStyle = g; r.beginPath(); r.arc(x + 7, y, 4, 0, Math.PI * 2); r.fill();
     }
   }
-  szemcse(r, F, F, v, 12);
+  c.phtAtlag = szemcse(r, F, F, v, 12);
   return texturaz(THREE, c);
 }
 
@@ -466,7 +487,7 @@ function faTextura(THREE) {
     r.fillStyle = sza(112, 78, 46, 0.5); r.fillRect(i * w, 0, 2, F);
     r.fillStyle = sza(255, 244, 228, 0.45); r.fillRect(i * w + 2, 0, 1, F);
   }
-  szemcse(r, F, F, v, 12);
+  c.phtAtlag = szemcse(r, F, F, v, 12);
   return texturaz(THREE, c);
 }
 
@@ -492,7 +513,7 @@ function kristalyTextura(THREE) {
     r.beginPath(); r.moveTo(0, y); r.lineTo(F, y + (v() - 0.5) * 30); r.stroke();
   }
   foltok(r, F, F, v, 14, 8, 30, (g) => sza(255, 255, 255, 0.14 + g() * 0.2));
-  szemcse(r, F, F, v, 8);
+  c.phtAtlag = szemcse(r, F, F, v, 8);
   return texturaz(THREE, c);
 }
 
@@ -513,7 +534,7 @@ function uvegTextura(THREE) {
   r.fillRect(0, F / 2 - 3, F, 6); r.fillRect(F / 2 - 3, 0, 6, F);
   r.fillRect(0, 0, F, 5); r.fillRect(0, F - 5, F, 5);
   r.fillRect(0, 0, 5, F); r.fillRect(F - 5, 0, 5, F);
-  szemcse(r, F, F, v, 6);
+  c.phtAtlag = szemcse(r, F, F, v, 6);
   return texturaz(THREE, c);
 }
 
@@ -536,7 +557,7 @@ function szovetTextura(THREE) {
     r.fillStyle = sza(150, 128, 114, 0.32); r.fillRect(i * w - 1, 0, 2, F);
   }
   foltok(r, F, F, v, 16, 10, 40, (g) => sza(200, 172, 152, 0.06 + g() * 0.08));
-  szemcse(r, F, F, v, 9);
+  c.phtAtlag = szemcse(r, F, F, v, 9);
   return texturaz(THREE, c);
 }
 
@@ -557,7 +578,7 @@ function csempeTextura(THREE) {
       r.fillRect(i * s + 1.5, j * s + 1.5, s - 3, 2);
     }
   }
-  szemcse(r, F, F, v, 7);
+  c.phtAtlag = szemcse(r, F, F, v, 7);
   return texturaz(THREE, c);
 }
 
@@ -576,7 +597,7 @@ function sziklaTextura(THREE) {
     for (let x = 0; x <= F; x += 32) r.lineTo(x, y + (v() - 0.5) * 9);
     r.stroke();
   }
-  szemcse(r, F, F, v, 22);
+  c.phtAtlag = szemcse(r, F, F, v, 22);
   return texturaz(THREE, c);
 }
 
@@ -612,7 +633,7 @@ function runaTextura(THREE) {
     else { r.moveTo(cx - 8, 44); r.lineTo(cx, 18); r.lineTo(cx + 8, 44); }
     r.stroke();
   }
-  szemcse(r, W, H, v, 8);
+  c.phtAtlag = szemcse(r, W, H, v, 8);
   return texturaz(THREE, c, 12, 1);
 }
 
@@ -691,7 +712,7 @@ function borTextura(THREE) {
   r.fillStyle = '#f2f2f2'; r.fillRect(0, 0, S, S);
   foltok(r, S, S, v, 22, 12, 40, (g) => sza(196, 196, 210, 0.20 + g() * 0.18));
   foltok(r, S, S, v, 14, 8, 26, (g) => sza(255, 255, 255, 0.20 + g() * 0.2));
-  szemcse(r, S, S, v, 6);
+  c.phtAtlag = szemcse(r, S, S, v, 6);
   return texturaz(THREE, c, 1, 1);
 }
 
@@ -710,6 +731,10 @@ const GYORSTAR = new WeakMap();
 export function texturak(THREE) {
   const kesz = GYORSTAR.get(THREE);
   if (kesz) return kesz;
+  // Az előállítás ideje MÉRT ÉRTÉK, nem érzés: ez indulási költség, és a
+  // böngésző-szonda pont az első másodpercekben számolja a tick-eket. A
+  // textúra-szonda kiírja, tehát nem tud csendben elhízni.
+  const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   const k = {
     padlo: padloTextura(THREE),
     kolap: kolapTextura(THREE),
@@ -728,6 +753,11 @@ export function texturak(THREE) {
   // Az alaplemez egyetlen, HATALMAS doboz: a szikla sokszor ismétlődjön rajta,
   // különben egy elmosott folt lesz belőle.
   k.szikla.repeat.set(9, 3);
+  /** Az előállítás ideje ms-ban — a szonda ezt olvassa (nem enumerálható). */
+  Object.defineProperty(k, 'keszitesMs', {
+    value: ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0,
+    enumerable: false,
+  });
   GYORSTAR.set(THREE, k);
   return k;
 }

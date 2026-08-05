@@ -28,7 +28,11 @@
 //   4. az ÉPÜLETEK ugyanez, felületenként külön mérve, plusz minden típus
 //      geometriáján van érvényes uv,
 //   5. a rajzolási hívások száma nem nőtt, és nem nő az épületek számával,
-//   6. a textúrák EGYSZER készülnek: hatvan képkocka alatt egy sem születik.
+//   6. a textúrák EGYSZER készülnek: hatvan képkocka alatt egy sem születik,
+//   7. és MENNYIBE KERÜLNEK képkocka-időben — A/B-vel, egy futáson belül.
+//      Ez a vizsgálat azért van itt, mert a felületek belassulását először a
+//      SZOMSZÉD sáv (a hangé) kapuja fogta meg. Ami az egyik sáv
+//      változtatásától romlik el, annak a SAJÁT kapuján kell megbuknia.
 //
 // ⚠️ FPS-T NEM MÉR. A felhőben nincs GPU (SwiftShader) — a szórás, az átlag,
 // a hívásszám és a textúraszám viszont gépfüggetlen. Lásd a CLAUDE.md
@@ -463,7 +467,72 @@ try {
   else rossz(`${egyszer.utana - egyszer.elotte} textúra keletkezett futás közben — ez képkocka-akadás`);
 
   // ════════════════════════════════════════════════════════════════════════
-  cim('7. KÉPERNYŐKÉPEK');
+  cim('7. A FELÜLETEK ÁRA KÉPKOCKA-IDŐBEN');
+  // ── MIÉRT ARÁNY, ÉS MIÉRT NEM MILLISZEKUNDUM ────────────────────────────
+  // ⚠️ A felhő-gépen az ABSZOLÚT képkocka-idő értelmetlen: nincs GPU (a Chrome
+  // SwiftShaderre esik), és a gép osztott CPU-n fut. Mérve, ugyanaz a kód,
+  // ugyanaz a percben: 350 és 1454 ms között szóródott. Két FUTÁS között tehát
+  // semmit nem jelent — ezt a CLAUDE.md is kimondja.
+  //
+  // Ami MÉGIS jelent valamit: az A/B UGYANABBAN a futásban. A textúrákat
+  // ki-be kapcsoljuk néhányszor, váltogatva, és a MINIMUMOKAT hasonlítjuk —
+  // az idegen terhelés csak FÖLFELÉ tud torzítani, lefelé nem, tehát a
+  // minimum a legkevésbé szennyezett becslés.
+  //
+  // MIÉRT VAN EZ EGYÁLTALÁN A TEXTÚRA-SÁV KAPUJÁN: mert a szomszéd sáv
+  // (a hangé) fogta meg először azt, hogy a felületek belassították a
+  // böngésző-szondát. Ami az egyik sáv változtatásától romlik el, annak a
+  // SAJÁT kapuján kell megbuknia, ne a szomszédén.
+  const ido = await lap.evaluate(async () => {
+    const P = window.PHT, sz = P.szinter;
+    const anyagok = [];
+    const gyujt = (m) => { if (m && m.map) anyagok.push(m); };
+    gyujt(P.allomas.padlo.material); gyujt(P.allomas.alaplemez.material);
+    for (const [, x] of P.allomas.tipusMesh) { gyujt(x.test.material); if (x.disz) gyujt(x.disz.material); }
+    for (const [, x] of P.lenyek.fajMesh) { gyujt(x.test.material); gyujt(x.fej.material); }
+    gyujt(P.lenyek.dolgozoMesh.material);
+    for (const o of P.allomas.portalok) { gyujt(o.gyuru.material); gyujt(o.orveny.material); gyujt(o.talp.material); }
+    const terkepek = anyagok.map((a) => a.map);
+    const allit = (van) => anyagok.forEach((a, i) => { a.map = van ? terkepek[i] : null; a.needsUpdate = true; });
+
+    // A játék SAJÁT hurkának képkocka-közeit mérjük. (`gl.finish()` nem jó:
+    // SwiftShaderen nem szinkronizál — próbálva 1-3 ms-ot adott 700 ms-os
+    // valódi képkockákra.)
+    const keret = () => new Promise((r) => requestAnimationFrame(r));
+    const mer = async (n) => {
+      for (let i = 0; i < 4; i++) await keret();     // bemelegítés + árnyalófordítás
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) await keret();
+      return (performance.now() - t0) / n;
+    };
+    sz.cel.set(P.sim.kezdoX + 12, 0, P.sim.kezdoY + 8);
+    sz.tav = 40; sz.dolt = 0.8; sz.szog = 0.95; sz._kamerat();
+
+    const vele = [], nelkule = [];
+    for (let kor = 0; kor < 4; kor++) {
+      allit(true); vele.push(await mer(6));
+      allit(false); nelkule.push(await mer(6));
+    }
+    allit(true);
+    return {
+      vele: Math.min(...vele), nelkule: Math.min(...nelkule),
+      veleMind: vele, nelkuleMind: nelkule,
+      keszitesMs: P.allomas.tex.keszitesMs || 0,
+      anyagDb: anyagok.length,
+    };
+  });
+  adat(`textúra-előállítás induláskor ${ido.keszitesMs.toFixed(0)} ms · ${ido.anyagDb} textúrázott anyag`);
+  adat(`TEXTÚRÁVAL min ${ido.vele.toFixed(0)} ms  [${ido.veleMind.map((x) => x.toFixed(0)).join(' ')}]`);
+  adat(`NÉLKÜLE    min ${ido.nelkule.toFixed(0)} ms  [${ido.nelkuleMind.map((x) => x.toFixed(0)).join(' ')}]`);
+  const idoArany = ido.vele / Math.max(1, ido.nelkule);
+  adat('⚠️ SwiftShader — az abszolút ms NEM FPS-ítélet, és két futás közt nem hasonlítható. Csak ez az arány számít.');
+  if (idoArany <= 1.35) ok(`a felületek ${((idoArany - 1) * 100).toFixed(0)} %-ot tesznek a képkocka-időhöz (keret: +35 %)`);
+  else rossz(`a felületek ${((idoArany - 1) * 100).toFixed(0)} %-kal lassítják a képkockát — ez már a szomszéd sáv kapuját is megbuktatja`);
+  if (ido.keszitesMs <= 900) ok(`a teljes készlet ${ido.keszitesMs.toFixed(0)} ms alatt áll elő (keret: 900 ms)`);
+  else rossz(`${ido.keszitesMs.toFixed(0)} ms az előállítás — ennyivel később indul a játék`);
+
+  // ════════════════════════════════════════════════════════════════════════
+  cim('8. KÉPERNYŐKÉPEK');
   // Ugyanaz a forgatókönyv, mint a többi szondánál — pont az a kód rendezze be
   // a csarnokot, amit a determinizmus-kapu is használ.
   await lap.evaluate(async () => {
