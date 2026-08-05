@@ -110,7 +110,11 @@ function texturaz(THREE, c, ismetX = 1, ismetY = 1, nagyFelulet = false) {
   // trilineárist, minden más 1×-et és a fele annyi mintát kérő
   // `LinearMipmapNearest`-et.
   if (nagyFelulet) {
-    t.anisotropy = 4;
+    // 2×, nem 4×: a 4-ről 2-re lépés a minták felét spórolja a legnagyobb
+    // felületen, a lapos szögű elmosódás viszont még nem jön vissza. A
+    // trilineáris szűrés MARAD — enélkül a nagy csarnokon látszana a
+    // mipmap-sávok határa, és az mozgás közben „hullámzik".
+    t.anisotropy = 2;
     t.minFilter = THREE.LinearMipmapLinearFilter;
   } else {
     t.anisotropy = 1;

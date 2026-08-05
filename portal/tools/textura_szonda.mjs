@@ -508,14 +508,31 @@ try {
     sz.cel.set(P.sim.kezdoX + 12, 0, P.sim.kezdoY + 8);
     sz.tav = 40; sz.dolt = 0.8; sz.szog = 0.95; sz._kamerat();
 
+    // ── PALINDROM SORREND ───────────────────────────────────────────────
+    // ⚠️ EZ EGY MEGTALÁLT MÉRÉSI HIBA. Az első változat körönként mindig
+    // ELŐBB a textúrás, UTÁNA a textúra nélküli oldalt mérte, és a
+    // minimumokat hasonlította. A felhő-gép terhelése viszont a mérés alatt
+    // CSÖKKENT, tehát a második oldal rendszeresen nyugodtabb gépet kapott:
+    // ugyanaz a kód egyszer +17 %-ot, egyszer +73 %-ot mutatott. A számsor
+    // elárulta ([490 580 565 517] kontra [452 445 344 283]).
+    //
+    // A javítás: a sorrend körönként MEGFORDUL, és összegeket hasonlítunk.
+    // Így egy egyenletesen változó terhelés kiesik — mindkét oldal ugyanannyi
+    // „korai" és „kései" mérést kap.
     const vele = [], nelkule = [];
     for (let kor = 0; kor < 4; kor++) {
-      allit(true); vele.push(await mer(6));
-      allit(false); nelkule.push(await mer(6));
+      if (kor % 2 === 0) {
+        allit(true); vele.push(await mer(6));
+        allit(false); nelkule.push(await mer(6));
+      } else {
+        allit(false); nelkule.push(await mer(6));
+        allit(true); vele.push(await mer(6));
+      }
     }
     allit(true);
+    const ossz = (t) => t.reduce((a, b) => a + b, 0) / t.length;
     return {
-      vele: Math.min(...vele), nelkule: Math.min(...nelkule),
+      vele: ossz(vele), nelkule: ossz(nelkule),
       veleMind: vele, nelkuleMind: nelkule,
       keszitesMs: P.allomas.tex.keszitesMs || 0,
       anyagDb: anyagok.length,
