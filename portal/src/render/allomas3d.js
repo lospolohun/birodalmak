@@ -45,6 +45,9 @@ import { EPULETEK } from '../sim/epuletek.js';
 import { DIMENZIOK } from '../sim/dimenziok.js';
 import { hash2 } from '../mag/rng.js';
 import { epuletMertanok, epuletDiszek } from './epulet_mertan.js';
+import {
+  texturak, uvtPotol, vilagUvre, EPULET_ANYAG, ALAP_ANYAG, PADLO_UV_SKALA,
+} from './texturak.js';
 
 const MAX_EPULET = 600;
 const MAX_PORTAL = 24;
@@ -65,6 +68,20 @@ export class Allomas3d {
     this._q = new THREE.Quaternion();
     this._s = new THREE.Vector3();
     this._sz = new THREE.Color();
+
+    // ── A FELÜLETEK ────────────────────────────────────────────────────────
+    // Egyszer, indulás előtt. A `texturak()` gyorstáraz, tehát ha a lényréteg
+    // is elkéri, ugyanazt a készletet kapja — nem lesz belőle második
+    // GPU-feltöltés. A `frissit()` SOHA nem nyúl ide.
+    this.tex = texturak(THREE);
+    /**
+     * A padlótextúra átlagos fényessége. A textúra SZOROZÓDIK a cellaszínnel,
+     * tehát önmagában sötétítene — ezzel osztunk vissza. (A látvány-sáv
+     * csillagai pont ezen buktak el: a „dísz" ténylegesen elvitt fényt.)
+     * A felső korlát azért van, hogy egy elrontott, sötét textúra ne tudja
+     * kiégetni a padlót.
+     */
+    this.padloFenyKomp = Math.min(1.35, 1 / Math.max(0.5, this.tex.padlo.atlag || 1));
 
     this._alaplemezt();
     this._padlot();
@@ -101,7 +118,15 @@ export class Allomas3d {
   _alaplemezt() {
     const g = new THREE.BoxGeometry(1, 1, 1);
     g.translate(0, -0.5, 0);
-    this.alaplemez = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x171c33 }));
+    // Szikla-felület: a lemez a nyers kőzet, amiről az állomás leszakadt. A
+    // textúra sokszorosan ismétlődik rajta (`repeat` a `texturak.js`-ben), mert
+    // ez az egyetlen olyan objektum, ami harminc cellányi is lehet.
+    // A szín VILÁGOSABB, mint a régi 0x171c33 — mert most szorzóként működik:
+    // a textúra maga hozza a sötét kőzetszínt, és a kettő szorzata adja ki
+    // ugyanazt a mélységet, amit eddig egyetlen hex.
+    this.alaplemez = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+      color: 0x8a93b8, map: this.tex.szikla,
+    }));
     this.alaplemez.visible = false;
     this.gyoker.add(this.alaplemez);
   }
@@ -116,7 +141,14 @@ export class Allomas3d {
     const g = new THREE.BoxGeometry(0.98, 0.24, 0.98);
     g.translate(0, -0.12, 0);
     const kapacitas = RACS_SZ * RACS_M * RACS_SZINT;
-    const a = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    // ── A KŐLAPBURKOLAT ────────────────────────────────────────────────────
+    // A `vilagUvre` a példány VILÁGKOORDINÁTÁJÁBÓL számol uv-t (lásd a
+    // `texturak.js` fejlécét): nyolc cellánként ismétlődik a textúra, és nyolcszor
+    // nyolc KÜLÖNBÖZŐ kőlap van benne. Enélkül mind a 6912 cella ugyanazt az
+    // egy csempét mutatná — 96×72-n ez volna a lehető legunalmasabb felület.
+    const a = vilagUvre(new THREE.MeshLambertMaterial({
+      color: 0xffffff, map: this.tex.padlo,
+    }), PADLO_UV_SKALA);
     const m = new THREE.InstancedMesh(g, a, kapacitas);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.receiveShadow = true;
@@ -148,7 +180,22 @@ export class Allomas3d {
     /** épületkód → { test, disz, kapacitas } */
     this.tipusMesh = new Map();
     for (const [kod, geo] of mertanok) {
-      this.tipusMesh.set(kod, this._tipusMesheket(kod, geo, diszek.get(kod)));
+      // ── UV UTÓLAG ────────────────────────────────────────────────────────
+      // A mértan-fájl szándékosan uv nélkül fűz össze (akkor még nem volt
+      // textúra). Textúra uv NÉLKÜL nem hiba, hanem csendes hazugság: minden
+      // csúcs (0,0)-t kapna, és az épület a textúra egyetlen képpontjának
+      // színét venné fel — lapos folt, ami szándéknak látszik.
+      //
+      // Az ismétlődés a típus VALÓDI méretéhez igazodik (`t.sz`, `t.magas`,
+      // `t.m`), mert a geometria a [0..1]³-ban van: enélkül egy 3×3-as vasúti
+      // csarnokon ugyanannyi csempe lenne, mint egy 1×1-es mosdón, vagyis
+      // háromszorosra nyúlt téglák.
+      const t = EPULETEK.find((e) => e.kod === kod);
+      const magas = t ? (t.magas || 1) : 1;
+      uvtPotol(THREE, geo, t ? t.sz : 1, magas, t ? t.m : 1);
+      const dg = diszek.get(kod);
+      if (dg) uvtPotol(THREE, dg, t ? t.sz : 1, magas, t ? t.m : 1);
+      this.tipusMesh.set(kod, this._tipusMesheket(kod, geo, dg));
     }
 
     // Állapotjelző az épület fölött: ez mondja meg egy pillantásra,
@@ -167,14 +214,23 @@ export class Allomas3d {
    * vagy csendben elnyeli a huszonötödik épületet.
    */
   _tipusMesheket(kod, geo, diszGeo, kapacitas = 48) {
-    const test = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), kapacitas);
+    // TÍPUSONKÉNT egy anyag, tehát típusonként egy textúra-hivatkozás — a
+    // textúra maga viszont KILENC felület közül való, közösen használva
+    // (`EPULET_ANYAG`). Példányonkénti anyag itt halálos volna: az szüntetné meg
+    // a példányosítást, amiért ez az egész fájl így néz ki.
+    const [testAnyag, diszAnyag] = EPULET_ANYAG.get(kod) || ALAP_ANYAG;
+    const test = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({
+      color: 0xffffff, map: this.tex[testAnyag],
+    }), kapacitas);
     test.castShadow = true; test.receiveShadow = true;
     test.count = 0;
     test.frustumCulled = false;
     this.gyoker.add(test);
     let disz = null;
     if (diszGeo) {
-      disz = new THREE.InstancedMesh(diszGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), kapacitas);
+      disz = new THREE.InstancedMesh(diszGeo, new THREE.MeshLambertMaterial({
+        color: 0xffffff, map: this.tex[diszAnyag],
+      }), kapacitas);
       disz.castShadow = true;
       disz.count = 0;
       disz.frustumCulled = false;
@@ -211,9 +267,12 @@ export class Allomas3d {
     this.portalok = [];
     for (let i = 0; i < MAX_PORTAL; i++) {
       const cs = new THREE.Group();
+      // A gyűrűn RÚNASZALAG fut körbe (a tórusz `u`-ja a gyűrű mentén megy,
+      // tehát a szalag magától körbeér). Ez az, amitől a kapu forgása
+      // LÁTSZIK: egy egyszínű tórusz forgatva mozdulatlannak tűnik.
       const gyuru = new THREE.Mesh(
         new THREE.TorusGeometry(1.32, 0.17, 10, 32),
-        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, map: this.tex.runa }),
       );
       gyuru.position.y = 1.75;
       // Külső, ellentétes irányban forgó gyűrű — ettől „jár" a kapu ahelyett,
@@ -223,14 +282,20 @@ export class Allomas3d {
         new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
       );
       kulso.position.y = 1.75;
+      // Az örvény spirálkarjai ALFÁVAL vannak kivágva: a kapu közepén tényleg
+      // átlátszik az állomás, és a forgás sodrásnak látszik, nem egy festett
+      // tányér pörgésének.
       const orveny = new THREE.Mesh(
         new THREE.CircleGeometry(1.16, 28),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff, map: this.tex.orveny,
+          transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false,
+        }),
       );
       orveny.position.y = 1.75;
       const talp = new THREE.Mesh(
         new THREE.CylinderGeometry(1.45, 1.6, 0.3, 16),
-        new THREE.MeshLambertMaterial({ color: 0x2b3350 }),
+        new THREE.MeshLambertMaterial({ color: 0x8892c0, map: this.tex.fem }),
       );
       talp.position.y = 0.15;
       talp.receiveShadow = true;
@@ -371,6 +436,7 @@ export class Allomas3d {
     const racs = this.sim.racs;
     const m = this.padlo, szm = this.padloSzellem;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
+    const kompenzacio = this.padloFenyKomp;
     q.identity(); s.set(1, 1, 1);
     let n = 0, szn = 0;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -416,6 +482,9 @@ export class Allomas3d {
         // Az emeleti padló hidegebb és világosabb: így egy pillantással
         // látszik, melyik szintet nézed, akkor is, ha a kamera lapos szögben áll.
         if (z > 0) { r = r * 0.86 + 0.10; g2 = g2 * 0.9 + 0.12; b = b * 0.95 + 0.16; }
+        // A kőlaptextúra SZORZÓDIK ezzel a színnel, tehát önmagában sötétítene.
+        // Ez az osztás adja vissza a fényt: a textúra mintát ad, nem árnyékot.
+        r *= kompenzacio; g2 *= kompenzacio; b *= kompenzacio;
         sz.setRGB(clamp01(r), clamp01(g2), clamp01(b), THREE.SRGBColorSpace);
         m.setColorAt(n, sz);
         n++;
@@ -491,7 +560,11 @@ export class Allomas3d {
 
       const i = b.test.count++;
       b.test.setMatrixAt(i, mat);
-      sz.setHex(t.szin);
+      // A típusszín itt is SZORZÓ a felület fölött, ezért egy hajszálnyival
+      // világosabban adjuk be — különben a textúra bevezetése az egész
+      // állomást tompította volna, és a típusszínek (a legfontosabb
+      // felismerési jel) egymáshoz csúsznának.
+      sz.setHex(t.szin).offsetHSL(0, 0, 0.07);
       b.test.setColorAt(i, sz);
       if (b.disz) {
         b.disz.count = b.test.count;

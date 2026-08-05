@@ -63,6 +63,7 @@ export class Hang {
     this._elindult = false;
 
     this.ctx = null;
+    this._offline = false;
     this._ideje = 0;
     this._elozoDuhos = 0;
     this._duhRata = 0;
@@ -96,12 +97,24 @@ export class Hang {
    * kötni minden kattintásra — a második hívás csak a `resume()`-ot ismétli
    * meg, ami viszont kell, mert a böngésző fülváltáskor felfüggesztheti a
    * kontextust.
+   *
+   * ── MIÉRT LEHET KÍVÜLRŐL KONTEXTUST ADNI ────────────────────────────────
+   * A hangot élőben nem lehet megmérni: az `AnalyserNode` valós időben
+   * pásztáz, tehát a mért csúcs attól is függ, mikor futott le a szonda
+   * ciklusa. Egy `OfflineAudioContext`-be viszont ugyanez a gráf BITRE
+   * kiszámolható, és a kapott hullámformán már lehet FFT-t, csúcs/RMS-t,
+   * levágást és sztereó-korrelációt mérni. Ez a paraméter az a varrat, ami
+   * ezt megengedi — a játék sosem adja meg, mindig a saját kontextusát
+   * építi.
+   * @param {BaseAudioContext} [kulsoCtx] csak mérésre
    */
-  inditas() {
+  inditas(kulsoCtx) {
     if (this._elindult) { this._folytat(); return; }
     const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!AC) return;                       // node, vagy nagyon régi böngésző
-    this.ctx = new AC();
+    if (!kulsoCtx && !AC) return;          // node, vagy nagyon régi böngésző
+    this.ctx = kulsoCtx || new AC();
+    /** Offline (mérő) kontextusban nincs mit „folytatni", és a resume() dob. */
+    this._offline = typeof this.ctx.startRendering === 'function';
 
     this._zajFeher = this._zajPuffer(2.0, false);
     this._zajBarna = this._zajPuffer(3.0, true);
@@ -118,6 +131,7 @@ export class Hang {
   }
 
   _folytat() {
+    if (this._offline) return;
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 

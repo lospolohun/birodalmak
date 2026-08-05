@@ -192,6 +192,9 @@ export class Szinter {
     const cs = k0.cs + (k1.cs - k0.cs) * h;
     this.csillagok.material.opacity = cs * 0.82;
     this.csillagok.visible = cs > 0.02;
+    // A ködsáv UGYANAZT a görbét követi, mint a csillagok: ha a kettő
+    // külön járna, hajnalban egy csillagtalan galaxis maradna az égen.
+    u.por.value = cs;
 
     this.allomasFeny.intensity = (1 - this.nappal) * 1.25;
 
@@ -222,6 +225,13 @@ export class Szinter {
         also: { value: new THREE.Color(0x1b1330) },
         kozep: { value: new THREE.Color(0x3d2a6b) },
         felso: { value: new THREE.Color(0x0b1030) },
+        // ── CSILLAGPOR ──────────────────────────────────────────────────
+        // 0 nappal, 1 éjjel. Az égbolt eddig sima színátmenet volt: a
+        // csillagok pontok voltak egy ÜRES vásznon. Egy dimenziókapu-állomás
+        // fölött viszont épp az ég a világ ígérete — a ködsáv az, ami elmondja,
+        // hogy nem a Földön vagyunk. Nappal ki KELL kapcsolni: fényes égen a
+        // ködfolt piszoknak látszik, nem galaxisnak.
+        por: { value: 0 },
       },
       vertexShader: `
         varying vec3 vPoz;
@@ -235,13 +245,48 @@ export class Szinter {
       // örök éjszaka volt, ez fel sem tűnt (a fekete fekete marad); a nappali
       // égnél viszont azonnal látszott, hogy a „világoskék" szürkéskék lesz.
       // A `linearToOutputTexel`-t a renderelő minden fragment-shaderbe beteszi.
+      // A ködsáv PROCEDURÁLIS: érték-zaj három oktávban, egy nagy kör mentén
+      // besűrítve. Nincs hozzá képfájl — ugyanaz a szabály, mint a többi
+      // felületnél (`render/texturak.js`): a `dist/` bemásolható marad.
       fragmentShader: `
         uniform vec3 also; uniform vec3 kozep; uniform vec3 felso;
+        uniform float por;
         varying vec3 vPoz;
+
+        float mag(vec3 p) {
+          return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        }
+        /** Érték-zaj: rácspontok közt simán interpolálva. */
+        float zaj(vec3 p) {
+          vec3 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = mix(mix(mix(mag(i + vec3(0,0,0)), mag(i + vec3(1,0,0)), f.x),
+                            mix(mag(i + vec3(0,1,0)), mag(i + vec3(1,1,0)), f.x), f.y),
+                        mix(mix(mag(i + vec3(0,0,1)), mag(i + vec3(1,0,1)), f.x),
+                            mix(mag(i + vec3(0,1,1)), mag(i + vec3(1,1,1)), f.x), f.y), f.z);
+          return a;
+        }
+
         void main() {
-          float h = normalize(vPoz).y * 0.5 + 0.5;
+          vec3 ir = normalize(vPoz);
+          float h = ir.y * 0.5 + 0.5;
           vec3 sz = mix(also, kozep, smoothstep(0.0, 0.55, h));
           sz = mix(sz, felso, smoothstep(0.55, 1.0, h));
+
+          if (por > 0.01) {
+            // A sáv egy megdöntött nagy kör mentén fut — így NEM vízszintes
+            // csík, hanem átlósan átíveli az eget, ahogy egy galaxis peremét
+            // belülről látni.
+            vec3 tengely = normalize(vec3(0.42, 0.78, -0.46));
+            float sav = 1.0 - smoothstep(0.0, 0.42, abs(dot(ir, tengely)));
+            float f = zaj(ir * 5.0) * 0.55 + zaj(ir * 11.0) * 0.3 + zaj(ir * 23.0) * 0.15;
+            f = smoothstep(0.42, 0.92, f);
+            // Két szín: hideg ibolya a sáv testében, meleg rózsaszín a
+            // csomópontokban. Ez a kettősség adja a mélységet.
+            vec3 kod = mix(vec3(0.34, 0.28, 0.62), vec3(0.62, 0.36, 0.58), f);
+            sz += kod * sav * f * por * 0.5;
+          }
+
           gl_FragColor = vec4(sz, 1.0);
           #include <colorspace_fragment>
         }`,

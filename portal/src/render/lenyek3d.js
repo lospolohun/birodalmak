@@ -35,6 +35,7 @@ import { FAJOK } from '../sim/lenyek.js';
 import { DOLGOZOK } from '../sim/dolgozok.js';
 import { ALLAPOT } from '../sim/utas.js';
 import { lenyMertanok } from './leny_mertan.js';
+import { texturak, uvtPotol } from './texturak.js';
 
 const MAX_DOLGOZO = 240;
 /** A szellemtömeg kerete. Ennél több egyszerre úgysem olvasható ki a képből. */
@@ -55,6 +56,10 @@ export class Lenyek3d {
     this._s = new THREE.Vector3();
     this._sz = new THREE.Color();
     this._tengely = new THREE.Vector3(0, 1, 0);
+    // Ugyanaz a gyorstárazott készlet, amit az `allomas3d.js` is használ:
+    // a `texturak()` másodszorra a MEGLÉVŐ objektumot adja vissza, tehát a
+    // lényréteg egyetlen új GPU-feltöltést sem okoz.
+    this.tex = texturak(THREE);
 
     // ── FAJONKÉNTI MÉRTAN ─────────────────────────────────────────────────
     // A v0.1-ben minden lény ugyanaz a kapszula+gömb volt. Ez a
@@ -76,7 +81,9 @@ export class Lenyek3d {
     // legyenek az utasoktól. Ők nem tömeg, hanem a te embereid.
     const dg = new THREE.ConeGeometry(0.3, 0.95, 6);
     dg.translate(0, 0.48, 0);
-    this.dolgozoMesh = this._mesh(dg, false, MAX_DOLGOZO, true);
+    // A dolgozó EGYENRUHÁT visel: szövetfelület. Ez a legolcsóbb módja annak,
+    // hogy „a te embered" és „vendég" ne csak formában térjen el.
+    this.dolgozoMesh = this._mesh(dg, false, MAX_DOLGOZO, true, false, this.tex.szovet);
 
     // Dühjelző: apró kocka a nagyon rossz hangulatú lények fölött.
     const jg = new THREE.BoxGeometry(0.2, 0.2, 0.2);
@@ -107,8 +114,14 @@ export class Lenyek3d {
    * hibának se látszik.
    */
   _fajMesheket(kod, mertan, lebeg, kapacitas = 128) {
-    const test = this._mesh(mertan.test, lebeg, kapacitas, !lebeg);
-    const fej = this._mesh(mertan.fej, lebeg, kapacitas, !lebeg);
+    // Uv utólag, dobozvetítéssel (lásd `texturak.js`): a `leny_mertan.js`
+    // uv nélkül fűz össze, és textúra uv nélkül minden lény a textúra EGYETLEN
+    // képpontjának színét venné fel. Két ismétlés a teljes magasságon: a lény
+    // ~1,2 egység, tehát a folt nagyjából tenyérnyi marad.
+    uvtPotol(THREE, mertan.test, 2, 2, 2);
+    uvtPotol(THREE, mertan.fej, 2, 2, 2);
+    const test = this._mesh(mertan.test, lebeg, kapacitas, !lebeg, false, this.tex.bor);
+    const fej = this._mesh(mertan.fej, lebeg, kapacitas, !lebeg, false, this.tex.bor);
     return { kod, test, fej, kapacitas, mertan, lebeg };
   }
 
@@ -120,11 +133,12 @@ export class Lenyek3d {
     return uj;
   }
 
-  _mesh(geo, atlatszo, db, arnyek, alapAnyag = false) {
+  _mesh(geo, atlatszo, db, arnyek, alapAnyag = false, terkep = null) {
     const anyag = alapAnyag
       ? new THREE.MeshBasicMaterial({ color: 0xffffff })
       : new THREE.MeshLambertMaterial({
         color: 0xffffff,
+        map: terkep,
         transparent: atlatszo,
         opacity: atlatszo ? 0.5 : 1,
         depthWrite: !atlatszo,

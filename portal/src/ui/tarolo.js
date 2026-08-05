@@ -23,10 +23,24 @@ import { mentesKeszit, mentesEllenoriz } from '../sim/mentes.js';
 const ELOTAG = 'pht:';
 const AUTO = ELOTAG + 'auto';
 const BETOLTENDO = ELOTAG + 'betoltendo';
+/**
+ * A fájlból behozott állás ÁTMENETI helye.
+ *
+ * ⚠️ EZ EGY ADATVESZTÉSES HIBA VOLT. A fájl-betöltés a `HELYEK`-edik, vagyis
+ * a JÁTÉKOS 3. KÉZI MENTŐHELYÉRE írt, mert a betöltés újratöltéssel megy, és
+ * kellett egy hely, ahonnan a boot felveszi. Aki tehát megnyitott egy kapott
+ * mentésfájlt, annak NÉMÁN elveszett a saját harmadik mentése. A saját kulcs
+ * ugyanazt tudja, csak nem ír felül semmit.
+ */
+const FAJL = ELOTAG + 'fajl';
 /** Hány kézi mentőhely van. Három elég: a több csak zavart okoz. */
 export const HELYEK = 3;
 
-function kulcs(hely) { return `${ELOTAG}hely${hely}`; }
+function kulcs(hely) {
+  if (hely === 'auto') return AUTO;
+  if (hely === 'fajl') return FAJL;
+  return `${ELOTAG}hely${hely}`;
+}
 
 function ir(k, ertek) {
   try {
@@ -64,14 +78,22 @@ export function automataMentes(sim) {
   return ir(AUTO, mentesKeszit(sim, 'automata'));
 }
 
-export function betolt(hely) {
-  const a = olvas(hely === 'auto' ? AUTO : kulcs(hely));
-  if (!a) return null;
-  return mentesEllenoriz(a).rendben ? a : null;
+/**
+ * @returns {{adat:object|null, ok:string|null}} — a HIBA OKA is visszajön,
+ *   mert a néma `null` a legrosszabb: a játékos annyit lát, hogy „nem
+ *   történt semmi", és nem tudja meg, hogy a mentése egy régi formátumú.
+ */
+export function betoltReszletesen(hely) {
+  const a = olvas(kulcs(hely));
+  if (!a) return { adat: null, ok: 'nincs itt mentés' };
+  const e = mentesEllenoriz(a);
+  return e.rendben ? { adat: a, ok: null } : { adat: null, ok: e.ok };
 }
 
+export function betolt(hely) { return betoltReszletesen(hely).adat; }
+
 export function torol(hely) {
-  try { localStorage.removeItem(hely === 'auto' ? AUTO : kulcs(hely)); } catch (e) { /* nincs mit tenni */ }
+  try { localStorage.removeItem(kulcs(hely)); } catch (e) { /* nincs mit tenni */ }
 }
 
 /**

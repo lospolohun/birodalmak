@@ -14,8 +14,9 @@ import { el, be, ures, szam } from './elemek.js';
 import { DIMENZIOK, dimenzioDij } from '../sim/dimenziok.js';
 import { TECHNOLOGIAK, tech } from '../sim/kutatas.js';
 import { DOLGOZOK, dolgozoBer } from '../sim/dolgozok.js';
-import { NEHEZSEGEK } from '../mag/config.js';
+import { NEHEZSEGEK, BERLET_RESZESEDES, BERLET_NAPIDIJ } from '../mag/config.js';
 import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
+import { FAJOK } from '../sim/lenyek.js';
 import { bestiariumot } from './bestiarium.js';
 import * as tarolo from './tarolo.js';
 import { tanacsok } from './tanacsado.js';
@@ -23,17 +24,32 @@ import { ESEMENYEK } from '../sim/esemenyek.js';
 import { vonal } from './grafikon.js';
 import { ALLAPOT_NEV } from '../sim/utas.js';
 
+/** A bérbeadásnál a bérlőé ez a hányad — a szövegek EBBŐL számolnak. */
+const BERLO_RESZE = Math.round((1 - BERLET_RESZESEDES) * 100);
+const MIENK_RESZE = Math.round(BERLET_RESZESEDES * 100);
+
 const LAPOK = [
-  { kod: 'dimenzio', ikon: '🌀', cim: 'Dimenziók' },
-  { kod: 'kutatas', ikon: '🔬', cim: 'Kutatás' },
-  { kod: 'dolgozo', ikon: '👷', cim: 'Dolgozók' },
-  { kod: 'bestiarium', ikon: '🐾', cim: 'Bestiárium' },
-  { kod: 'tanacs', ikon: '💡', cim: 'Tanácsadó' },
-  { kod: 'statisztika', ikon: '📊', cim: 'Statisztika' },
-  { kod: 'naplo', ikon: '📜', cim: 'Napló' },
-  { kod: 'mentes', ikon: '💾', cim: 'Mentés' },
-  { kod: 'sugo', ikon: '❓', cim: 'Súgó' },
+  { kod: 'dimenzio', ikon: '🌀', cim: 'Dimenziók', sug: 'Kapuk és csatornák: díjszabás, szint, instabilitás, bezárás.' },
+  { kod: 'kutatas', ikon: '🔬', cim: 'Kutatás', sug: 'Technológiafa. A lezárt tételekhez előbb az előfeltételük kell.' },
+  { kod: 'dolgozo', ikon: '👷', cim: 'Dolgozók', sug: 'Felvétel, beosztás, képzés. A személyzet nélküli épület 15 %-on megy.' },
+  { kod: 'bestiarium', ikon: '🐾', cim: 'Bestiárium', sug: 'Ki van bent, mit akar, milyen a hangulata, honnan jött.' },
+  { kod: 'tanacs', ikon: '💡', cim: 'Tanácsadó', sug: 'Mi a szűk keresztmetszet MOST — és mi rá a válaszlépés.' },
+  { kod: 'statisztika', ikon: '📊', cim: 'Statisztika', sug: 'Grafikonok, tegnapi mérleg tételesen, és amit hiába kerestek.' },
+  { kod: 'naplo', ikon: '📜', cim: 'Napló', sug: 'Minden, ami történt — visszafelé, naponként.' },
+  { kod: 'mentes', ikon: '💾', cim: 'Mentés', sug: 'Mentés, betöltés, fájl, hangerő, új játszás.' },
+  { kod: 'sugo', ikon: '❓', cim: 'Súgó', sug: 'Hogyan működik a játék, és mit csinál melyik billentyű.' },
 ];
+
+/**
+ * A futó példány — hogy a HUD-ból („kattints a hírnévre") és bárhonnan
+ * máshonnan meg lehessen nyitni egy lapot anélkül, hogy a `fo.js`-nek külön
+ * huzalt kellene húznia. Egy panelsáv van a képernyőn; a modulszintű
+ * hivatkozás ezt a tényt mondja ki, nem megkerül egy réteget.
+ */
+let peldany = null;
+
+/** @param {string} kod a `LAPOK` egyik kódja */
+export function panelNyit(kod) { if (peldany) peldany.nyit(kod); }
 
 export class Panelek {
   constructor(gyoker, sim, hud) {
@@ -42,18 +58,31 @@ export class Panelek {
     this.lap = null;
     this.kivalasztott = -1;   // épület-azonosító a „kéz" eszközből
     this._ora = 0;
+    /** Kinyitott szakma a Dolgozók panelen (kód vagy null). */
+    this.nyitottSzakma = null;
+    peldany = this;
 
     const oldal = el('div');
     oldal.id = 'oldal';
     this.gombok = [];
     for (const l of LAPOK) {
       const g = el('button', '', l.ikon);
-      g.title = l.cim;
+      g.title = `${l.cim}\n${l.sug}`;
       g.onclick = () => this.nyit(l.kod);
       oldal.appendChild(g);
       this.gombok.push({ kod: l.kod, g });
     }
     gyoker.appendChild(oldal);
+
+    // ── A TANÁCSADÓ JELZŐPONTJA ────────────────────────────────────────
+    // A `.pont` stílus régóta megvolt, de SOHA senki nem tette ki. A
+    // tanácsadó így pontosan annyira látszott, mint a súgó — holott ő az
+    // egyetlen panel, aminek magától kell szólnia. A pont színe a
+    // legsúlyosabb nyitott tanácsot követi.
+    const tanacsGomb = this.gombok.find((x) => x.kod === 'tanacs');
+    this.tanacsPont = el('span', 'pont');
+    this.tanacsPont.style.display = 'none';
+    tanacsGomb.g.appendChild(this.tanacsPont);
 
     const p = el('div');
     p.id = 'panel';
@@ -88,9 +117,27 @@ export class Panelek {
 
   frissit(dt) {
     this._ora += dt;
-    if (this._ora < 0.5 || !this.lap) return;
+    if (this._ora < 0.5) return;
     this._ora = 0;
+    // A jelzőpont akkor is számol, ha nincs nyitott panel — épp az a dolga,
+    // hogy a ZÁRT tanácsadó szóljon.
+    this._jelzot();
+    if (!this.lap) return;
     this._epit();
+  }
+
+  _jelzot() {
+    const lista = tanacsok(this.sim, 4);
+    let baj = 0, gond = 0;
+    for (const t of lista) { if (t.sulyossag === 'baj') baj++; else if (t.sulyossag === 'gond') gond++; }
+    const kulcs = `${baj}/${gond}`;
+    if (this._pontKulcs === kulcs) return;
+    this._pontKulcs = kulcs;
+    const pont = this.tanacsPont;
+    if (baj === 0 && gond === 0) { pont.style.display = 'none'; return; }
+    pont.style.display = 'block';
+    pont.className = 'pont' + (baj > 0 ? ' baj' : '');
+    pont.textContent = String(baj > 0 ? baj : gond);
   }
 
   _epit() {
@@ -197,23 +244,42 @@ export class Panelek {
       be(d, sav);
       be(p, el('h4', null, 'Folyamatban'), d);
     }
-    be(p, el('h4', null, 'Elérhető'));
-    for (const t of TECHNOLOGIAK) {
+    // ── SORREND: ELÉRHETŐ → ZÁRT → KÉSZ ──────────────────────────────────
+    // A katalógus-sorrend a fejlesztőnek jó, a játékosnak nem: a lista
+    // tetején egy már kikutatott tétel állt, a megvehető pedig valahol a
+    // közepén. Aki most nyitja meg a panelt, EGY kérdésre keres választ —
+    // „mit tudok most elindítani?" —, tehát az kerül előre. A kikutatottak
+    // a végén maradnak, mert azok már csak emlékeztetők.
+    const rend = TECHNOLOGIAK.map((t) => {
       const kesz = sim.kesz(t.kod);
       const lehet = sim.kutathato(t.kod);
-      const d = el('div', 'tetel');
+      return { t, kesz, lehet, rang: kesz ? 2 : (lehet ? 0 : 1) };
+    });
+    rend.sort((a, b) => a.rang - b.rang || a.t.ar - b.t.ar);
+
+    let elozoRang = -1;
+    const fejlec = ['Most elindítható', 'Zárva — előbb az előfeltétele kell', 'Kikutatva'];
+    for (const { t, kesz, lehet, rang: r } of rend) {
+      if (r !== elozoRang) { be(p, el('h4', null, fejlec[r])); elozoRang = r; }
+      const ar = Math.round(t.ar * sim.kutatasKedvezmeny);
+      const d = el('div', 'tetel' + (kesz ? ' kesz' : ''));
       const fej = el('div', 'fej');
       be(fej, el('span', null, t.ikon), el('b', null, t.nev),
-        el('span', null, kesz ? '✅' : (lehet ? szam(Math.round(t.ar * sim.kutatasKedvezmeny)) + ' 💎' : '🔒')));
+        el('span', null, kesz ? '✅ kész' : (lehet ? szam(ar) + ' 💎' : '🔒')));
       be(d, fej, el('p', null, t.hatas));
       if (!kesz) {
         if (!lehet) {
-          const hianyzo = t.fuggo.filter((f) => !sim.kesz(f)).map((f) => tech(f).nev).join(', ');
-          be(d, el('div', 'sorok', 'Előfeltétel: ' + hianyzo));
+          const hianyzo = t.fuggo.filter((f) => !sim.kesz(f));
+          be(d, el('div', 'sorok', 'Előbb ki kell kutatni: ' + hianyzo.map((f) => tech(f).nev).join(', ')));
+          // A teljes ár ELŐFELTÉTELEKKEL EGYÜTT: enélkül a 12 000-es legendás
+          // kapunyitás olcsóbbnak látszik, mint amennyibe tényleg kerül.
+          const teljes = ar + hianyzo.reduce((s, f) => s + Math.round(tech(f).ar * sim.kutatasKedvezmeny), 0);
+          be(d, el('div', 'sorok', `összesen idáig: ${szam(teljes)} 💎`));
         } else {
-          const ar = Math.round(t.ar * sim.kutatasKedvezmeny);
-          const g = el('button', 'mini', `Kutatás indítása (${Math.round(t.ido / 20)} mp)`);
+          const g = el('button', 'mini', `Kutatás indítása — ${szam(ar)} 💎 · ${Math.round(t.ido / 20)} mp`);
           g.disabled = !!sim.aktivKutatas || sim.penz < ar;
+          g.title = sim.aktivKutatas ? 'Egyszerre egy kutatás futhat.'
+            : (sim.penz < ar ? `Ehhez ${szam(ar - Math.floor(sim.penz))} 💎 hiányzik.` : t.hatas);
           g.onclick = () => this._parancs({ fajta: 'kutat', kod: t.kod });
           be(d, g);
         }
@@ -223,67 +289,182 @@ export class Panelek {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  /**
+   * DOLGOZÓK — szakmánként csoportosítva.
+   *
+   * ── MIÉRT NEM EGY SOR MINDEN DOLGOZÓNAK ─────────────────────────────────
+   * Mert volt, és játszhatatlan. A mérés szerint egy győztes állomáson
+   * 51–136 dolgozó van; a régi panel MINDEGYIKHEZ kirakott egy `<select>`-et
+   * az összes hozzá illő épülettel — és a panel fél másodpercenként újraépül.
+   * Az százas nagyságrendű `<select>`, ezer `<option>`-nel, MÁSODPERCENKÉNT
+   * KÉTSZER. Ez nemcsak lassú: a görgetés is elveszett benne, mert az
+   * újraépítés visszaugrasztotta a lista tetejére, és a legfontosabb szám —
+   * hányan ülnek tétlenül — sehol nem látszott.
+   *
+   * Most a szakma a rendezőelv, mert a döntés is szakmánként születik
+   * („kell-e még egy mérnök?"). Egy szakma van nyitva egyszerre, és azon
+   * belül is a TÉTLENEK jönnek elöl: az az egyetlen sor, amire válaszlépés
+   * van. A „Tétlenek beosztása" gomb pedig azt csinálja kézzel is
+   * megtehető parancsokkal (`beoszt`), amit senki nem akar húszszor
+   * végigkattintani.
+   */
   _dolgozok(p) {
     const sim = this.sim;
     be(p, el('h2', null, '👷 Dolgozók'));
-    let ber = 0;
-    for (const d of sim.dolgozok) ber += dolgozoBer(d);
-    be(p, el('div', 'sorok')).lastChild.innerHTML =
-      `létszám <b>${sim.dolgozok.length}</b> · napi bér <b>${szam(ber)} 💎</b>`;
 
-    be(p, el('h4', null, 'Felvétel'));
+    // ── ÖSSZKÉP ────────────────────────────────────────────────────────
+    let ber = 0, tetlen = 0;
+    for (const d of sim.dolgozok) { ber += dolgozoBer(d); if (d.epuletAzon < 0) tetlen++; }
+    const ossz = el('div', 'tetel');
+    ossz.innerHTML =
+      `<div class="sorok"><span>létszám <b>${sim.dolgozok.length}</b></span>` +
+      `<span>napi bér <b>${szam(ber)} 💎</b></span>` +
+      `<span>tétlen <b style="color:${tetlen > 0 ? '#ffc247' : '#63d68a'}">${tetlen}</b></span></div>`;
+    be(p, ossz);
+
+    // ── SZABAD HELYEK SZAKMÁNKÉNT ──────────────────────────────────────
+    // Ez adja meg, hogy melyik szakmából ÉRDEMES felvenni: az üres pult
+    // 15 %-on megy, a tétlen dolgozó viszont csak a bért viszi.
+    const helyek = new Map();   // szakma → { szabad, ossz }
+    for (let a = 0; a < sim.epuletek.length; a++) {
+      const ep = sim.epuletek[a];
+      if (!ep || ep.berbeadva) continue;
+      const et = EPULETEK[ep.tipusIdx];
+      if (et.szemelyzet === 0) continue;
+      const h = helyek.get(et.fajta) || { szabad: 0, ossz: 0 };
+      h.ossz += et.szemelyzet;
+      h.szabad += Math.max(0, et.szemelyzet - ep.dolgozok.length);
+      helyek.set(et.fajta, h);
+    }
+
     for (const t of DOLGOZOK) {
-      const d = el('div', 'tetel');
+      const sajat = sim.dolgozok.filter((d) => DOLGOZOK[d.tipusIdx].kod === t.kod);
+      const sajatTetlen = sajat.filter((d) => d.epuletAzon < 0);
+      const h = helyek.get(t.kod) || { szabad: 0, ossz: 0 };
+      const nyitva = this.nyitottSzakma === t.kod;
+
+      const d = el('div', 'tetel szakma' + (nyitva ? ' nyitva' : ''));
       const fej = el('div', 'fej');
-      const belepo = t.ber * 3;
-      be(fej, el('span', null, t.ikon), el('b', null, t.nev), el('span', null, `${t.ber}/nap`));
-      be(d, fej, el('p', null, t.leiras));
-      const g = el('button', 'mini', `Felvesz — belépő ${szam(belepo)} 💎`);
-      g.disabled = sim.penz < belepo;
-      g.onclick = () => this._parancs({ fajta: 'felvesz', tipus: t.kod });
-      be(d, g);
-      p.appendChild(d);
-    }
+      const allapot = h.szabad > 0
+        ? `<span class="jelzo gond">${h.szabad} üres hely</span>`
+        : (sajatTetlen.length > 0 ? `<span class="jelzo gond">${sajatTetlen.length} tétlen</span>` : '');
+      fej.innerHTML =
+        `<span>${t.ikon}</span><b>${t.nev}</b>${allapot}` +
+        `<span class="halk">${sajat.length} fő · ${t.ber}/nap</span><span class="nyil">${nyitva ? '▾' : '▸'}</span>`;
+      fej.style.cursor = 'pointer';
+      fej.onclick = () => { this.nyitottSzakma = nyitva ? null : t.kod; this._epit(); };
+      be(d, fej);
 
-    if (sim.dolgozok.length === 0) return;
-    be(p, el('h4', null, 'Csapat'));
-    for (const d of sim.dolgozok) {
-      const t = DOLGOZOK[d.tipusIdx];
-      const sor = el('div', 'tetel');
-      const fej = el('div', 'fej');
-      be(fej, el('span', null, t.ikon), el('b', null, `${t.nev} · ${d.szint}. szint`), el('span', null, `${dolgozoBer(d)}/nap`));
-      be(sor, fej);
+      if (!nyitva) { p.appendChild(d); continue; }
 
-      // Beosztás: csak olyan épület jöhet szóba, ami ezt a szakmát kéri.
-      const valaszto = el('select');
-      valaszto.style.cssText = 'width:100%;margin-top:5px;background:#1a2144;color:#e6ecff;border:1px solid rgba(140,160,230,.25);border-radius:6px;padding:4px;';
-      const ures0 = el('option', null, '— tétlen (bér megy, munka nincs)');
-      ures0.value = '-1';
-      valaszto.appendChild(ures0);
-      for (let a = 0; a < sim.epuletek.length; a++) {
-        const ep = sim.epuletek[a];
-        if (!ep) continue;
-        const et = EPULETEK[ep.tipusIdx];
-        if (et.fajta !== t.kod || et.szemelyzet === 0) continue;
-        const o = el('option', null, `${et.ikon} ${et.nev} (${ep.dolgozok.length}/${et.szemelyzet}) @${ep.x},${ep.y}`);
-        o.value = String(ep.azon);
-        valaszto.appendChild(o);
-      }
-      valaszto.value = String(d.epuletAzon);
-      valaszto.onchange = () => this._parancs({ fajta: 'beoszt', dolgozo: d.azon, epulet: Number(valaszto.value) });
-      be(sor, valaszto);
+      be(d, el('p', null, t.leiras));
+      const sorok = el('div', 'sorok');
+      sorok.innerHTML = `<span>beosztható hely: <b>${h.ossz - h.szabad}/${h.ossz}</b></span>`;
+      be(d, sorok);
 
+      // ── FELVÉTEL ─────────────────────────────────────────────────────
       const gombok = el('div', 'sorok');
-      const ar = t.ber * 8 * d.szint;
-      const fejleszt = el('button', 'mini', d.szint >= 3 ? 'Maximum' : `Képzés — ${szam(ar)} 💎`);
-      fejleszt.disabled = d.szint >= 3 || sim.penz < ar;
-      fejleszt.onclick = () => this._parancs({ fajta: 'dolgozo_fejleszt', azon: d.azon });
-      const el2 = el('button', 'mini vesz', 'Elbocsát');
-      el2.onclick = () => this._parancs({ fajta: 'elbocsat', azon: d.azon });
-      be(gombok, fejleszt, el2);
-      be(sor, gombok);
-      p.appendChild(sor);
+      const belepo = t.ber * 3;
+      const felvesz = el('button', 'mini', `Felvesz — belépő ${szam(belepo)} 💎`);
+      felvesz.disabled = sim.penz < belepo;
+      felvesz.title = `Egyszeri ${szam(belepo)} belépő, utána ${t.ber} 💎 MINDEN NAP, akkor is, ha tétlen.`;
+      felvesz.onclick = () => this._parancs({ fajta: 'felvesz', tipus: t.kod });
+      be(gombok, felvesz);
+
+      if (sajatTetlen.length > 0 && h.szabad > 0) {
+        const auto = el('button', 'mini', `Tétlenek beosztása (${Math.min(sajatTetlen.length, h.szabad)})`);
+        auto.title = 'Ugyanazokat a beosztás-parancsokat adja ki, amiket kézzel is kiadnál — csak nem húszszor.';
+        auto.onclick = () => this._tetleneketBeoszt(t.kod);
+        be(gombok, auto);
+      }
+      be(d, gombok);
+      p.appendChild(d);
+
+      if (sajat.length === 0) continue;
+
+      // A tétlenek elöl: ez az egyetlen sor, amire VAN válaszlépés.
+      const rend = sajat.slice().sort((a, b2) => (a.epuletAzon < 0 ? 0 : 1) - (b2.epuletAzon < 0 ? 0 : 1) || a.azon - b2.azon);
+      // Százas csapatnál a teljes lista sem olvasható, sem olcsó. Aki
+      // konkrét dolgozót keres, az a beosztásán át keresi — az meg az
+      // épület-panelen látszik.
+      const HATAR = 24;
+      for (const dd of rend.slice(0, HATAR)) p.appendChild(this._dolgozoSor(dd, t));
+      if (rend.length > HATAR) {
+        be(p, el('div', 'sorok', `…és további ${rend.length - HATAR} ${t.nev.toLowerCase()}. ` +
+          'A beosztottak az épületük panelján is elérhetők.'));
+      }
     }
+  }
+
+  /** Egy dolgozó sora: beosztás, képzés, elbocsátás. */
+  _dolgozoSor(d, t) {
+    const sim = this.sim;
+    const sor = el('div', 'tetel dolgozo' + (d.epuletAzon < 0 ? ' tetlen' : ''));
+    const fej = el('div', 'fej');
+    be(fej, el('span', null, t.ikon),
+      el('b', null, `${t.nev} · ${d.szint}. szint`),
+      el('span', 'halk', `${dolgozoBer(d)}/nap`));
+    be(sor, fej);
+
+    // Beosztás: csak olyan épület jöhet szóba, ami ezt a szakmát kéri.
+    const valaszto = el('select');
+    const ures0 = el('option', null, '— tétlen (a bér megy, a munka nem)');
+    ures0.value = '-1';
+    valaszto.appendChild(ures0);
+    for (let a = 0; a < sim.epuletek.length; a++) {
+      const ep = sim.epuletek[a];
+      if (!ep) continue;
+      const et = EPULETEK[ep.tipusIdx];
+      if (et.fajta !== t.kod || et.szemelyzet === 0) continue;
+      const tele = ep.dolgozok.length >= et.szemelyzet && ep.azon !== d.epuletAzon;
+      const o = el('option', null,
+        `${et.ikon} ${et.nev} (${ep.dolgozok.length}/${et.szemelyzet})${tele ? ' — tele' : ''} @${ep.x},${ep.y}`);
+      o.value = String(ep.azon);
+      valaszto.appendChild(o);
+    }
+    valaszto.value = String(d.epuletAzon);
+    valaszto.onchange = () => this._parancs({ fajta: 'beoszt', dolgozo: d.azon, epulet: Number(valaszto.value) });
+    be(sor, valaszto);
+
+    const gombok = el('div', 'sorok');
+    const ar = t.ber * 8 * d.szint;
+    const fejleszt = el('button', 'mini', d.szint >= 3 ? 'Maximum szint' : `Képzés ${d.szint + 1}. szintre — ${szam(ar)} 💎`);
+    fejleszt.disabled = d.szint >= 3 || sim.penz < ar;
+    fejleszt.title = 'A magasabb szintű dolgozó többet teljesít ugyanabban az épületben — de a bére is nő.';
+    fejleszt.onclick = () => this._parancs({ fajta: 'dolgozo_fejleszt', azon: d.azon });
+    const el2 = el('button', 'mini vesz', 'Elbocsát');
+    el2.onclick = () => this._parancs({ fajta: 'elbocsat', azon: d.azon });
+    be(gombok, fejleszt, el2);
+    be(sor, gombok);
+    return sor;
+  }
+
+  /**
+   * A tétlen dolgozókat sorra beosztja a szabad helyekre.
+   *
+   * Csak a MEGLÉVŐ `beoszt` parancsot használja, épületazonosító szerinti
+   * rögzített sorrendben — tehát ugyanaz, mintha a játékos kattintgatná
+   * végig, és a mentés/visszajátszás számára is közönséges parancssorozat.
+   */
+  _tetleneketBeoszt(szakma) {
+    const sim = this.sim;
+    const szabad = [];
+    for (let a = 0; a < sim.epuletek.length; a++) {
+      const ep = sim.epuletek[a];
+      if (!ep || ep.berbeadva) continue;
+      const et = EPULETEK[ep.tipusIdx];
+      if (et.fajta !== szakma || et.szemelyzet === 0) continue;
+      for (let k = ep.dolgozok.length; k < et.szemelyzet; k++) szabad.push(ep.azon);
+    }
+    let n = 0;
+    for (const d of sim.dolgozok) {
+      if (n >= szabad.length) break;
+      if (d.epuletAzon >= 0 || DOLGOZOK[d.tipusIdx].kod !== szakma) continue;
+      this.sim.parancs({ fajta: 'beoszt', dolgozo: d.azon, epulet: szabad[n] });
+      n++;
+    }
+    this.hud.uzen(n > 0 ? `${n} dolgozó beosztva.` : 'Nincs kit beosztani.', n > 0 ? 'jo' : 'gond');
+    this._ora = 1;
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -611,16 +792,34 @@ export class Panelek {
       ['💾 A mentés a naplód', 'A játék automatikusan ment minden nap végén, és három kézi hely is van. A mentés a seedet és a parancsaidat tartalmazza, nem a világ pillanatképét — ezért a betöltés újrajátssza a partit, és ezért lesz bitre ugyanaz.'],
       ['⚖️ A döntéseid maradandók', 'A fejezetek végén választanod kell. A véglegesen lezárt világ soha nem nyílik meg újra — ez nem hiba, hanem a történeted.'],
     ];
+    // Az irányítás ELŐRE kerül, nem a szöveges magyarázatok mögé. Aki a
+    // súgót megnyitja, az tíz esetből kilencszer azt keresi, melyik gomb mit
+    // csinál — a „hogyan működik" olvasmány, ez viszont referencia.
+    be(p, el('h4', null, 'Irányítás'));
+    const v = el('div', 'tetel');
+    v.innerHTML = '<div class="billentyuk">' + [
+      ['bal gomb', 'építés / vizsgálat'],
+      ['jobb gomb húzva', 'a kamera tolása'],
+      ['középső gomb', 'forgatás'],
+      ['görgő', 'nagyítás a kurzor alatti pontra'],
+      ['W A S D', 'mozgás'],
+      ['Q E', 'forgatás'],
+      ['<b>R</b> / <b>F</b>', '<b>egy szinttel feljebb / lejjebb</b>'],
+      ['szóköz', 'szünet'],
+      ['1 2 3 4', 'sebesség'],
+      ['Esc', 'az eszköz elengedése'],
+    ].map(([k, m]) => `<div><kbd>${k}</kbd><span>${m}</span></div>`).join('') + '</div>' +
+      '<p>Padló és bontás <b>húzható</b>: nyomd le, húzd el, engedd fel — téglalapot csinál. ' +
+      'A „👆 Kéz" eszközzel egy épületre kattintva a részleteit, egy üres padlóra kattintva pedig azt látod, ' +
+      'hogy ki áll ott és mit akar.</p>';
+    p.appendChild(v);
+
+    be(p, el('h4', null, 'Hogyan működik'));
     for (const [cim, sz] of reszek) {
       const d = el('div', 'tetel');
       d.innerHTML = `<div class="fej"><b>${cim}</b></div><p>${sz}</p>`;
       p.appendChild(d);
     }
-    const v = el('div', 'tetel');
-    v.innerHTML = '<div class="fej"><b>Irányítás</b></div><p>' +
-      'Bal gomb: építés / vizsgálat · Jobb gomb húzva: tolás · Középső gomb: forgatás · Görgő: nagyítás<br>' +
-      'W A S D: mozgás · Q E: forgatás · Szóköz: szünet · 1-4: sebesség · Esc: eszköz elengedése</p>';
-    p.appendChild(v);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -649,13 +848,22 @@ export class Panelek {
       p.appendChild(k);
     }
 
-    if (t.igeny && t.dij > 0) {
+    // A számok a CONFIG-ból jönnek, nem a szövegbe írva. Ez nem finomkodás:
+    // a `BERLET_RESZESEDES` 0,42-ről 0,60-ra ment egy egyensúly-hangolásban,
+    // és a panel utána is 42 %-ot ígért — vagyis a felület HAZUDOTT egy
+    // visszafordítható, de fontos döntésnél.
+    if (t.igeny && t.dij > 0 && t.szemelyzet > 0) {
+      const napiDij = Math.round(t.ar * BERLET_NAPIDIJ * 10) / 10;
       const b = el('div', 'tetel');
-      b.innerHTML = ep.berbeadva
+      b.innerHTML = (ep.berbeadva
         ? '<div class="fej"><b>🤝 Bérbe adva</b></div><p>A bérlő üzemelteti: nem kell hozzá személyzet, ' +
-          'és napi fix díjat is fizet — cserébe a forgalom bevételének csak 42 %-a a tiéd.</p>'
+          'és nem esik le a teljesítménye személyzethiánytól. '
         : '<div class="fej"><b>🤝 Bérbeadás</b></div><p>Add ki a helyet egy bérlőnek: nem kell hozzá személyzet, ' +
-          'és napi fix díjat fizet — cserébe a forgalom bevételének csak 42 %-a marad nálad.</p>';
+          'és mindig 100 %-on megy. ') +
+        `Cserébe a forgalom bevételének <b>${BERLO_RESZE} %-a a bérlőé</b>, <b>${MIENK_RESZE} %-a a tiéd</b>, ` +
+        `plusz napi <b>${napiDij} 💎</b> fix bérleti díj.</p>` +
+        `<p>Megspórolt bér: <b>${t.szemelyzet * 75} 💎/nap</b> nagyságrend. Nagy forgalomnál a saját üzemeltetés ` +
+        'jobban jár — a bérbeadás nyugalmat vesz pénzért.</p>';
       const g = el('button', 'mini', ep.berbeadva ? 'Bérlet felmondása' : 'Bérbeadás');
       g.onclick = () => this._parancs({ fajta: 'berbead', azon: ep.azon });
       be(b, g);
