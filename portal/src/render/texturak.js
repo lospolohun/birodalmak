@@ -89,16 +89,33 @@ function vaszon(sz, m) {
  * vászonra rajzoltunk — ugyanaz a hiba, ami az égbolt-shaderben a
  * `colorspace_fragment` nélkül történt.
  */
-function texturaz(THREE, c, ismetX = 1, ismetY = 1) {
+function texturaz(THREE, c, ismetX = 1, ismetY = 1, nagyFelulet = false) {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(ismetX, ismetY);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
   t.generateMipmaps = true;
+  // ── A SZŰRÉS ÁRA ────────────────────────────────────────────────────────
+  // ⚠️ EZ MÉRÉSSEL DŐLT EL, NEM ÍZLÉSSEL. Az első változat MINDEN textúrának
+  // anizotróp (4×) és trilineáris szűrést adott. A/B-ben, egy munkameneten
+  // belül ez 210 → 269 ms/képkocka volt a szoftveres raszterizálón, és a
+  // különbség NAGYJÁBÓL FELE pusztán az anizotrópiából jött — miközben a
+  // haszna egyetlen felületen látszik.
+  //
+  // Az anizotrópia azt javítja, amit LAPOS SZÖGBŐL nézünk. Egy 96×72-es padló
+  // pontosan ilyen; egy épületfal, egy lény bőre vagy egy kapugyűrű soha nem
+  // az — azok mindig nagyjából szemből látszanak. Ezért a padló kap 4×-et és
+  // trilineárist, minden más 1×-et és a fele annyi mintát kérő
+  // `LinearMipmapNearest`-et.
+  if (nagyFelulet) {
+    t.anisotropy = 4;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+  } else {
+    t.anisotropy = 1;
+    t.minFilter = THREE.LinearMipmapNearestFilter;
+  }
   /**
    * A textúra lineáris átlagfényessége — MINDEGYIKEN. A hívó ebből számol
    * fénykompenzációt (lásd `anyagKompenzacio`). Azért itt, egy helyen, mert a
@@ -337,7 +354,9 @@ function padloTextura(THREE) {
   foltok(r, S, S, v, 18, 30, 110, (g) => sza(60, 70, 100, 0.05 + g() * 0.05));
   szemcse(r, S, S, v, 13);
 
-  return texturaz(THREE, c);
+  // `nagyFelulet: true` — ez az EGYETLEN felület, amit lapos szögből nézünk,
+  // tehát csak ez fizet anizotróp szűrést (lásd a `texturaz` megjegyzését).
+  return texturaz(THREE, c, 1, 1, true);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

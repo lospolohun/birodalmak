@@ -266,6 +266,8 @@ olvashatatlan, mert a rács 64×48 → 96×72-re nőtt).
 | A5 | „Elégedetten: 2 300" — arány nélkül semmit nem mond. | igen — mellé kerül a százalék |
 | A6 | 10–11,5 px-es szövegek, 4,2:1 kontrasztú halvány szürke. | igen — a törzsszövegek 12,5 px, `--halvany` `#93a0c8` → `#aab6da` |
 | A7 | A fejezet-kártya és a bevezető FIX képpontokon ült (56 / 152 px), és hosszabb célszövegnél egymásra csúsztak. | igen — közös bal oszlop, folyó elrendezéssel |
+| A8 | A Statisztika panel tetején az 1. napon **két 116 képpontos üres doboz** állt („Még nem telt el két teljes nap") — 232 képpont semmi, pont ott, ahol a játékos először néz. | igen — a grafikonok csak a 2. naptól kerülnek ki |
+| A9 | A Súgó fejléce „Hogyan működik" volt, alatta ugyanilyen szakaszcímmel. | igen — a fejléc „❓ Súgó" |
 
 ---
 
@@ -286,11 +288,21 @@ nap, ugyanaz a felület-kód:
 | a kör elején | 385 | 45 |
 | ~40 perccel később | 613 | 25 |
 | ~70 perccel később | **1 108–2 714** | **15** |
+| a kör végén, a szondában | 800 | 20 |
 
 Közben a `src/render/texturak.js` és az `allomas3d.js` percenként változott
-(a textúra-sáv élőben dolgozott). **A felület nem tényező:** A/B-vel
-kikapcsolva a `hud.frissit()`, a `panelek.frissit()` és az
-`epitesSav.frissit()` hívásokat, a képkocka-idő a zajon belül maradt
+(a textúra-sáv élőben dolgozott). **A felület nem tényező, és ez mérve van:**
+
+```
+képkocka 715,3 ms · ebből szinter.rajzol() 7,0 ms (1 %)
+                  · a TELJES felület-frissítés 0,02 ms (0,0 %)
+```
+
+(A `hud.frissit()` + `epitesSav.frissit()` + `panelek.frissit()` +
+`modalok.frissit()` + `bevezeto.frissit()` együtt, 60 hívás átlaga.) A JS
+tehát nagyjából nem csinál semmit: az idő a szoftveres raszterizálásban és a
+képmegjelenítésben megy el, a rAF-visszahívásokon KÍVÜL. A/B-vel kikapcsolva
+a felület-frissítéseket a képkocka-idő a zajon belül maradt
 (383 → 386 → 401 ms).
 
 ⚠️ **Ez SwiftShader, tehát a szám önmagában semmit nem mond a valódi
@@ -305,13 +317,15 @@ tartósan 250 ms fölött van, a játékos ma nem tud róla — csak azt látja,
 „lassú a játék". Egy egyszeri üzenet („a gép nem bírja, a világ lassítva megy")
 őszintébb, mint a néma csúszás.
 
-### R2 · A kamera nem a csarnok közepére néz
+### R2 · A kamera nem a csarnok közepére nézett — ✅ AZÓTA BEKÖTVE
 
-A `fo.js` 82. sora: `szinter.cel.set(sim.kezdoX + 9, 0, sim.kezdoY + 8)` —
-ez a **22×16-os** kezdő csarnok közepe volt. A csarnok azóta **30×22**, tehát
-a kamera a bal felső negyedre néz, és a terület nagyobbik fele a képen kívül
-kezdődik (lásd `qa/bongeszo_02_kezdes.png`). Pontos javaslat lent, a
-6. szakaszban.
+A `fo.js` 82. sora `szinter.cel.set(sim.kezdoX + 9, 0, sim.kezdoY + 8)` volt —
+ez a **22×16-os** kezdő csarnok közepe. A csarnok azóta **30×22**, tehát a
+kamera a bal felső negyedre nézett, és a terület nagyobbik fele a képen kívül
+kezdődött. **Az integráló sáv a kör alatt bekötötte** a lenti javaslatot
+(`KEZDO_CSARNOK_SZ/2`, `tav = 42`); ellenőrizve: a kamera célpontja
+`(48, 36)`, `tav 42`, és a csarnok egésze a képen van
+(`qa/bongeszo_ui_kezdes.png`).
 
 ### R3 · A kapuk fülön a lezárt/rejtett világ üzenete jó, de a kamera-korlátok rendben
 
@@ -324,10 +338,11 @@ képre. **Kisebbségi térkép nincs a játékban**, tehát nem is kellett hozz�
 
 ## 6. HA BEKÖTNÉD — pontos `fo.js`-változtatások (nem az én fájlom)
 
-Egyik sem szükséges ahhoz, hogy a felület-munka működjön; mindkettő a
-95×72-es rácsra való átállás elmaradt következménye.
+Egyik sem szükséges ahhoz, hogy a felület-munka működjön. Az elsőt az
+integráló sáv már bekötötte a kör alatt; a második nyitott javaslat.
 
-**(1) A kamera a csarnok KÖZEPÉRE nézzen.** `portal/src/fo.js`, 82–83. sor:
+**(1) A kamera a csarnok KÖZEPÉRE nézzen — ✅ EZ MÁR BE VAN KÖTVE**, itt csak
+a nyoma marad. `portal/src/fo.js`, 82–83. sor:
 
 ```js
   // MOST:
@@ -373,6 +388,21 @@ A `hud.js` a `vezerlo`-t megkapja, tehát ettől kezdve kirakhatunk hozzá gombo
 4. **VII. fejezet, végtelen mód, csőd-képernyő.** A 11 nap alatt a II.
    fejezetig jutottam; a `_vege()` és a `_gyozelem()` ablakot nem láttam élőben.
 5. **Érintőképernyő.** A vezérlés egérre készült, ez nem változott.
+
+---
+
+## 7b. A KAPUK ÁLLÁSA A KÖR VÉGÉN
+
+| kapu | eredmény |
+|---|---|
+| `npx vite build` | ✅ |
+| `det_szonda.mjs` | ✅ **mind a 11 vizsgálat zöld** (80 nap, 3. korszak, 13-féle esemény) |
+| `kiadas_ellenorzo.mjs` | ✅ **7/7 — KIADHATÓ** (nincs külső hivatkozás, nincs `console.log`-nyom) |
+| `bongeszo_szonda.mjs` | ⚠️ **9-ből 7 zöld** — a 4. („halad az idő") és az 5. („érkeznek utasok") elbukik, MINDKETTŐ az R1 következménye: 800 ms/képkocka mellett 2 másodperc alatt 20 tick fut le, és addig nem születik utas. A felület minden vizsgálata (2., 3., 6., 7., 8a., 8.) zöld, konzol-hiba nulla, és a betöltött világ bitre azonos a mentettel. |
+
+A böngésző-szonda küszöbét **szándékosan nem vettem lejjebb.** A hibaüzenetét
+viszont pontosítottam, mert a régi („az idő nem halad: 0 → 3") a
+szimulációra mutatott, holott a rajzolás a szűk keresztmetszet.
 
 ---
 

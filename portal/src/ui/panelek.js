@@ -532,21 +532,26 @@ export class Panelek {
     // ── GRAFIKONOK ────────────────────────────────────────────────────
     // A HUD pillanatnyi állapotot mutat; a döntések viszont trendekről
     // szólnak. A „hírnév 62" egészen mást jelent 40-ről jövet, mint 85-ről.
-    be(p, el('h4', null, 'Az elmúlt napok'));
-    const g1 = el('canvas'); g1.width = 344; g1.height = 116;
-    g1.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22)';
-    const g2 = el('canvas'); g2.width = 344; g2.height = 116;
-    g2.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22);margin-top:6px';
-    be(p, g1, g2);
-    vonal(g1, sim.napiTortenet, [
-      { mezo: 'hirnev', szin: '#63d68a', nev: 'hírnév' },
-      { mezo: 'utas', szin: '#6fd8ff', nev: 'utas' },
-    ]);
-    vonal(g2, sim.napiTortenet, [
-      { mezo: 'bevetel', szin: '#ffd257', nev: 'bevétel' },
-      { mezo: 'koltseg', szin: '#ff5d73', nev: 'költség' },
-      { mezo: 'penz', szin: '#9b6bff', nev: 'pénz' },
-    ], { nulla: true });
+    // Az első napon két 116 képpontos ÜRES doboz állt a panel tetején, „Még
+    // nem telt el két teljes nap" felirattal — 232 képpont semmi, pont ott,
+    // ahol a játékos először néz. Amíg nincs mit rajzolni, egy sor is elég.
+    if (sim.napiTortenet.length >= 2) {
+      be(p, el('h4', null, 'Az elmúlt napok'));
+      const g1 = el('canvas'); g1.width = 362; g1.height = 116;
+      g1.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22)';
+      const g2 = el('canvas'); g2.width = 362; g2.height = 116;
+      g2.style.cssText = 'width:100%;border-radius:8px;background:rgba(0,0,0,.22);margin-top:6px';
+      be(p, g1, g2);
+      vonal(g1, sim.napiTortenet, [
+        { mezo: 'hirnev', szin: '#63d68a', nev: 'hírnév' },
+        { mezo: 'utas', szin: '#6fd8ff', nev: 'utas' },
+      ]);
+      vonal(g2, sim.napiTortenet, [
+        { mezo: 'bevetel', szin: '#ffd257', nev: 'bevétel' },
+        { mezo: 'koltseg', szin: '#ff5d73', nev: 'költség' },
+        { mezo: 'penz', szin: '#9b6bff', nev: 'pénz' },
+      ], { nulla: true });
+    }
 
     be(p, el('h4', null, 'Tegnapi mérleg'));
     const m = el('div', 'tetel');
