@@ -31,14 +31,23 @@
  * új parancsfajta hozzáadása, hanem egy MEGLÉVŐ értelmezésének módosítása),
  * ezt léptetni kell — különben a régi mentés némán MÁS világot játszik le.
  */
-export const MENTES_VERZIO = 2;
+export const MENTES_VERZIO = 3;
 /**
  * Amit még be tudunk tölteni. A v1 nem ismerte a nehézségi fokozatot — az
  * összes ilyen mentés normálon készült, tehát hiánytalanul visszaadható.
  * Egy régi mentés eldobása mindig az utolsó lehetőség: a játékos órái vannak
  * benne, és a formátum bővülése nem az ő hibája.
+ *
+ * ⚠️ A v1 ÉS v2 ITT KIESETT, ÉS EZ SZÁNDÉKOS. A rács 64×48-ról 96×72-re nőtt,
+ * a kezdő csarnok 22×16-ról 30×22-re. A mentés = seed + parancsnapló, a
+ * parancsokban viszont ABSZOLÚT cellakoordináták vannak — egy régi napló
+ * tehát nem hibára futna, hanem NÉMÁN MÁS VILÁGOT építene: a csarnok közepe
+ * elmozdult, az épületek fele üres padlóra vagy a rácson kívülre kerülne.
+ *
+ * Ez pontosan az az eset, amiért ez a szám létezik. Egy érthető hibaüzenet
+ * jobb, mint egy szétesett állomás, amiről a játékos azt hiszi, ő rontotta el.
  */
-const OLVASHATO_VERZIOK = [1, 2];
+const OLVASHATO_VERZIOK = [3];
 
 /**
  * Mentés-objektum egy futó világból.

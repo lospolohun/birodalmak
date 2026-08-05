@@ -24,10 +24,18 @@ export const TICK_MS = 1000 / TICK_HZ;
 export const NAP_TICK = TICK_HZ * 60;
 
 // ── RÁCS ──────────────────────────────────────────────────────────────────
-// 64×48 cella. Ennél nagyobbnál az útkeresés elosztott mezői már számítanak,
-// kisebbnél viszont a „20+ portál, többszintes állomás" végcél nem fér el.
-export const RACS_SZ = 64;
-export const RACS_M = 48;
+// 96×72 cella. A v1.0 még 64×48-on futott, és a mérés kimondta, hogy ez
+// KEVÉS: a `kiegyensulyozott` bot 123,6 épületet húzott fel egy 3 072 cellás
+// szinten, vagyis az állomás a végjátékra egyetlen összefüggő épülettömbbé
+// vált, folyosók nélkül. A zsúfoltság nem hangulati kérdés volt: a tömeg a
+// SORBAN álló utasokból ered, és ha nincs hova kitérni, mindenki mindenki
+// útjában áll.
+//
+// 96×72 = 6 912 cella szintenként, 2,25-szer annyi. Az ár az útkeresés:
+// az épületenkénti BFS-távolságmező is 2,25-szeresére nő. Ezért van a
+// mezőknek tickenkénti újraszámolási kerete — mérve lásd a commitban.
+export const RACS_SZ = 96;
+export const RACS_M = 72;
 /** Egy cella élhossza világegységben — a render ezzel skáláz. */
 export const CELLA_MERET = 1;
 
@@ -53,9 +61,15 @@ export const EMELET_FELAR = 0.6;
 /** Egy szintváltás ennyi lépésnyi „útnak" számít az útkeresésben. */
 export const ATJARO_KOLTSEG = 4;
 
-/** A kezdő csarnok (kiépített padló) mérete a rács közepén. */
-export const KEZDO_CSARNOK_SZ = 22;
-export const KEZDO_CSARNOK_M = 16;
+// A kezdő csarnok (kiépített padló) mérete a rács közepén.
+//
+// A 22×16 pont akkora volt, hogy a bevezető hat lépése hézag nélkül kitöltse:
+// az első kilenc épület után nem maradt folyosó, és a játékos az első
+// negyedórában azt tanulta meg, hogy a hely szűkös. Egy tycoon nyitánya
+// ne szorongás legyen. 30×22-vel ugyanaz a kilenc épület elfér úgy, hogy
+// marad KÖZE — és a köz az, amiben az utas kikerüli a sort.
+export const KEZDO_CSARNOK_SZ = 30;
+export const KEZDO_CSARNOK_M = 22;
 
 // ── GAZDASÁG ──────────────────────────────────────────────────────────────
 export const KEZDO_PENZ = 16000;
