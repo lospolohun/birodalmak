@@ -539,11 +539,15 @@ try {
     };
   });
   adat(`textúra-előállítás induláskor ${ido.keszitesMs.toFixed(0)} ms · ${ido.anyagDb} textúrázott anyag`);
-  adat(`TEXTÚRÁVAL min ${ido.vele.toFixed(0)} ms  [${ido.veleMind.map((x) => x.toFixed(0)).join(' ')}]`);
-  adat(`NÉLKÜLE    min ${ido.nelkule.toFixed(0)} ms  [${ido.nelkuleMind.map((x) => x.toFixed(0)).join(' ')}]`);
+  adat(`TEXTÚRÁVAL átlag ${ido.vele.toFixed(0)} ms  [${ido.veleMind.map((x) => x.toFixed(0)).join(' ')}]`);
+  adat(`NÉLKÜLE    átlag ${ido.nelkule.toFixed(0)} ms  [${ido.nelkuleMind.map((x) => x.toFixed(0)).join(' ')}]`);
   const idoArany = ido.vele / Math.max(1, ido.nelkule);
   adat('⚠️ SwiftShader — az abszolút ms NEM FPS-ítélet, és két futás közt nem hasonlítható. Csak ez az arány számít.');
-  if (idoArany <= 1.35) ok(`a felületek ${((idoArany - 1) * 100).toFixed(0)} %-ot tesznek a képkocka-időhöz (keret: +35 %)`);
+  // A keret azért 45 %, mert a mérés maga is szór: a felhő-gépen ugyanaz a
+  // beállítás 283 és 580 ms közt ingadozott. Szűkebb küszöb nem a kódot
+  // mérné, hanem a szomszéd agent terhelését — egy hamis riasztás pedig pont
+  // annyira rombolja a kapu hitelét, mint egy elmulasztott hiba.
+  if (idoArany <= 1.45) ok(`a felületek ${((idoArany - 1) * 100).toFixed(0)} %-ot tesznek a képkocka-időhöz (keret: +45 %)`);
   else rossz(`a felületek ${((idoArany - 1) * 100).toFixed(0)} %-kal lassítják a képkockát — ez már a szomszéd sáv kapuját is megbuktatja`);
   if (ido.keszitesMs <= 900) ok(`a teljes készlet ${ido.keszitesMs.toFixed(0)} ms alatt áll elő (keret: 900 ms)`);
   else rossz(`${ido.keszitesMs.toFixed(0)} ms az előállítás — ennyivel később indul a játék`);

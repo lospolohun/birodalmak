@@ -11,7 +11,7 @@
 // az AoC-nál már megégettük magunkat azzal, hogy két helyen állt verziószám.
 
 /** A játék verziója. EZ az igazság, nem a package.json. */
-export const VERZIO = '1.0.0';
+export const VERZIO = '1.1.0';
 export const JATEK_NEV = 'PORTAL HUB TYCOON';
 
 // ── IDŐ ───────────────────────────────────────────────────────────────────

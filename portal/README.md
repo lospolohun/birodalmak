@@ -89,11 +89,13 @@ az, hogy a felület bármikor átírható anélkül, hogy a gazdaság elcsúszna
 ```bash
 npm run portal:det       # determinizmus + működés + végigjátszás (11 vizsgálat)
 npm run portal:mertan    # 3D-mértan: keret és sziluett-ujjlenyomat
-npm run portal:hang      # hangrendszer: katalógus, jelszint, böngésző
+npm run portal:hang      # hangrendszer: sztereó, torlódás, dinamika, jelszint
 npm run portal:bongeszo  # elindul-e, működik-e, ment-e
 npm run portal:latvany   # látvány: napszak, áttetsző szintek, részecskék
+npm run portal:textura   # textúrák: mintázottság, uv, képkocka-ár
 npm run portal:kiadas    # kiadhatóság: verzió, nyomok, külső hivatkozás
-npm run portal:szonda    # mind egyben
+npm run portal:szonda    # mind a hét egyben
+npm run portal:csomag    # kirakási csomag SkyNetre (lásd KIRAKAS.md)
 node portal/tools/egyensuly.mjs 60000 8   # egyensúly-mérés (percek)
 ```
 
@@ -101,5 +103,9 @@ node portal/tools/egyensuly.mjs 60000 8   # egyensúly-mérés (percek)
 esik). Az `npm run portal:kep` képei geometriát és színt mutatnak, sebességet
 nem. Az FPS-mérés valódi GPU-s gép dolga.
 
-Részletek: [`PORTAL_TERV.md`](PORTAL_TERV.md) ·
-mérések: [`qa/`](qa/) · egyensúly: [`qa/EGYENSULY.md`](qa/EGYENSULY.md)
+**Ha most kapcsolódsz be: [`ATADO.md`](ATADO.md).** Az az egyetlen fájl,
+amit el kell olvasni.
+
+Részletek: [`PORTAL_TERV.md`](PORTAL_TERV.md) · kirakás:
+[`KIRAKAS.md`](KIRAKAS.md) · mérések: [`qa/`](qa/) —
+[egyensúly](qa/EGYENSULY.md) · [hang](qa/HANG.md) · [QA-kör](qa/QA_KOR.md)

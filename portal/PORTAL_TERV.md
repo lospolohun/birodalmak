@@ -19,12 +19,16 @@ oszt meg:
 ```bash
 npm run portal:dev         # fejlesztői kiszolgáló (5274)
 npm run portal:build       # dist/
-npm run portal:det         # determinizmus-szonda — EZ A FŐ KAPU (9 vizsgálat)
+npm run portal:det         # determinizmus — EZ A FŐ KAPU (11 vizsgálat)
 npm run portal:mertan      # a 3D-mértan kerete és sziluett-ujjlenyomata
-npm run portal:hang        # hangrendszer (katalógus + böngésző + jelszint)
+npm run portal:hang        # hangrendszer (sztereó, torlódás, dinamika)
 npm run portal:bongeszo    # böngésző-szonda (indul-e, működik-e, ment-e)
+npm run portal:latvany     # napszak, szellemszint, részecskekeret
+npm run portal:textura     # textúrák: mintázottság, uv, képkocka-ár
+npm run portal:kiadas      # kiadhatóság
 npm run portal:kep 16000   # képernyőkép egy felépített állomásról
-npm run portal:szonda      # mind egyben
+npm run portal:szonda      # mind a hét egyben
+npm run portal:csomag      # kirakási csomag (lásd KIRAKAS.md)
 node portal/tools/egyensuly.mjs 60000 8   # egyensúly-mérés (percek)
 ```
 
@@ -37,6 +41,7 @@ node portal/tools/egyensuly.mjs 60000 8   # egyensúly-mérés (percek)
   src/sim/     A VILÁG. Nincs benne three, DOM, Math.random, Date.now.
   src/render/  three.js. Csak OLVASSA a simet.
   src/ui/      DOM. Csak OLVASSA a simet.
+  src/audio/   WebAudio. Csak OLVASSA a simet.
   src/fo.js    huzalozás + fix lépésközű hurok
 ```
 
@@ -54,10 +59,10 @@ következménye van, és mindhármat használjuk:
 
 ---
 
-## 3. Ami KÉSZ (v1.0)
+## 3. Ami KÉSZ (v1.1)
 
 ### Szimuláció
-- **Rács** 64×48, padló / épület / hő- / hidegzóna / tömeg rétegekkel.
+- **Rács** 96×72×3, padló / épület / hő- / hidegzóna / tömeg rétegekkel.
 - **Útkeresés**: épületenkénti BFS-távolságmező, gyorsítótárazva a rács
   verziójához kötve, tickenként korlátozott újraszámolással. Utasonként 8
   tömb-olvasás, nem A*.
@@ -79,9 +84,12 @@ következménye van, és mindhármat használjuk:
   csőddel.
 
 ### Látvány
-- Példányosított padló (sakktábla + zónaszínezés), épületek, utasok
-  (szilárd/áttetsző), dolgozók, állapotjelzők — **12 rajzolási hívás** az egész
-  jelenetre, 1200 lénnyel is.
+- Példányosított padló, épületek, utasok (szilárd/áttetsző), dolgozók,
+  állapotjelzők — **21 rajzolási hívás** az egész jelenetre, 1400 lénnyel és
+  teli részecskekerettel is.
+- **13 procedurális textúra**, canvasból, nulla képfájl: kőlap, kváder, vakolat,
+  fém, deszka, kristály, üveg, ponyva, csempe, szikla, rúnaszalag, örvény,
+  lénybőr. A padló világ-uv-t kap, hogy 8×8 KÜLÖNBÖZŐ kőlap ismétlődjön.
 - Forgó, instabilitással vörösödő portálgyűrűk, saját fénnyel.
 - Színátmenetes ég + csillagok, alaplemez a lebegő sziget alatt.
 - A hangulat LÁTSZIK: a lény színe a vörös felé csúszik, ha rossz a kedve.
@@ -105,7 +113,7 @@ következménye van, és mindhármat használjuk:
 - **Egyedi sziluett** minden épülettípusnak és minden fajnak.
 
 ### v0.3 — a többszintes állomás
-- A rács három dimenziós (64×48×3). A `z` a világ állapota, nem nézet.
+- A rács három dimenziós. A `z` a világ állapota, nem nézet.
 - **Mozgólépcső** (olcsó, lassú) és **teleport lift** (drága, azonnali) mint
   átjáró; a szintváltás IDŐBE kerül.
 - Alátámasztás: emeleti padló csak padló fölé. Az átjáró cellája JÁRHATÓ.
@@ -142,7 +150,7 @@ következménye van, és mindhármat használjuk:
 - **Nehézségi fokozatok** (könnyű / normál / kemény) szorzókkal. A fokozat a
   világ állapota: a mentés viszi, az ellenőrző-összeg tartalmazza.
 - **Bérbeadás**: a bolt, étterem, könyvesbolt és VIP kiadható — nincs
-  személyzeti gond, napi fix díj, cserébe a bevétel 42 %-a.
+  személyzeti gond, napi fix díj, cserébe a bevétel 40 %-a (`BERLET_RESZESEDES = 0,60` marad nálunk).
 - **Érkezési csatornák**: Vasútállomás, Léghajó-kikötő (csak EMELETEN!),
   Űrkapu. Nincs instabilitásuk és nem fogyasztanak kristályt — ez a
   „nyugodt" bevételi ág a kapuk mellett.
@@ -158,11 +166,12 @@ következménye van, és mindhármat használjuk:
 | hang-szonda | üres állomás 0,028 → nyüzsgő+instabil 0,427 jelszint |
 | böngésző-szonda | 9 vizsgálat zöld, a betöltés bitre azonos |
 | látvány-szonda | napszak, áttetsző szintek, zárt részecskekeret |
+| textúra-szonda | 13 procedurális textúra, +14 % képkocka-ár, 0 képfájl |
 | kiadás-ellenőrző | 7 vizsgálat zöld |
 | egyensúly (80 végigjátszás) | **6 stratégia nyer 8/8-at**, 4 egyszer sem, 0 csőd |
 | ms/tick 1200 utasnál | **0,137 ms** (node, felhő) |
-| rajzolási hívás | 22 — 1000+ lénnyel ÉS teli részecskekerettel |
-| build | 878 kB / 243 kB gzip (ebből a three.js a nagyobb rész) |
+| rajzolási hívás | 21 — 1400 lénnyel ÉS teli részecskekerettel |
+| build | 910 kB / 255 kB gzip (ebből a three.js a nagyobb rész) |
 
 A részletes egyensúly-mérés (6 stratégia × több seed × 50 játéknap) a
 [`qa/EGYENSULY.md`](qa/EGYENSULY.md)-ben van.
