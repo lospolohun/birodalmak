@@ -298,6 +298,16 @@ export class Hud {
     const most = this.sim.tick;
     if (this._riasztasTick !== undefined && most - this._riasztasTick < 10) return;
     this._riasztasTick = most;
+    // ⚠️ AZ ELSŐ NAPON NINCS RIASZTÁS, ÉS EZ NEM LUSTASÁG. Az állomás az
+    // ingyen kapott energiamaggal indul, amiben nincs szerelő — a tanácsadó
+    // szabályai szerint ez azonnal `baj` szintű („épület személyzet nélkül").
+    // Vagyis a lüktető piros csík a MÁSODPERC NULLÁN megjelent volna, a
+    // bevezető kártyája MELLETT, ugyanabban az oszlopban. Két, egymással
+    // versengő „ezt csináld most" doboz az első percben pontosan az a
+    // zsúfoltság, ami ellen az egész elrendezés készült — és megtanítja a
+    // játékost, hogy a piros csík semmit nem jelent. Az első napon a
+    // bevezető a kalauz; a jelzőpont (💡 gomb) addig is ott van.
+    if (this.sim.nap < 2) { this.riasztas.style.display = 'none'; this._riasztasKulcs = null; return; }
     const lista = tanacsok(this.sim, 3);
     const elso = lista.find((t) => t.sulyossag === 'baj');
     const kulcs = elso ? elso.ikon + elso.cim : null;

@@ -22,9 +22,11 @@
 //   1. nincs konzol-hiba, és nincs egyetlen betöltött KÉPFÁJL sem
 //      (a `dist/` bemásolhatóságának ígérete),
 //   2. a textúra-készlet KORLÁTOS: darabszám, méret, összes képpont,
-//   3. a PADLÓ képpont-SZÓRÁSA érdemben nagyobb textúrával, mint nélküle —
-//      és közben az ÁTLAGA nem esik (nem sötétít),
-//   4. az ÉPÜLETEK ugyanez, plusz minden típus geometriáján van érvényes uv,
+//   3. a PADLÓ képpont-RÉSZLETESSÉGE (szomszédos képpontok átlagos eltérése)
+//      érdemben nagyobb textúrával, mint nélküle — és közben az ÁTLAGA nem
+//      esik, vagyis a burkolat mintát ad, nem árnyékot,
+//   4. az ÉPÜLETEK ugyanez, felületenként külön mérve, plusz minden típus
+//      geometriáján van érvényes uv,
 //   5. a rajzolási hívások száma nem nőtt, és nem nő az épületek számával,
 //   6. a textúrák EGYSZER készülnek: hatvan képkocka alatt egy sem születik.
 //
@@ -109,7 +111,7 @@ try {
   cim('0. INDULÁS');
   await lap.goto(CIM, { waitUntil: 'networkidle' });
   await varj(2200);
-  await lap.click('#modal .valasz').catch(() => {});
+  await lap.click('#modal .valasz', { timeout: 1500 }).catch(() => {});
   await varj(400);
   // Szüneteltetve mérünk: a mozgó világ (utasok, szikrák) minden szórást
   // elmosna, és a két A/B-oldal más világot látna.
@@ -118,12 +120,22 @@ try {
   ok('a játék elindult, a világ szünetel');
 
   // ── A MÉRŐ ──────────────────────────────────────────────────────────────
-  // Átlag ÉS szórás egyetlen `readPixels`-ből, közvetlenül a `rajzol()` után
+  // Egyetlen `readPixels`-ből három szám, közvetlenül a `rajzol()` után
   // (nincs `preserveDrawingBuffer`, tehát máskor nem is olvasható).
   //
-  // A SZÓRÁS a lényeg: az „van-e egyáltalán minta ezen a felületen?" kérdésre
-  // ez az egyetlen szám válaszol. Egy lapos, egyszínű felület szórása a
-  // fényárnyalatokból jön; egy textúrázotté ennél nagyságrendekkel nagyobb.
+  //   atlag   — a felület fényessége. A textúra ezt NE mozdítsa el.
+  //   szoras  — a képpontok globális szórása. Tájékoztató.
+  //   reszlet — SZOMSZÉDOS képpontok átlagos eltérése. EZ A LÉNYEG.
+  //
+  // ⚠️ MIÉRT NEM A SZÓRÁS DÖNT. Az első változat a globális szórást mérte, és
+  // az épületeknél MEGBUKOTT — pedig a textúrák ott voltak. A magyarázat: egy
+  // épületsor szórását a HÁZAK EGYMÁSTÓL ELTÉRŐ SZÍNE uralja (piros mellett
+  // türkiz), nem a felületük mintája. A textúra ezt a színskálát enyhén
+  // összenyomja, tehát a globális szórást CSÖKKENTI, miközben minden felületen
+  // van minta. A szomszédos képpontok eltérése viszont pontosan azt méri, ami
+  // a kérdés volt: van-e FINOM szerkezet a felületen. Nagy, egybefüggő
+  // színfoltokat nem lát, cserébe a fugát, a szegecset és a deszkaerezetet
+  // igen.
   await lap.evaluate(() => {
     const sz = window.PHT.szinter;
     window.__mertek = (elokeszit, w = 300, h = 220, eltolY = 0) => new Promise((r) => requestAnimationFrame(() => {
@@ -134,16 +146,23 @@ try {
       const y = Math.max(0, (((gl.drawingBufferHeight - h) / 2) + (eltolY || 0)) | 0);
       const px = new Uint8Array(w * h * 4);
       gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      let s = 0, s2 = 0;
       const n = w * h;
-      for (let i = 0; i < px.length; i += 4) {
-        const f = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
-        s += f; s2 += f * f;
+      const f = new Float32Array(n);
+      let s = 0, s2 = 0;
+      for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+        const l = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+        f[j] = l; s += l; s2 += l * l;
+      }
+      let el = 0, db = 0;
+      for (let y2 = 0; y2 < h; y2++) {
+        const o = y2 * w;
+        for (let x2 = 1; x2 < w; x2++) { el += Math.abs(f[o + x2] - f[o + x2 - 1]); db++; }
       }
       const atlag = s / n;
       r({
         atlag,
         szoras: Math.sqrt(Math.max(0, s2 / n - atlag * atlag)),
+        reszlet: el / Math.max(1, db),
         hivas: sz.renderelo.info.render.calls,
       });
     }));
@@ -174,12 +193,13 @@ try {
   // ════════════════════════════════════════════════════════════════════════
   cim('2. A TEXTÚRA-KÉSZLET KORLÁTOS');
   const keszlet = await lap.evaluate(async () => {
-    // ⚠️ A lapon belül NEM lehet `import('three')`-t írni: csupasz modulnév,
-    // a böngésző nem oldja fel. A `texturak.js`-t viszont URL-lel be tudjuk
-    // húzni, és mivel a `fo.js` ugyanezt az URL-t importálta, UGYANAZT a
-    // modulpéldányt kapjuk — tehát a leltár a valóban használt készleté.
+    // ⚠️ A LELTÁR A JÁTÉK KÉSZLETÉRŐL SZÓL, nem a modulé. A `texturaLista()`
+    // tiszta függvény, és azt a készletet kapja, amit az állomásréteg tényleg
+    // használ (`PHT.allomas.tex`). Az első változat modulszintű állapotból
+    // olvasott, és amikor a vite másik modulpéldányt adott a szondának, NULLA
+    // textúrát jelentett — zölden. Egy mérőeszköz ne tudjon így hazudni.
     const m = await import('/src/render/texturak.js');
-    const lista = m.texturaLista();
+    const lista = m.texturaLista(window.PHT.allomas.tex);
     return {
       lista,
       db: lista.length,
@@ -195,8 +215,10 @@ try {
   });
   adat(keszlet.lista.map((t) => `${t.nev} ${t.sz}×${t.m}`).join(' · '));
   adat(`összesen ${keszlet.db} textúra, ${(keszlet.keppont / 1e6).toFixed(2)} M képpont, legnagyobb él ${keszlet.max} · GPU-n ${keszlet.gpu} textúra`);
-  if (keszlet.db <= 20) ok(`${keszlet.db} textúra (keret: 20)`);
-  else rossz(`${keszlet.db} textúra — túl sok`);
+  // ⚠️ ALSÓ HATÁR IS KELL. Egy üres leltár minden felső korlátnak megfelel —
+  // a szonda korábbi változata pontosan így adott zöldet nulla textúrára.
+  if (keszlet.db >= 8 && keszlet.db <= 20) ok(`${keszlet.db} textúra (keret: 8–20)`);
+  else rossz(`${keszlet.db} textúra — a keret 8 és 20 között van`);
   if (keszlet.max <= 1024) ok(`a legnagyobb él ${keszlet.max} képpont (keret: 1024)`);
   else rossz(`${keszlet.max} képpontos textúra — ez már pazarlás`);
   if (keszlet.keppont <= 4e6) ok(`${(keszlet.keppont / 1e6).toFixed(2)} M képpont összesen (keret: 4 M)`);
@@ -214,7 +236,10 @@ try {
     // és azok szórása összekeveredne a burkolatéval.
     sim.penz = 900000;
     const bx = sim.kezdoX + 34, by = sim.kezdoY + 2;
-    sim.parancs({ fajta: 'padlo', x: bx, y: by, sz: 16, m: 14, z: 0 });
+    // 28 cella széles: a 4. vizsgálat hat épülete négyesével áll ide, és az
+    // első változatban a hatodik már a padlón KÍVÜLRE esett — a `karbantarto`
+    // némán fel sem épült, a mérés meg kettőt mért három helyett.
+    sim.parancs({ fajta: 'padlo', x: bx, y: by, sz: 28, m: 14, z: 0 });
     sim.lep(); sim.lep();
     // Majdnem felülnézet, delelő nap: a burkolatot nézzük, nem az árnyékokat.
     window.__oratAllit(0.5);
@@ -225,22 +250,34 @@ try {
 
     const anyag = P.allomas.padlo.material;
     const terkep = anyag.map;
-    const vele = await window.__mertek(() => { anyag.map = terkep; anyag.needsUpdate = true; });
-    const nelkule = await window.__mertek(() => { anyag.map = null; anyag.needsUpdate = true; });
-    await window.__mertek(() => { anyag.map = terkep; anyag.needsUpdate = true; });
+    const komp = P.allomas.padloFenyKomp;
+    // ⚠️ AZ A/B MINDKÉT FELET ÁTÁLLÍTJA. A fénykompenzáció a CELLASZÍNEKBEN
+    // ül, nem az anyagban — ha csak a `map`-et kapcsolnánk ki, a „lapos" oldal
+    // is a kompenzált, világosabb színekkel rajzolódna, és a mérés a saját
+    // korrekcióját mérné. A `padloFenyKomp = 1` + újraépítés adja azt az
+    // állapotot, ami a textúra ELŐTT volt.
+    const allit = (van) => {
+      anyag.map = van ? terkep : null;
+      anyag.needsUpdate = true;
+      P.allomas.padloFenyKomp = van ? komp : 1;
+      P.allomas._padlotEpit();
+    };
+    const vele = await window.__mertek(() => allit(true));
+    const nelkule = await window.__mertek(() => allit(false));
+    await window.__mertek(() => allit(true));
     return {
       vele, nelkule,
       cellak: P.allomas.padlo.count,
-      komp: P.allomas.padloFenyKomp,
+      komp,
       uvSkala: !!anyag.onBeforeCompile,
     };
   });
   adat(`padlócella ${padlo.cellak} · fénykompenzáció ×${padlo.komp.toFixed(3)}`);
-  adat(`LAPOS  átlag ${padlo.nelkule.atlag.toFixed(2)} · szórás ${padlo.nelkule.szoras.toFixed(2)}`);
-  adat(`TEXTÚRÁS átlag ${padlo.vele.atlag.toFixed(2)} · szórás ${padlo.vele.szoras.toFixed(2)}`);
-  const padloArany = padlo.vele.szoras / Math.max(0.01, padlo.nelkule.szoras);
-  if (padloArany >= 1.6) ok(`a burkolat szórása ${padloArany.toFixed(2)}× a lapos felületének (küszöb 1,6×)`);
-  else rossz(`a padlón alig van minta: a szórás csak ${padloArany.toFixed(2)}× a laposé`);
+  adat(`LAPOS    átlag ${padlo.nelkule.atlag.toFixed(2)} · szórás ${padlo.nelkule.szoras.toFixed(2)} · részlet ${padlo.nelkule.reszlet.toFixed(3)}`);
+  adat(`TEXTÚRÁS átlag ${padlo.vele.atlag.toFixed(2)} · szórás ${padlo.vele.szoras.toFixed(2)} · részlet ${padlo.vele.reszlet.toFixed(3)}`);
+  const padloArany = padlo.vele.reszlet / Math.max(0.001, padlo.nelkule.reszlet);
+  if (padloArany >= 2.0) ok(`a burkolatnak VAN mintája: a részletesség ${padloArany.toFixed(2)}× a lapos felületé (küszöb 2×)`);
+  else rossz(`a padlón alig van minta: a részletesség csak ${padloArany.toFixed(2)}× a laposé`);
   // A csillagok tanulsága: a dísz nem vihet el fényt.
   const padloFeny = padlo.vele.atlag / Math.max(0.01, padlo.nelkule.atlag);
   if (padloFeny > 0.85 && padloFeny < 1.20) ok(`a textúra nem sötétít: az átlagfényesség ${(padloFeny * 100 - 100).toFixed(1)} %-kal tér el`);
@@ -294,40 +331,76 @@ try {
       }
     }
 
-    sz.cel.set(bx + 12, 1.2, by + 5);
-    sz.tav = 15; sz.dolt = 1.02; sz.szog = 1.35;
-    sz._kamerat();
-    P.allomas.frissit(1);
+    // ⚠️ A PADLÓT ÉS A LÉNYEKET EL KELL TÜNTETNI A MÉRÉS IDEJÉRE.
+    // Ez a szonda első változatában valódi hamis bukást okozott: a padló
+    // MINDKÉT oldalon textúrázott maradt, a fugavonalai pedig épp a
+    // szomszédos képpontok eltérését dagasztották fel — vagyis a mérés
+    // alapvonala tele volt olyan részlettel, amit nem az épületek adtak.
+    // Az épületekről szóló állítást csak úgy lehet igazolni, ha a képen
+    // KIZÁRÓLAG épület és ég van.
+    const rejtve = [P.allomas.padlo, P.allomas.padloSzellem, P.allomas.alaplemez, P.lenyek.gyoker];
+    for (const o of rejtve) o.visible = false;
 
     const anyagok = [];
     for (const [, b] of P.allomas.tipusMesh) {
       for (const mesh of [b.test, b.disz]) if (mesh && mesh.material.map) anyagok.push(mesh.material);
     }
     const terkepek = anyagok.map((a) => a.map);
-    const vele = await window.__mertek(() => {
-      anyagok.forEach((a, i) => { a.map = terkepek[i]; a.needsUpdate = true; });
-    }, 420, 220);
-    const nelkule = await window.__mertek(() => {
-      anyagok.forEach((a) => { a.map = null; a.needsUpdate = true; });
-    }, 420, 220);
-    await window.__mertek(() => {
-      anyagok.forEach((a, i) => { a.map = terkepek[i]; a.needsUpdate = true; });
-    }, 420, 220);
-    return { vele, nelkule, uvRendben, uvGond, lenyUv, lenyGond, anyagDb: anyagok.length };
+    const komp = P.allomas.epuletFenyKomp;
+    // Ugyanaz az elv, mint a padlónál: a fénykompenzáció a PÉLDÁNYSZÍNEKBEN
+    // ül, tehát az A/B-hez azt is vissza kell venni — különben a „lapos" oldal
+    // a textúrához hangolt, világosabb színekkel indulna.
+    const allit = (van) => {
+      anyagok.forEach((a, i) => { a.map = van ? terkepek[i] : null; a.needsUpdate = true; });
+      P.allomas.epuletFenyKomp = van ? komp : 0;
+      P.allomas._epuleteketEpit();
+    };
+    // ⚠️ KÖZELRŐL, EGYESÉVEL MÉRÜNK. Egy távolabbi összkép fele égbolt, az
+    // pedig tökéletesen sima — a részletesség-arányt az hígítja fel, nem a
+    // felület. Ezért a kamera EGY épület elé áll, és az ablak akkora, hogy
+    // szinte csak a fala legyen benne. Három különböző anyagot mérünk
+    // (csempe, deszka, fém), és a LEGROSSZABB számít: egy jó és két rossz
+    // felületből ne lehessen zöld átlagot csinálni.
+    const merEgyet = async (kod) => {
+      let ep = null;
+      for (const e of sim.epuletek) if (e && e.kod === kod && e.x >= bx) { ep = e; break; }
+      if (!ep) return null;
+      sz.cel.set(ep.x + ep.sz * 0.5, 0.75, ep.y + ep.m * 0.5);
+      sz.tav = 2.6 + Math.max(ep.sz, ep.m) * 0.9;
+      sz.dolt = 1.14; sz.szog = 1.2;
+      sz._kamerat();
+      const v = await window.__mertek(() => allit(true), 220, 150);
+      const n = await window.__mertek(() => allit(false), 220, 150);
+      return { kod, vele: v, nelkule: n };
+    };
+    const kozeliek = [];
+    for (const kod of ['wc', 'konyvesbolt', 'karbantarto']) {
+      const e = await merEgyet(kod);
+      if (e) kozeliek.push(e);
+    }
+    allit(true);
+    for (const o of rejtve) o.visible = true;
+    return { kozeliek, uvRendben, uvGond, lenyUv, lenyGond, anyagDb: anyagok.length };
   });
   adat(`textúrázott épület-anyag ${epuletek.anyagDb} · érvényes uv ${epuletek.uvRendben} · lény-mesh uv-val ${epuletek.lenyUv}`);
-  adat(`LAPOS  átlag ${epuletek.nelkule.atlag.toFixed(2)} · szórás ${epuletek.nelkule.szoras.toFixed(2)}`);
-  adat(`TEXTÚRÁS átlag ${epuletek.vele.atlag.toFixed(2)} · szórás ${epuletek.vele.szoras.toFixed(2)}`);
   if (epuletek.uvGond.length === 0) ok(`mind a ${epuletek.uvRendben} textúrázott épület-mesh érvényes uv-t kapott`);
   else for (const g of epuletek.uvGond.slice(0, 8)) rossz(g);
   if (epuletek.lenyGond === 0 && epuletek.lenyUv > 0) ok(`mind a ${epuletek.lenyUv} textúrázott lény-mesh érvényes uv-t kapott`);
   else rossz(`${epuletek.lenyGond} lény-mesh textúrázott, de uv nélkül`);
-  const epArany = epuletek.vele.szoras / Math.max(0.01, epuletek.nelkule.szoras);
-  if (epArany >= 1.15) ok(`az épületsor szórása ${epArany.toFixed(2)}× a laposé (küszöb 1,15×)`);
-  else rossz(`az épületeken alig látszik a felület: szórás ${epArany.toFixed(2)}×`);
-  const epFeny = epuletek.vele.atlag / Math.max(0.01, epuletek.nelkule.atlag);
-  if (epFeny > 0.80) ok(`a felületek nem sötétítik el az állomást (×${epFeny.toFixed(3)})`);
-  else rossz(`a textúrák ${((1 - epFeny) * 100).toFixed(0)} %-kal sötétebbé tették az épületeket`);
+
+  let legrosszabb = 99, legrosszabbKod = '—', legsotetebb = 99;
+  for (const e of epuletek.kozeliek) {
+    const a = e.vele.reszlet / Math.max(0.001, e.nelkule.reszlet);
+    const f = e.vele.atlag / Math.max(0.01, e.nelkule.atlag);
+    adat(`${e.kod.padEnd(12)} részlet ${e.nelkule.reszlet.toFixed(3)} → ${e.vele.reszlet.toFixed(3)} (${a.toFixed(2)}×) · fényesség ×${f.toFixed(3)}`);
+    if (a < legrosszabb) { legrosszabb = a; legrosszabbKod = e.kod; }
+    if (f < legsotetebb) legsotetebb = f;
+  }
+  if (epuletek.kozeliek.length < 3) rossz(`csak ${epuletek.kozeliek.length} épületet sikerült közelről megmérni`);
+  else if (legrosszabb >= 1.6) ok(`a leggyengébb felület is ${legrosszabb.toFixed(2)}×-es részletességet ad (${legrosszabbKod}, küszöb 1,6×)`);
+  else rossz(`a(z) ${legrosszabbKod} felületén alig látszik a textúra: részletesség ${legrosszabb.toFixed(2)}×`);
+  if (legsotetebb > 0.85) ok(`a felületek nem sötétítik el az épületeket (a legrosszabb ×${legsotetebb.toFixed(3)})`);
+  else rossz(`a textúrák ${((1 - legsotetebb) * 100).toFixed(0)} %-kal sötétebbé tettek egy épületet`);
 
   // ════════════════════════════════════════════════════════════════════════
   cim('5. A PÉLDÁNYOSÍTÁS ÉP: A HÍVÁSSZÁM NEM NŐ AZ ÉPÜLETEKKEL');
@@ -399,7 +472,7 @@ try {
     const fk = m.v01Uj();
     for (let t = sim.tick; t < 5200; t++) { fk(sim, t); sim.lep(); }
   });
-  for (let i = 0; i < 3; i++) { await lap.click('#modal .valasz').catch(() => {}); await varj(200); }
+  for (let i = 0; i < 3; i++) { await lap.click('#modal .valasz', { timeout: 1500 }).catch(() => {}); await varj(200); }
 
   const kepek = [
     // név, napszak, távolság, dőlés, szög, célpont-eltolás
@@ -421,7 +494,7 @@ try {
     await lap.keyboard.press('2');
     await varj(800);
     await lap.keyboard.press('1');
-    for (let i = 0; i < 2; i++) { await lap.click('#modal .valasz').catch(() => {}); await varj(150); }
+    for (let i = 0; i < 2; i++) { await lap.click('#modal .valasz', { timeout: 1500 }).catch(() => {}); await varj(150); }
     await lap.screenshot({ path: join(GYOKER, 'qa', nevKep) });
   }
   await lap.evaluate(() => window.__oratElenged());

@@ -96,6 +96,9 @@ const MAX_HOSSZ = 4.0;
 const KIEMELKEDES_DB = 6;
 /** Egyetlen sávban legfeljebb ennyi lehet a teljes keverék energiájából. */
 const SAV_MAX = 0.62;
+/** Sztereó-korreláció: e fölött monó a hangkép, e alatt ellenfázisú. */
+const KORRELACIO_MAX = 0.90;
+const KORRELACIO_MIN = 0.00;
 /** Az ismétlődő hang alaphangjának ennyit KELL szórnia — enélkül gépies. */
 const ISMETLES_MIN = 0.0025;
 /** …de ennyinél többet nem: onnantól elhangolt, nem változatos. */
@@ -710,15 +713,28 @@ async function hangkepet(lap, kodok) {
       for (let i = i0; i < i1; i++) { const v = Math.abs(x[i]); if (v > m) m = v; }
       return m;
     };
-    /** A leghangosabb 100 ms — ez az, amit a fül „hangosságnak" hall. */
+    /**
+     * A leghangosabb 85 ms, A-SÚLYOZVA.
+     *
+     * MIÉRT nem sima RMS: a nyüzsgő állomás nyers effektív értékét a
+     * portálzúgás 23 és 46 Hz-es alaphangja uralja — az viszont a fül
+     * számára alig hallható, miközben a wattszámban ő a főszereplő. Nyers
+     * RMS-sel mérve tehát a háttér sokkal „hangosabbnak" látszik, mint
+     * amilyennek hallatszik, és a fölé emelkedő riasztás margója
+     * alábecsült. A hangosság kérdésére a fül a mérce.
+     */
     const rovidRms = (x, t0, t1) => {
-      const l = Math.round(0.1 * SR);
-      const i0 = Math.round(t0 * SR), i1 = Math.min(x.length, Math.round(t1 * SR));
+      const n = 4096;
+      const lepes = n >> 1;
+      const i0 = Math.round(t0 * SR), i1 = Math.min(x.length - n, Math.round(t1 * SR));
       let m = 0;
-      for (let k = i0; k + l <= i1; k += l >> 2) {
+      for (let k = i0; k <= i1; k += lepes) {
+        const p = spektrum(x, k, n);
         let s = 0;
-        for (let i = k; i < k + l; i++) s += x[i] * x[i];
-        const v = Math.sqrt(s / l);
+        for (let i = 1; i < p.length; i++) s += p[i] * sulyA((i * SR) / n);
+        // Az ablakfüggvény és az FFT skálázása állandó szorzó — a
+        // KÜLÖNBSÉGET mérjük dB-ben, tehát kiesik.
+        const v = Math.sqrt(s) / n;
         if (v > m) m = v;
       }
       return m;
@@ -728,7 +744,25 @@ async function hangkepet(lap, kodok) {
       for (let i = 0; i < L.length; i++) if (Math.abs(L[i]) >= 0.999 || Math.abs(R[i]) >= 0.999) n++;
       return n;
     };
-    const korrelacio = (L, R) => {
+    /**
+     * Egypólusú felüláteresztő. A korrelációt e MÖGÖTT mérjük.
+     *
+     * MIÉRT: a keverék nyers energiáját a portál 23 Hz-es alaphangja uralja,
+     * az pedig SZÁNDÉKOSAN monó (a szétterített basszus monóban kioltja
+     * magát, hangszórón pedig szétesik). Ha a mélyet is beleszámolnánk, a
+     * korreláció akkor is 0,9 fölött maradna, ha fölötte minden réteg
+     * tökéletesen széles — vagyis a szám nem azt mérné, amit a fül térnek
+     * hall.
+     */
+    const felul = (x, fc) => {
+      const a = Math.exp((-2 * Math.PI * fc) / SR);
+      const y = new Float32Array(x.length);
+      let ex = 0, ey = 0;
+      for (let i = 0; i < x.length; i++) { ey = a * (ey + x[i] - ex); ex = x[i]; y[i] = ey; }
+      return y;
+    };
+    const korrelacio = (Lny, Rny) => {
+      const L = felul(Lny, 200), R = felul(Rny, 200);
       let a = 0, b = 0, ab = 0;
       for (let i = 0; i < L.length; i++) { a += L[i] * L[i]; b += R[i] * R[i]; ab += L[i] * R[i]; }
       return a > 0 && b > 0 ? ab / Math.sqrt(a * b) : 1;
@@ -879,10 +913,21 @@ async function hangkepet(lap, kodok) {
   const K = M.keverek;
   info(`teljes keverék: RMS ${sz(K.rms)} · csúcs ${sz(K.csucs)} · crest ${sz(K.crest, 1)} dB · súlypont ${Math.round(K.centroid)} Hz`);
   info(`sávok (A-súlyozva): ${K.savok.map((v, i) => `${SAV_NEV[i]} ${(v * 100).toFixed(1)}%`).join(' · ')}`);
-  info(`sztereó-korreláció: ${sz(K.korrelacio)}  (1,000 = teljesen monó)`);
+  info(`sztereó-korreláció 200 Hz fölött: ${sz(K.korrelacio)}  (1,000 = teljesen monó)`);
 
   if (K.levagas === 0) ok('a nyüzsgő állomás keveréke nem vág le (0 minta a határon)');
   else rossz(`${K.levagas} levágott minta a teljes keverékben — a limiter alatt is torzul`);
+
+  // ── SZTEREÓ ────────────────────────────────────────────────────────────
+  // Két hibát kell egyszerre elkerülni, és a korreláció mindkettőt mutatja.
+  // 1,000 közelében a játék MONÓ: egy ezer lényes csarnok egyetlen pontból
+  // szól, és az agy „kis doboznak" hallja. Nulla ALATT viszont a két oldal
+  // ellenfázisba kerül — az még rosszabb, mert monóban lejátszva (laptop-
+  // hangszóró, telefon) a tartalom KIOLTJA magát, és a játékos halkabb,
+  // üresebb hangképet kap, mint amit szánunk neki.
+  if (K.korrelacio > KORRELACIO_MAX) rossz(`a keverék gyakorlatilag monó (korreláció ${sz(K.korrelacio)}) — nincs térhatás`);
+  else if (K.korrelacio < KORRELACIO_MIN) rossz(`a két csatorna ellenfázisban van (korreláció ${sz(K.korrelacio)}) — monóban kioltaná magát`);
+  else ok(`valódi sztereó, és monóban is összeáll (korreláció ${sz(K.korrelacio)})`);
 
   const legnagyobbSav = Math.max(...K.savok);
   const melyik = SAV_NEV[K.savok.indexOf(legnagyobbSav)];

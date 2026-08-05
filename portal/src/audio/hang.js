@@ -182,7 +182,7 @@ export class Hang {
     const c = this.ctx;
 
     this.puhaVago = c.createWaveShaper();
-    this.puhaVago.curve = puhaGorbe(KEVERES.vagoMinta, KEVERES.vagoHajlat);
+    this.puhaVago.curve = puhaGorbe(KEVERES.vagoMinta, KEVERES.vagoKuszob);
     this.puhaVago.oversample = '2x';
     this.puhaVago.connect(c.destination);
 
@@ -288,14 +288,29 @@ export class Hang {
       plfo.connect(plfoG); plfoG.connect(ppan.pan); plfo.start();
     }
 
+    // A két elhangolt fűrész KÉT OLDALRA megy. Ez az egész keverék
+    // leghangosabb rétege; amíg monó volt, a teljes hangkép sztereó-
+    // korrelációja 0,91 maradt, vagyis a játék gyakorlatilag monóban szólt
+    // akkor is, amikor minden más réteg már széles volt. A lebegtetés
+    // ráadásul így lesz igazán jó: a két fűrész nem EGY pontban ver
+    // egymással, hanem a fej két oldala között kavarog.
+    //
+    // A MÉLY (sub) és a disszonáns felhang KÖZÉPEN marad. A mély azért, mert
+    // a szétterített basszus monóban kioltja magát és hangszórón is szétesik;
+    // a felhang azért, mert az a VESZÉLY jelzése — annak pont hogy egy
+    // helyről, szemből kell jönnie.
     const o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = A.portal.alapF;
     const o2 = c.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = A.portal.alapF * A.portal.lebegtetes;
+    const o1p = panoramazo(c, -A.portal.szelesseg);
+    const o2p = panoramazo(c, A.portal.szelesseg);
     const sub = c.createOscillator(); sub.type = 'sine'; sub.frequency.value = A.portal.alapF * 0.5;
     const subG = c.createGain(); subG.gain.value = 1.4;
     const dissz = c.createOscillator(); dissz.type = 'triangle';
     dissz.frequency.value = A.portal.alapF * A.portal.disszKonszonans * 2;
     const disszG = c.createGain(); disszG.gain.value = CSEND;
-    o1.connect(f); o2.connect(f); sub.connect(subG); subG.connect(f);
+    o1.connect(o1p); o1p.connect(f);
+    o2.connect(o2p); o2p.connect(f);
+    sub.connect(subG); subG.connect(f);
     dissz.connect(disszG); disszG.connect(f);
 
     const lfo = c.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = A.portal.lfoMin;
@@ -392,7 +407,7 @@ export class Hang {
       // hallatszik; ugyanaz a négy hang a sztereó képben elosztva „térnek".
       // A szélső értékek szándékosan mérsékeltek: a zene ne vonja el a
       // figyelmet a hangoktól, amik a világ állapotát mondják.
-      const pan = panoramazo(c, ((i / (ZENE.padHangok - 1)) * 2 - 1) * 0.55);
+      const pan = panoramazo(c, ((i / (ZENE.padHangok - 1)) * 2 - 1) * 0.38);
       o.connect(og); og.connect(pan); pan.connect(f);
       o.start();
       hangok[i] = o;

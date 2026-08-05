@@ -82,17 +82,20 @@ export function zengetoPuffer(ctx, t) {
     }
   }
 
-  // Normálás energiára: enélkül a zengés hangereje a hossztól függene, és
-  // minden hangolásnál újra kellene keverni.
-  let ossz = 0;
+  // ── NORMÁLÁS: A NÉGYZETÖSSZEGRE, NEM AZ RMS-RE ────────────────────────
+  // Egy konvolúció ERŐSÍTÉSE nem a válasz átlagos amplitúdója, hanem a
+  // négyzetösszegének gyöke — az energia. Az első változat mintánkénti
+  // RMS-re normált 0,045-re, ami 72 000 mintán √(0,045²·72000) ≈ 12-szeres
+  // erősítést jelentett: a zengés HÁROMSZOR hangosabb lett a száraz jelnél,
+  // és az egész keverék a zengetőn keresztül szólt. Így viszont a zengető
+  // egységnyi erősítésű, tehát a szintje ott van, ahol a keverő mondja — és
+  // a terem hosszának hangolása nem mozdítja el a hangerőt.
   for (let ch = 0; ch < 2; ch++) {
     const d = puf.getChannelData(ch);
+    let ossz = 0;
     for (let i = 0; i < n; i++) ossz += d[i] * d[i];
-  }
-  const norm = ossz > 0 ? 1 / Math.sqrt(ossz / (2 * n)) : 1;
-  for (let ch = 0; ch < 2; ch++) {
-    const d = puf.getChannelData(ch);
-    for (let i = 0; i < n; i++) d[i] *= norm * 0.045;
+    const norm = ossz > 0 ? 1 / Math.sqrt(ossz) : 1;
+    for (let i = 0; i < n; i++) d[i] *= norm;
   }
   return puf;
 }
@@ -108,20 +111,33 @@ export function zengetoPuffer(ctx, t) {
  * KEMÉNYEN vág, és a kemény vágás négyszögjelet csinál: ez az a reccsenés,
  * amit a fül azonnal hibaként hall.
  *
- * A `tanh` alakú görbe ezt úgy előzi meg, hogy a nagy jeleket FOLYAMATOSAN
- * hajlítja az 1,0 felé — sosem éri el, tehát matematikailag nem lehet
- * levágás. Kis jelnél (a játék 99 %-a) a görbe gyakorlatilag egyenes, tehát
- * a normál hangképet nem színezi.
+ * A görbe LÁGY TÉRDŰ: a `kuszob` alatt pontosan egyenes (meredeksége 1),
+ * fölötte `tanh`-hal hajlik. Két dolog múlik ezen, és mindkettőt drágán
+ * tanultuk meg:
+ *
+ *   1. A MEREDEKSÉG A NULLÁBAN PONTOSAN 1 LEGYEN. Az első változat
+ *      `tanh(x·a)/tanh(a)` volt — az a kis jeleket a/tanh(a) = 1,63-szorosára
+ *      ERŐSÍTI. Mérve: a teljes keverék RMS-e 0,160-ról 0,260-ra ugrott
+ *      (+4,3 dB) attól a görbétől, ami elvileg csak véd. A védelem, ami
+ *      hangosít, nem védelem.
+ *   2. A MAXIMUM MARADJON 1,0 ALATT. A `WaveShaper` az 1,0 fölötti bemenetet
+ *      a görbe utolsó pontjára szorítja — ha az pont 1,0, akkor a „puha"
+ *      vágó pontosan ugyanúgy 1,0-ra vág, mint a hangkártya. A térd 0,62-nél
+ *      van, tehát a legnagyobb lehetséges kimenet 0,62 + 0,38·tanh(1) = 0,91.
  *
  * @param {number} n mintaszám (páratlan, hogy a 0 pontosan benne legyen)
- * @param {number} hajlat 1 = alig, 3 = telítettebb
+ * @param {number} kuszob eddig egyenes; fölötte hajlik (0,4…0,8)
  * @returns {Float32Array}
  */
-export function puhaGorbe(n, hajlat) {
+export function puhaGorbe(n, kuszob) {
   const g = new Float32Array(n);
+  const k = kuszob < 0.2 ? 0.2 : kuszob > 0.9 ? 0.9 : kuszob;
+  const sav = 1 - k;
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * 2 - 1;
-    g[i] = Math.tanh(x * hajlat) / Math.tanh(hajlat);
+    const a = Math.abs(x);
+    const y = a <= k ? a : k + sav * Math.tanh((a - k) / sav);
+    g[i] = x < 0 ? -y : y;
   }
   return g;
 }

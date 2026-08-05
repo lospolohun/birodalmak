@@ -422,6 +422,8 @@ export const AMBIENS = {
     /** A zúgás lassan vándorol a sztereó képben — a kapuk nem egy pontban vannak. */
     panLfoHz: 0.037,
     panMelyseg: 0.55,
+    /** A két elhangolt fűrész ennyire nyílik szét. A mély középen marad. */
+    szelesseg: 0.72,
     lfoMin: 0.45,           // lüktetés Hz-ben — nyugodt szívverés
     lfoMax: 3.10,           // …és pánik
     lfoMelysegMin: 0.10,
@@ -457,7 +459,7 @@ export const AMBIENS = {
      * ezer lény nem egy pontban áll. Mérve: enélkül a keverék sztereó-
      * korrelációja pontosan 1,000 volt, azaz a játék monóban szólt.
      */
-    szelesseg: 0.80,
+    szelesseg: 0.78,
     /** Hangfoszlány-esély EGY frissítési lépésben, teli állomásnál. */
     foszlanyEsely: 0.20,
     foszlanyHangolasMin: 0.62,
@@ -483,7 +485,7 @@ export const AMBIENS = {
     szuroF: 4200,
     szuroQ: 0.5,
     szintMax: 0.017,
-    szelesseg: 0.95,
+    szelesseg: 0.85,
   },
 
   /** Elégedetlenség: mély, sávtalan moraj. Sosem dallam, csak nyomás. */
@@ -539,8 +541,12 @@ export const TER = {
   sotetseg: 0.34,
   /** A korai visszaverődések ereje — ez mondja meg, mekkora a terem. */
   koraiDb: 0.30,
-  /** A zengető busz szintje a keverőben. */
-  szint: 0.9,
+  /**
+   * A zengető busz szintje. Az impulzusválasz egységnyi ENERGIÁRA van
+   * normálva (lásd `hang_ter.js`), tehát ez a szám tényleg a zengés/száraz
+   * arányt állítja, és nem mozdul el, ha a terem hosszát átírod.
+   */
+  szint: 0.55,
   /** A folyamatos rétegek (tömeg, portál) ennyit küldenek bele. */
   ambiensKuldes: 0.20,
   /** A kamerától távoli hang ennyivel többet küld — ettől lesz „messze". */
@@ -642,7 +648,7 @@ export const KEVERES = {
   // csúcsot adott, azaz 40 mintányi KEMÉNY levágást a limiter után is. A
   // tanh-görbe ezt matematikailag lehetetlenné teszi. Kis jelnél
   // gyakorlatilag egyenes, tehát a normál hangképet nem színezi.
-  vagoHajlat: 1.45,
+  vagoKuszob: 0.62,
   vagoMinta: 4097,
 
   // ── TORLÓDÁS ELLEN ──────────────────────────────────────────────────────
@@ -666,7 +672,7 @@ export const KEVERES = {
   // limiter úgyis visszahúzza); a helyes az, amit minden rádióadás csinál:
   // a fontos jel alatt a háttér HALKUL. Az effekt-busz nem duckol, csak az
   // ambiens és a zene — a visszajelzések élesek maradnak.
-  duckMagas: 0.66,        // 3. elsőbbség (omlás, csőd, fanfár): −9,4 dB
+  duckMagas: 0.72,        // 3. elsőbbség (omlás, csőd, fanfár): −11,1 dB
   duckKozep: 0.36,        // 2. elsőbbség (esemény, kapunyitás): −3,9 dB
   duckBe: 0.030,
   duckKi: 0.32,

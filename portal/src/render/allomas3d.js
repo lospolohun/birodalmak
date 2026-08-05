@@ -46,7 +46,7 @@ import { DIMENZIOK } from '../sim/dimenziok.js';
 import { hash2 } from '../mag/rng.js';
 import { epuletMertanok, epuletDiszek } from './epulet_mertan.js';
 import {
-  texturak, uvtPotol, vilagUvre, fenyKompenzacio,
+  texturak, uvtPotol, vilagUvre, fenyKompenzacio, anyagKompenzacio,
   EPULET_ANYAG, ALAP_ANYAG, PADLO_UV_SKALA,
 } from './texturak.js';
 
@@ -85,6 +85,17 @@ export class Allomas3d {
      * padló ugyanolyan világos, mint textúra és kompenzáció nélkül volt.
      */
     this.padloFenyKomp = fenyKompenzacio(this.tex.padlo.atlag);
+    /**
+     * Az épület-fénykompenzáció ERŐSSÉGE, 0..1. A tényleges szorzó FELÜLETENKÉNT
+     * más (a deszkázat többet visz el, mint a csempe) — azt a
+     * `_tipusMesheket` számolja ki a textúra saját átlagából. Ez a mező csak
+     * annyit mond, hogy mennyire alkalmazzuk.
+     *
+     * Mező, nem állandó, mert a szonda 0-ra állítja: csak így mérhető, hogy a
+     * textúra ÖNMAGÁBAN mennyi fényt visz el. Enélkül az A/B mindkét oldala a
+     * kompenzált színekkel indulna, és a mérés a saját korrekcióját mérné.
+     */
+    this.epuletFenyKomp = 1;
 
     this._alaplemezt();
     this._padlot();
@@ -250,7 +261,13 @@ export class Allomas3d {
     szellem.frustumCulled = false;
     szellem.renderOrder = 3;
     this.gyoker.add(szellem);
-    return { kod, test, disz, szellem, kapacitas, geo, diszGeo };
+    // Felületenkénti fénykompenzáció: a deszkázat sötétebb, mint a csempe,
+    // tehát nem kaphatnak egyforma korrekciót. A szonda 4. vizsgálata ezt
+    // felületenként külön méri — egy jó és két rossz felületből ne lehessen
+    // zöld átlagot csinálni.
+    const testKomp = anyagKompenzacio(this.tex[testAnyag] && this.tex[testAnyag].atlag);
+    const diszKomp = anyagKompenzacio(this.tex[diszAnyag] && this.tex[diszAnyag].atlag);
+    return { kod, test, disz, szellem, kapacitas, geo, diszGeo, testKomp, diszKomp };
   }
 
   /** Kapacitás-növelés: a régi mesh-ek helyére kétszer akkorák kerülnek. */
@@ -511,6 +528,7 @@ export class Allomas3d {
   _epuleteketEpit() {
     const sim = this.sim;
     const mat = this._m, p = this._p, q = this._q, s = this._s, sz = this._sz;
+    const ero = this.epuletFenyKomp;
     q.identity();
     for (const b of this.tipusMesh.values()) { b.test.count = 0; if (b.disz) b.disz.count = 0; b.szellem.count = 0; }
     let portalN = 0;
@@ -563,16 +581,16 @@ export class Allomas3d {
 
       const i = b.test.count++;
       b.test.setMatrixAt(i, mat);
-      // A típusszín itt is SZORZÓ a felület fölött, ezért egy hajszálnyival
-      // világosabban adjuk be — különben a textúra bevezetése az egész
-      // állomást tompította volna, és a típusszínek (a legfontosabb
-      // felismerési jel) egymáshoz csúsznának.
-      sz.setHex(t.szin).offsetHSL(0, 0, 0.10);
+      // A típusszín SZORZÓ a felület fölött, tehát a textúra önmagában
+      // tompítaná — és a típusszín a legfontosabb felismerési jel, azt nem
+      // hagyhatjuk elcsúszni. A `multiplyScalar` LINEÁRIS térben szoroz, ott
+      // pedig épp az `1/átlag` a helyes korrekció (lásd `anyagKompenzacio`).
+      sz.setHex(t.szin).multiplyScalar(1 + (b.testKomp - 1) * ero);
       b.test.setColorAt(i, sz);
       if (b.disz) {
         b.disz.count = b.test.count;
         b.disz.setMatrixAt(i, mat);
-        sz.setHex(t.szin).offsetHSL(0, 0.04, 0.24);
+        sz.setHex(t.szin).offsetHSL(0, 0.04, 0.24).multiplyScalar(1 + (b.diszKomp - 1) * ero);
         b.disz.setColorAt(i, sz);
       }
     }

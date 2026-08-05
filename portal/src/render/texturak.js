@@ -99,6 +99,14 @@ function texturaz(THREE, c, ismetX = 1, ismetY = 1) {
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
   t.generateMipmaps = true;
+  /**
+   * A textúra lineáris átlagfényessége — MINDEGYIKEN. A hívó ebből számol
+   * fénykompenzációt (lásd `anyagKompenzacio`). Azért itt, egy helyen, mert a
+   * „mennyit visz el ez a felület?" kérdésre minden textúránál választ kell
+   * adni: a deszkázat mérve 27 %-kal sötétítette a könyvesboltot, és ezt
+   * kizárólag a szonda vette észre.
+   */
+  t.atlag = atlagFenyesseg(c.getContext('2d'), c.width, c.height);
   return t;
 }
 
@@ -184,6 +192,23 @@ export function fenyKompenzacio(linearisAtlag) {
   return Math.min(1.35, Math.pow(a, -1 / 2.2));
 }
 
+/**
+ * Ugyanez ott, ahol a kompenzáció LINEÁRIS térben hat: a `THREE.Color`
+ * `multiplyScalar`-ja a lineáris összetevőket szorozza, tehát ott az egyszerű
+ * `1/átlag` a helyes képlet — nem kell a 2,2-es kitevő.
+ *
+ * ⚠️ A FELSŐ KORLÁT NEM ÓVATOSSÁG. Egy telített típusszínnek (pl. 0x9b6bff)
+ * van 1,0-s csatornája; azt bármilyen szorzó levágja, és a levágás HALVÁNYÍTJA
+ * a színt. Márpedig a típusszín a legfontosabb felismerési jel az állomáson.
+ * Inkább maradjon pár százalék sötétítés, mint hogy a lila szürkéskékké
+ * mosódjon. A textúrák ezért eleve VILÁGOSRA vannak rajzolva — a kompenzáció
+ * csak a maradékot viszi el.
+ */
+export function anyagKompenzacio(linearisAtlag) {
+  const a = Math.max(0.4, Math.min(1, linearisAtlag || 1));
+  return Math.min(1.35, 1 / a);
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 //  A PADLÓ
 // ══════════════════════════════════════════════════════════════════════════
@@ -202,9 +227,10 @@ const PADLO_RACS = 8;
 export const PADLO_UV_SKALA = 1 / PADLO_RACS;
 
 /**
- * Egyetlen kőlap. A `k` a lap kódja (0..63): ebből dől el, kap-e repedést,
- * osztást vagy rúnát — így ugyanaz a lap MINDIG ugyanolyan, és a nyolcszor
- * nyolcas mező mégis változatos.
+ * Egyetlen kőlap. A `v` a KÖZÖS, determinisztikus sorozat: minden lap belőle
+ * húz, tehát a hatvannégy lap mind más lesz, futásról futásra viszont
+ * pontosan ugyanaz. (Ha lapon belül indítanánk új sorozatot, mind a hatvannégy
+ * egyforma volna — az meg pont az, amit el akarunk kerülni.)
  */
 function koLapot(r, x0, y0, s, v) {
   const b = 3;                     // fugavastagság fele
@@ -311,27 +337,30 @@ function padloTextura(THREE) {
   foltok(r, S, S, v, 18, 30, 110, (g) => sza(60, 70, 100, 0.05 + g() * 0.05));
   szemcse(r, S, S, v, 13);
 
-  const t = texturaz(THREE, c);
-  t.atlag = atlagFenyesseg(r, S, S);
-  return t;
+  return texturaz(THREE, c);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
 //  ÉPÜLET-FELÜLETEK  (mind 256×256 — egy cellányi felületre bőven elég)
 // ══════════════════════════════════════════════════════════════════════════
 
+// ⚠️ MINDEN ÉPÜLET-FELÜLET VILÁGOS. Nem esztétikai szeszély: a textúra
+// SZORZÓDIK a típusszínnel, tehát a sötét felület egyszerűen elveszi az
+// állomás fényét. A mérés ezt egyszer már kimondta — a korábbi, sötétebb
+// deszkázat 27 %-kal fakította a könyvesboltot. A kontrasztot a MINTA adja
+// (fuga, szegecs, erezet), nem az alaptónus lehúzása.
 const F = 256;
 
 /** Kváderfal: eltolt sorok, mély fuga. A legrégebbi, legnehezebb anyag. */
 function kolapTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(31337);
-  r.fillStyle = '#7d8299'; r.fillRect(0, 0, F, F);
+  r.fillStyle = '#9096ab'; r.fillRect(0, 0, F, F);
   const sorok = 6, mag2 = F / sorok;
   for (let j = 0; j < sorok; j++) {
     const el = (j % 2) * 0.5;
     for (let i = -1; i < 4; i++) {
       const x = (i + el) * (F / 3), y = j * mag2;
-      const t = 208 + v() * 34;
+      const t = 224 + v() * 28;
       r.fillStyle = sz(t, t * 0.98, t * 0.94);
       r.fillRect(x + 2, y + 2, F / 3 - 4, mag2 - 4);
       r.fillStyle = sza(255, 255, 255, 0.22);
@@ -364,7 +393,7 @@ function vakolatTextura(THREE) {
 /** Fémpanel: függőleges illesztések, szegecssor, csiszolási nyomok. */
 function femTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(4242);
-  r.fillStyle = '#c9cedb'; r.fillRect(0, 0, F, F);
+  r.fillStyle = '#e0e5f0'; r.fillRect(0, 0, F, F);
   // Csiszolás: vízszintes karcok. Az irány számít — enélkül a fém szövet lesz.
   for (let i = 0; i < 420; i++) {
     const y = v() * F, h = 1;
@@ -395,13 +424,13 @@ function faTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(777001);
   const pallo = 4, w = F / pallo;
   for (let i = 0; i < pallo; i++) {
-    const t = 200 + v() * 40;
-    r.fillStyle = sz(t, t * 0.84, t * 0.66);
+    const t = 232 + v() * 23;
+    r.fillStyle = sz(t, t * 0.90, t * 0.78);
     r.fillRect(i * w, 0, w, F);
     // Erezet: hosszú, enyhén hullámzó vonalak a palló mentén.
     for (let j = 0; j < 16; j++) {
       const x = i * w + 3 + v() * (w - 6);
-      r.strokeStyle = sza(120, 88, 56, 0.10 + v() * 0.16);
+      r.strokeStyle = sza(150, 112, 72, 0.09 + v() * 0.13);
       r.lineWidth = 0.6 + v() * 1.2;
       r.beginPath(); r.moveTo(x, 0);
       for (let y = 0; y <= F; y += 32) r.lineTo(x + Math.sin((y / F) * 6 + i) * 2.5, y);
@@ -410,13 +439,13 @@ function faTextura(THREE) {
     if (v() < 0.7) {   // csomó
       const cx = i * w + w * 0.5 + (v() - 0.5) * w * 0.4, cy = v() * F;
       for (let k = 4; k > 0; k--) {
-        r.strokeStyle = sza(110, 76, 44, 0.5);
+        r.strokeStyle = sza(140, 100, 62, 0.45);
         r.lineWidth = 1;
         r.beginPath(); r.ellipse(cx, cy, k * 2.4, k * 3.4, 0, 0, Math.PI * 2); r.stroke();
       }
     }
-    r.fillStyle = sza(84, 58, 34, 0.55); r.fillRect(i * w, 0, 2, F);
-    r.fillStyle = sza(255, 240, 220, 0.3); r.fillRect(i * w + 2, 0, 1, F);
+    r.fillStyle = sza(112, 78, 46, 0.5); r.fillRect(i * w, 0, 2, F);
+    r.fillStyle = sza(255, 244, 228, 0.45); r.fillRect(i * w + 2, 0, 1, F);
   }
   szemcse(r, F, F, v, 12);
   return texturaz(THREE, c);
@@ -425,11 +454,11 @@ function faTextura(THREE) {
 /** Kristály: nagy lapok, éles élek, egy-egy csillanás. */
 function kristalyTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(5150);
-  r.fillStyle = '#dfe6ff'; r.fillRect(0, 0, F, F);
+  r.fillStyle = '#ebf0ff'; r.fillRect(0, 0, F, F);
   // Ferde hasábsávok: a kristály attól kristály, hogy SÍKOKBÓL áll.
   for (let i = -6; i < 12; i++) {
     const x = i * 26 + v() * 8;
-    const t = 210 + v() * 45;
+    const t = 226 + v() * 29;
     r.fillStyle = sz(t * 0.9, t * 0.95, t);
     r.beginPath();
     r.moveTo(x, 0); r.lineTo(x + 22, 0); r.lineTo(x + 22 - 60, F); r.lineTo(x - 60, F);
@@ -452,7 +481,7 @@ function kristalyTextura(THREE) {
 function uvegTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(1848);
   const g = r.createLinearGradient(0, 0, F, F);
-  g.addColorStop(0, '#d7ecff'); g.addColorStop(0.5, '#a9c8e8'); g.addColorStop(1, '#e6f4ff');
+  g.addColorStop(0, '#e8f5ff'); g.addColorStop(0.5, '#cbe0f4'); g.addColorStop(1, '#f2faff');
   r.fillStyle = g; r.fillRect(0, 0, F, F);
   // Pászmák: két széles, ferde világos sáv. Ez a „tükröződik benne az ég".
   for (const [x, w2, a] of [[30, 26, 0.5], [120, 14, 0.34], [186, 34, 0.42]]) {
@@ -461,7 +490,7 @@ function uvegTextura(THREE) {
     r.restore();
   }
   // Osztóléc: 2×2 tábla. A keret adja, hogy ez ABLAK, nem tócsa.
-  r.fillStyle = sza(90, 100, 124, 0.85);
+  r.fillStyle = sza(120, 132, 156, 0.7);
   r.fillRect(0, F / 2 - 3, F, 6); r.fillRect(F / 2 - 3, 0, 6, F);
   r.fillRect(0, 0, F, 5); r.fillRect(0, F - 5, F, 5);
   r.fillRect(0, 0, 5, F); r.fillRect(F - 5, 0, 5, F);
@@ -474,20 +503,20 @@ function szovetTextura(THREE) {
   const c = vaszon(F, F), r = c.getContext('2d'), v = mag(60606);
   const cs = 6, w = F / cs;
   for (let i = 0; i < cs; i++) {
-    r.fillStyle = i % 2 ? '#fbf6ec' : '#e4b9a6';
+    r.fillStyle = i % 2 ? '#fdfaf3' : '#f0d2c2';
     r.fillRect(i * w, 0, w, F);
   }
   // Szövésminta: sűrű, halvány kereszthálózat. Enélkül műanyag.
-  r.globalAlpha = 0.12;
+  r.globalAlpha = 0.10;
   for (let i = 0; i < F; i += 3) {
-    r.fillStyle = '#8a7a6c';
+    r.fillStyle = '#9a8a7c';
     r.fillRect(i, 0, 1, F); r.fillRect(0, i, F, 1);
   }
   r.globalAlpha = 1;
   for (let i = 1; i < cs; i++) {
-    r.fillStyle = sza(120, 100, 88, 0.35); r.fillRect(i * w - 1, 0, 2, F);
+    r.fillStyle = sza(150, 128, 114, 0.32); r.fillRect(i * w - 1, 0, 2, F);
   }
-  foltok(r, F, F, v, 16, 10, 40, (g) => sza(180, 150, 130, 0.06 + g() * 0.08));
+  foltok(r, F, F, v, 16, 10, 40, (g) => sza(200, 172, 152, 0.06 + g() * 0.08));
   szemcse(r, F, F, v, 9);
   return texturaz(THREE, c);
 }
@@ -652,15 +681,6 @@ function borTextura(THREE) {
 // ══════════════════════════════════════════════════════════════════════════
 
 const GYORSTAR = new WeakMap();
-/**
- * A legutóbb legyártott készlet — CSAK a `texturaLista()` mérési fogantyújának.
- *
- * MIÉRT KELL: a gyorstár `THREE`-re van kulcsolva, a szonda viszont a lapon
- * belülről nem tud `import 'three'`-t írni (csupasz modulnév, a böngésző nem
- * oldja fel). Enélkül a leltár csak a játékon keresztül volna elérhető, és egy
- * mérőeszköz ne függjön attól, hogy a `fo.js` épp mit tesz a `window`-ra.
- */
-let utolsoKeszlet = null;
 
 /**
  * Minden textúra, egyszer. A hívó nyugodtan hívhatja többször — ugyanazt az
@@ -690,7 +710,6 @@ export function texturak(THREE) {
   // különben egy elmosott folt lesz belőle.
   k.szikla.repeat.set(9, 3);
   GYORSTAR.set(THREE, k);
-  utolsoKeszlet = k;
   return k;
 }
 
@@ -699,10 +718,18 @@ export function texturak(THREE) {
  * csendben tud elhízni („még egy 2048×2048, az se sok"), és a memóriát nem
  * jelzi semmi — ez a lista teszi mérhetővé.
  *
+ * ⚠️ A KÉSZLETET PARAMÉTERBEN KAPJA, nem modulszintű változóból. Ez nem
+ * ízléskérdés: a szonda a lapon belül `import('/src/render/texturak.js')`-szel
+ * húzza be ezt a fájlt, és a vite bizonyos helyzetekben (időbélyeges URL a
+ * modul módosítása után) MÁSIK modulpéldányt ad, mint amit a `fo.js` használ.
+ * Egy modulszintű „utolsó készlet" ilyenkor üres, és a leltár némán NULLÁT
+ * jelent — vagyis a szonda pont akkor mond zöldet, amikor nem lát semmit.
+ * Ez egyszer meg is történt. Tiszta függvényként ez nem fordulhat elő.
+ *
+ * @param {Record<string, import('three').Texture>} k a `texturak()` eredménye
  * @returns {{nev:string, sz:number, m:number, keppont:number, vaszon:boolean}[]}
  */
-export function texturaLista() {
-  const k = utolsoKeszlet;
+export function texturaLista(k) {
   if (!k) return [];
   const ki = [];
   for (const nev of Object.keys(k)) {

@@ -108,11 +108,28 @@ try {
   if (!nyitva) ok('a bevezető bezárult, a játék fut'); else rossz('a bevezető ablak nem záródott be');
 
   cim('4. HALAD AZ IDŐ');
+  // ⚠️ EZ A VIZSGÁLAT A KÉPKOCKA-IDŐN KERESZTÜL A RENDERT IS MÉRI, és ezt ki
+  // kell mondani, különben a piros sor a SZIMULÁCIÓRA mutat, holott nem ott
+  // van a baj. A `fo.js` hurkában `dt = Math.min(0.25, …)`: egy 250 ms-nál
+  // hosszabb képkocka alatt eltelt idő ELVÉSZ a világ számára. Négy FPS alatt
+  // tehát a játék lassított felvételben megy — hibaüzenet nélkül.
+  //
+  // A küszöböt EZÉRT SEM szabad lejjebb venni: nem a szonda szigorú, hanem a
+  // rajzolás lassú. A felhőben ez SwiftShader is lehet (nincs GPU) — a
+  // kiírt ms/képkocka megmondja, melyikről van szó.
   const t1 = await lap.evaluate(() => window.PHT.sim.tick);
-  await varj(2000);
+  const kepkocka = await lap.evaluate(() => new Promise((r) => {
+    let n = 0; const kezd = performance.now();
+    const f = () => { n++; if (performance.now() - kezd < 2000) requestAnimationFrame(f); else r((performance.now() - kezd) / n); };
+    requestAnimationFrame(f);
+  }));
   const t2 = await lap.evaluate(() => window.PHT.sim.tick);
+  console.log(`    ${kepkocka.toFixed(0)} ms/képkocka (szoftveres raszterizáló — sebesség-ítéletnek NEM használható)`);
   if (t2 > t1 + 20) ok(`${t1} → ${t2} tick két másodperc alatt`);
-  else rossz(`az idő nem halad: ${t1} → ${t2}`);
+  else if (kepkocka > 250) {
+    rossz(`az idő lassított felvételben megy (${t1} → ${t2} tick / 2 mp): ` +
+      `${kepkocka.toFixed(0)} ms/képkocka > a hurok 250 ms-os dt-korlátja. A RAJZOLÁS a szűk keresztmetszet, nem a sim.`);
+  } else rossz(`az idő nem halad: ${t1} → ${t2} (a képkocka-idő rendben van, tehát a sim vagy a hurok áll)`);
 
   cim('5. ÉRKEZNEK UTASOK ÉS RAJZOLÓDNAK');
   const allapot = await lap.evaluate(() => {

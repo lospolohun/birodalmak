@@ -35,7 +35,7 @@ import { FAJOK } from '../sim/lenyek.js';
 import { DOLGOZOK } from '../sim/dolgozok.js';
 import { ALLAPOT } from '../sim/utas.js';
 import { lenyMertanok } from './leny_mertan.js';
-import { texturak, uvtPotol } from './texturak.js';
+import { texturak, uvtPotol, anyagKompenzacio } from './texturak.js';
 
 const MAX_DOLGOZO = 240;
 /** A szellemtömeg kerete. Ennél több egyszerre úgysem olvasható ki a képből. */
@@ -60,6 +60,12 @@ export class Lenyek3d {
     // a `texturak()` másodszorra a MEGLÉVŐ objektumot adja vissza, tehát a
     // lényréteg egyetlen új GPU-feltöltést sem okoz.
     this.tex = texturak(THREE);
+    // A bőr- és egyenruha-felület is SZORZÓ a fajszín fölött. A lény színe a
+    // hangulat visszajelzése (a vörösödés a játék legfontosabb vizuális jele),
+    // tehát pont itt nem engedhetjük meg, hogy egy felület elvigye a
+    // telítettséget.
+    this.borKomp = anyagKompenzacio(this.tex.bor.atlag);
+    this.dolgozoKomp = anyagKompenzacio(this.tex.szovet.atlag);
 
     // ── FAJONKÉNTI MÉRTAN ─────────────────────────────────────────────────
     // A v0.1-ben minden lény ugyanaz a kapszula+gömb volt. Ez a
@@ -223,6 +229,9 @@ export class Lenyek3d {
       // csarnok rózsaszín volt — a fajok saját színe elveszett, a figyelmeztetés
       // pedig épp ott hallgatott el, ahol számított volna.
       if (h < 0.55) sz.lerp(PIROS, Math.min(0.8, (0.55 - h) * 1.5));
+      // A kompenzáció a hangulat-színezés UTÁN jön: a vörösödés arányát nem
+      // szabad elmozdítania, csak a bőrfelület elnyelését visszaadnia.
+      sz.multiplyScalar(this.borKomp);
 
       const k = b.test.count++;
       b.fej.count = b.test.count;
@@ -270,7 +279,7 @@ export class Lenyek3d {
       s.set(m, m, m);
       mat.compose(p, q, s);
       this.dolgozoMesh.setMatrixAt(dN, mat);
-      sz.setHex(t.szin);
+      sz.setHex(t.szin).multiplyScalar(this.dolgozoKomp);
       // A beosztás nélküli dolgozó fakó: fizeted, de nem dolgozik.
       if (d.epuletAzon < 0) sz.multiplyScalar(0.45);
       this.dolgozoMesh.setColorAt(dN, sz);

@@ -344,9 +344,30 @@ input[type=text] { font-family: inherit; font-size: 12.5px; }
   backdrop-filter: blur(3px);
 }
 #fatyol.nyitva { display: flex; }
-/* Az esemény-ablak mellett FUT AZ IDŐ (lásd `modalok.js`), tehát látni is
- * kell, mi történik közben: ott halványabb a fátyol és nincs életlenítés. */
-#fatyol.esemeny { background: rgba(6, 8, 20, 0.45); backdrop-filter: none; }
+/* ── AZ ESEMÉNY-ABLAK NEM ZÁRJA EL A JÁTÉKOT ───────────────────────────────
+ * MÉRVE, QA-kör: egy esemény felugrott, és onnantól SEMMIRE nem lehetett
+ * kattintani — sem panelre, sem építés-sávra —, MIKÖZBEN AZ IDŐ FUTOTT
+ * TOVÁBB. Ez a lehető legrosszabb kombináció: a `modalok.js` fejléce épp
+ * azért nem állítja meg az időt eseménynél, mert az események sűrűn jönnek
+ * és nem szabad megszakítaniuk a játékot — a teljes képernyős, kattintást
+ * elnyelő fátyol viszont pontosan megszakította.
+ *
+ * Eseménynél tehát a fátyol ÁTENGEDI a mutatót (csak maga az ablak fog
+ * kattintást), nem életlenít, és alulra húzódik: ott a legkevesebbet takar
+ * a játéktérből, és nem is téveszthető össze a történet-ablakkal, ami
+ * viszont TÉNYLEG megállítja az időt. */
+#fatyol.esemeny {
+  background: linear-gradient(0deg, rgba(6, 8, 20, 0.55), transparent 45%);
+  backdrop-filter: none;
+  align-items: flex-end; padding-bottom: 130px;
+  pointer-events: none;
+}
+#fatyol.esemeny #modal {
+  pointer-events: auto;
+  width: min(500px, 88vw);
+  border-color: rgba(255, 194, 71, 0.5);
+  box-shadow: 0 10px 44px rgba(0, 0, 0, 0.7);
+}
 #modal {
   width: min(560px, 92vw); background: var(--panel2);
   border: 1px solid var(--keret); border-radius: 16px; padding: 22px 24px;
