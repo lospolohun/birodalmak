@@ -567,7 +567,7 @@ export class Allomas3d {
       // világosabban adjuk be — különben a textúra bevezetése az egész
       // állomást tompította volna, és a típusszínek (a legfontosabb
       // felismerési jel) egymáshoz csúsznának.
-      sz.setHex(t.szin).offsetHSL(0, 0, 0.07);
+      sz.setHex(t.szin).offsetHSL(0, 0, 0.10);
       b.test.setColorAt(i, sz);
       if (b.disz) {
         b.disz.count = b.test.count;
