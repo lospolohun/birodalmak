@@ -103,12 +103,18 @@ export function torol(hely) {
  */
 export function lista() {
   const ki = [];
-  const a = olvas(AUTO);
-  ki.push({ hely: 'auto', nev: 'Automata', adat: a && mentesEllenoriz(a).rendben ? a : null });
-  for (let i = 1; i <= HELYEK; i++) {
-    const m = olvas(kulcs(i));
-    ki.push({ hely: i, nev: `${i}. hely`, adat: m && mentesEllenoriz(m).rendben ? m : null });
-  }
+  // A `hiba` mező azért van itt, mert egy régi formátumú mentés eddig
+  // egyszerűen „üres"-ként jelent meg — a játékos pedig azt hitte, hogy a
+  // mentése eltűnt. A v3 óta ez nem elméleti: a v1/v2 SZÁNDÉKOSAN
+  // olvashatatlan (a rács 64×48-ról 96×72-re nőtt), tehát muszáj kimondani.
+  const egy = (hely, nev) => {
+    const m = olvas(kulcs(hely));
+    if (!m) return { hely, nev, adat: null, hiba: null };
+    const e = mentesEllenoriz(m);
+    return { hely, nev, adat: e.rendben ? m : null, hiba: e.rendben ? null : e.ok };
+  };
+  ki.push(egy('auto', 'Automata'));
+  for (let i = 1; i <= HELYEK; i++) ki.push(egy(i, `${i}. hely`));
   return ki;
 }
 
@@ -133,8 +139,7 @@ export function kertBetoltes() {
     localStorage.removeItem(BETOLTENDO);
   } catch (e) { return null; }
   if (!hely) return null;
-  const adat = betolt(hely === 'auto' ? 'auto' : Number(hely));
-  return adat;
+  return betolt(hely === 'auto' || hely === 'fajl' ? hely : Number(hely));
 }
 
 
@@ -181,11 +186,12 @@ export function fajlbolBetolt(fajl, kesz) {
     const e2 = mentesEllenoriz(adat);
     if (!e2.rendben) { kesz(e2.ok); return; }
     // A tárolón keresztül megy, mert a betöltés újratöltéssel történik
-    // (lásd a fájl közepén lévő magyarázatot).
-    const v = ir(kulcs(HELYEK), adat);
+    // (lásd a fájl közepén lévő magyarázatot). A SAJÁT kulcsára, nem a
+    // játékos harmadik mentőhelyére — lásd a `FAJL` fejlécét.
+    const v = ir(FAJL, adat);
     if (!v.rendben) { kesz(v.ok); return; }
     kesz(null);
-    betoltestKer(HELYEK);
+    betoltestKer('fajl');
   };
   olvaso.readAsText(fajl);
 }

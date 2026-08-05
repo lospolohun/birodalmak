@@ -18,15 +18,18 @@ import { EPULETEK } from '../sim/epuletek.js';
 import { DIMENZIOK } from '../sim/dimenziok.js';
 import { tech } from '../sim/kutatas.js';
 
+// A `sug` a fül SAJÁT buborékja: nyolc ikonos felirat között az „Üzem" és a
+// „Kötelező" nem mond semmit annak, aki most ült le. Mindegyik azt a KÉRDÉST
+// írja le, amire a fül válaszol.
 const KATEGORIAK = [
-  { kod: 'alap', nev: '🧭 Alap', eszkozok: true, epuletek: [] },
-  { kod: 'kapuk', nev: '🌀 Kapuk', kapuk: true, epuletek: [] },
-  { kod: 'kotelezo', nev: '🛡️ Kötelező', epuletek: ['biztonsag', 'vam', 'poggyasz'] },
-  { kod: 'kenyelem', nev: '🪑 Kényelem', epuletek: ['varo', 'wc', 'info', 'seprupark', 'hoforras', 'jegkamra'] },
-  { kod: 'bevetel', nev: '💰 Bevétel', epuletek: ['etterem', 'bolt', 'konyvesbolt', 'reklam', 'vip'] },
-  { kod: 'szint', nev: '🪜 Szintek', epuletek: ['lepcso', 'teleportlift'] },
-  { kod: 'csatorna', nev: '🚂 Csatornák', epuletek: ['vasut', 'leghajo', 'urkapu'] },
-  { kod: 'uzem', nev: '⚙️ Üzem', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos'] },
+  { kod: 'alap', nev: '🧭 Alap', sug: 'Vizsgálat, padló, bontás — a három szerkesztő-eszköz.', eszkozok: true, epuletek: [] },
+  { kod: 'kapuk', nev: '🌀 Kapuk', sug: 'Melyik világot nyitom meg? Innen jönnek az utasok.', kapuk: true, epuletek: [] },
+  { kod: 'kotelezo', nev: '🛡️ Kötelező', sug: 'Amin MINDEN utas átmegy. Enélkül csalódottan indul tovább.', epuletek: ['biztonsag', 'vam', 'poggyasz'] },
+  { kod: 'kenyelem', nev: '🪑 Kényelem', sug: 'Türelmet és hangulatot tölt vissza. Alig hoz pénzt, mégis ez tartja a hírnevet.', epuletek: ['varo', 'wc', 'info', 'seprupark', 'hoforras', 'jegkamra'] },
+  { kod: 'bevetel', nev: '💰 Bevétel', sug: 'Ebből él az állomás. A portáldíj önmagában kevés.', epuletek: ['etterem', 'bolt', 'konyvesbolt', 'reklam', 'vip'] },
+  { kod: 'szint', nev: '🪜 Szintek', sug: 'Átjárók az emeletek közt. Emeletre váltani a felső sávban (R / F) lehet.', epuletek: ['lepcso', 'teleportlift'] },
+  { kod: 'csatorna', nev: '🚂 Csatornák', sug: 'Utas kapu nélkül: nincs instabilitás, nem fogyaszt kristályt.', epuletek: ['vasut', 'leghajo', 'urkapu'] },
+  { kod: 'uzem', nev: '⚙️ Üzem', sug: 'Amitől nem romlik el: áram, kapukarbantartás, takarítás, orvos.', epuletek: ['energiamag', 'karbantarto', 'takarito', 'orvos'] },
 ];
 
 /** Az „Alap" fül eszközei: ezek nem épületek, hanem szerkesztő-módok. */
@@ -51,6 +54,7 @@ export class EpitesSav {
     this.katGombok = [];
     for (const k of KATEGORIAK) {
       const g = el('button', k.kod === this.kategoria ? 'aktiv' : '', k.nev);
+      g.title = `${k.nev.replace(/^\S+\s/, '')} — ${k.sug}`;
       g.onclick = () => { this.kategoria = k.kod; this._katJeloles(); this.ujraEpit(); };
       kat.appendChild(g);
       this.katGombok.push({ kod: k.kod, g });
@@ -140,24 +144,33 @@ export class EpitesSav {
     g._eszkoz = eszkoz;
     g._ar = ar;
     g._kutatas = kutatasKod;
+    g._nev = nev;
+    g._sugo = sugo;
     const s1 = el('div', 'sor1');
     be(s1, el('span', null, ikon), el('span', null, nev));
     be(g, s1);
     if (ar !== undefined) be(g, el('div', 'sor2', szam(ar) + ' 💎'));
     be(g, el('div', 'sor3', alcim));
+    // A tiltás OKA külön sor, és nem csak kattintás után derül ki. A szürke
+    // gomb önmagában nem információ: a játékos vagy azt hiszi, hogy elromlott
+    // valami, vagy — ami rosszabb — azt, hogy az az épület nem is létezik.
+    g._ok = el('div', 'sorOk');
+    be(g, g._ok);
     g.onclick = () => {
-      if (g.classList.contains('tiltott')) {
-        this.hud.uzen(kutatasKod && !this.sim.kesz(kutatasKod)
-          ? `Előbb ki kell kutatni: ${tech(kutatasKod).nev}`
-          : 'Nincs rá elég pénz.', 'gond');
-        return;
-      }
+      if (g.classList.contains('tiltott')) { this.hud.uzen(g._okSzoveg || 'Most nem építhető.', 'gond'); return; }
       this.valaszt(eszkoz);
     };
-    g.onmouseenter = (e) => this.hud.buborekot(`<b>${nev}</b><br>${sugo || ''}`, e.clientX, e.clientY);
-    g.onmousemove = (e) => this.hud.buborekot(`<b>${nev}</b><br>${sugo || ''}`, e.clientX, e.clientY);
+    const buborek = (e) => this.hud.buborekot(this._buborek(g), e.clientX, e.clientY);
+    g.onmouseenter = buborek;
+    g.onmousemove = buborek;
     g.onmouseleave = () => this.hud.buborekot(null);
     return g;
+  }
+
+  _buborek(g) {
+    let sz = `<b>${g._nev}</b><br>${g._sugo || ''}`;
+    if (g._okSzoveg) sz += `<br><i style="color:#ffc247">${g._okSzoveg}</i>`;
+    return sz;
   }
 
   /** Olcsó, képkockánkénti állapotfrissítés: mire telik, mi van kikutatva. */
@@ -165,8 +178,13 @@ export class EpitesSav {
     for (const g of this.lista.children) {
       if (g._ar === undefined) continue;
       const kutatasHianyzik = g._kutatas && !this.sim.kesz(g._kutatas);
-      const tiltott = kutatasHianyzik || this.sim.penz < g._ar;
+      const hianyzoPenz = Math.ceil(g._ar - this.sim.penz);
+      const tiltott = kutatasHianyzik || hianyzoPenz > 0;
+      const ok = kutatasHianyzik
+        ? `🔒 ${tech(g._kutatas).nev} kell hozzá`
+        : (hianyzoPenz > 0 ? `még ${szam(hianyzoPenz)} 💎 kell` : '');
       if (g._tiltott !== tiltott) { g.classList.toggle('tiltott', tiltott); g._tiltott = tiltott; }
+      if (g._okSzoveg !== ok) { g._okSzoveg = ok; g._ok.textContent = ok; }
     }
   }
 }

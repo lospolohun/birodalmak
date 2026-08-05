@@ -663,13 +663,26 @@ export class Panelek {
     for (const h of tarolo.lista()) {
       const t = el('div', 'tetel');
       const fej = el('div', 'fej');
-      be(fej, el('b', null, h.nev), el('span', null, h.adat ? `${h.adat.elonezet.nap}. nap` : 'üres'));
+      be(fej, el('b', null, h.nev),
+        el('span', null, h.adat ? `${h.adat.elonezet.nap}. nap` : (h.hiba ? '⚠️ nem olvasható' : 'üres')));
       be(t, fej);
       if (h.adat) {
         const e = h.adat.elonezet;
         be(t, el('div', 'sorok')).lastChild.innerHTML =
           `pénz <b>${szam(e.penz)}</b> · hírnév <b>${e.hirnev}</b> · kapu <b>${e.kapu}</b> · ` +
           `${e.fejezet + 1}. fejezet${e.nehezseg ? ' · ' + e.nehezseg : ''}${e.vege ? ' · <b style="color:#ffd257">vége</b>' : ''}`;
+      } else if (h.hiba) {
+        // Egy régi (v1/v2) mentés itt SZÁNDÉKOSAN nem tölthető be: a rács
+        // 96×72-re nőtt, és a napló abszolút cellakoordinátákat tartalmaz —
+        // a régi napló nem hibára futna, hanem NÉMÁN más világot építene.
+        // Ezt ki kell mondani, különben a játékos azt hiszi, ő rontotta el.
+        be(t, el('div', 'sorok baj', `Ez a hely nem tölthető be: ${h.hiba}. ` +
+          'A régi mentések a rács megnövekedése miatt nem olvashatók — a „Törlés" felszabadítja a helyet.'));
+        const tg = el('button', 'mini vesz', 'Törlés');
+        tg.onclick = () => { tarolo.torol(h.hely); this._ora = 1; };
+        be(t, tg);
+        be(p, t);
+        continue;
       }
       const gombok = el('div', 'sorok');
       if (h.hely !== 'auto') {

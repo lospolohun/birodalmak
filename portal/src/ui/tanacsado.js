@@ -23,6 +23,7 @@
 
 import { EPULETEK, IGENYEK } from '../sim/epuletek.js';
 import { DIMENZIOK } from '../sim/dimenziok.js';
+import { szam } from './elemek.js';
 
 /** @typedef {{ sulyossag: 'baj'|'gond'|'jo', ikon: string, cim: string, szoveg: string }} Tanacs */
 
@@ -133,7 +134,8 @@ export function tanacsok(sim, max = 6) {
   } else if (e && e.bevetel > 0 && e.koltseg > e.bevetel) {
     ki.push({
       sulyossag: 'gond', ikon: '📉', cim: 'Tegnap veszteséges volt a nap',
-      szoveg: `Bevétel ${Math.round(e.bevetel)}, költség ${Math.round(e.koltseg)}. A bérek és az üzemeltetés akkor is mennek, ` +
+      szoveg: `Bevétel ${szam(e.bevetel)}, költség ${szam(e.koltseg)} — mínusz ${szam(e.koltseg - e.bevetel)}. ` +
+        'A bérek és az üzemeltetés akkor is mennek, ' +
         'ha nincs forgalom — a Statisztika panel tételesen megmutatja, mi viszi el.',
     });
   }
