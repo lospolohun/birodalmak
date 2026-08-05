@@ -85,9 +85,10 @@ if (gyanus.length) {
 console.log('');
 if (hiba === 0) {
   console.log('\x1b[42m\x1b[30m  A CSOMAG KIRAKHATÓ  \x1b[0m\n');
-  console.log('  A \x1b[1mdist/ TARTALMÁT\x1b[0m másold a SkyNet alkönyvtárába (ne a mappát!):\n');
-  console.log(`    \x1b[36mportal/dist/index.html\x1b[0m  →  skynet.lospolo.hu/<alkönyvtár>/index.html`);
-  console.log(`    \x1b[36mportal/dist/assets/\x1b[0m      →  skynet.lospolo.hu/<alkönyvtár>/assets/\n`);
+  console.log('  A \x1b[1mdist/ TARTALMÁT\x1b[0m másold a célmappába (ne a mappát magát!):\n');
+  console.log(`    \x1b[36mportal/dist/index.html\x1b[0m  →  skynet.lospolo.hu/portal/index.html`);
+  console.log(`    \x1b[36mportal/dist/assets/\x1b[0m      →  skynet.lospolo.hu/portal/assets/\n`);
+  console.log('  \x1b[90mEllenőrzés utána: https://skynet.lospolo.hu/portal/\x1b[0m\n');
   console.log('  Részletek és hibakeresés: portal/KIRAKAS.md\n');
   process.exit(0);
 }

@@ -1,7 +1,15 @@
 # PORTAL HUB TYCOON — kirakás SkyNetre
 
-> **TL;DR:** `npm run portal:build`, aztán a `portal/dist/` TARTALMÁT másold a
-> SkyNet alkönyvtárába. Nincs Node, nincs adatbázis, nincs build a szerveren.
+**A cél: `https://skynet.lospolo.hu/portal/`**
+
+> **TL;DR:** `npm run portal:csomag`, aztán a `portal/dist/` TARTALMÁT másold
+> a szerver `portal/` mappájába. Nincs Node, nincs adatbázis, nincs build a
+> szerveren.
+
+⚠️ Ez **nem** ugyanaz a hely, mint az AGE OF THE CRYSTALS-é (`/aotc`). A két
+játék diszjunkt fájlkészleten él a repóban, és a szerveren is külön mappát
+kap — enélkül az egyik build felülírná a másik `assets/`-ét, mert mindkettő
+`index-<hash>.js` néven ír.
 
 ---
 
@@ -49,22 +57,28 @@ lépést.
 Ha **A CSOMAG KIRAKHATÓ** felirat jön, mehet:
 
 ```
-portal/dist/index.html   →   skynet.lospolo.hu/<alkönyvtár>/index.html
-portal/dist/assets/      →   skynet.lospolo.hu/<alkönyvtár>/assets/
+portal/dist/index.html   →   skynet.lospolo.hu/portal/index.html
+portal/dist/assets/      →   skynet.lospolo.hu/portal/assets/
 ```
 
+Utána: **https://skynet.lospolo.hu/portal/**
+
 A `dist/` **tartalmát** másold, ne magát a `dist` mappát — különben
-`/<alkönyvtár>/dist/` lesz belőle.
+`/portal/dist/` lesz belőle, és fehér lapot kapsz.
+
+⚠️ **Frissítéskor töröld a régi `assets/`-et.** A fájlnevekben tartalom-hash
+van, tehát az új build MÁS néven ír, a régi pedig ottmarad örökre. Nem hiba,
+csak szemét — de pár kiadás után nem fogod tudni, melyik az élő.
 
 ⚠️ A `dist/` **nincs verziókövetve** (a `.gitignore` kizárja), tehát a
 repóból nem tudod letölteni: mindig frissen kell buildelni.
 
-### Milyen alkönyvtárba?
+### Ha később máshova kerülne
 
-A `PLAN.md` az AGE OF THE CRYSTALS-nak a `/aotc`-t szánja. A PORTAL HUB TYCOON
-**másik játék**, tehát másik alkönyvtár kell neki — `/portal` a kézenfekvő. A
-játék bármelyikkel működik: a relatív `base` miatt a névnek nincs jelentősége,
-és nem kell hozzá se konfigot, se buildet módosítani.
+A mappa neve a játéknak **közömbös**: a relatív `base` miatt nem kell se
+konfigot, se buildet módosítani, ugyanaz a `dist/` bárhonnan elindul —
+gyökérből is. Ha átnevezed, itt és a `tools/csomag.mjs` kiírásában érdemes
+átvezetni, hogy a doksi ne hazudjon.
 
 ---
 
