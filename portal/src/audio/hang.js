@@ -43,7 +43,8 @@
 // generatív zenéhez és a hangfoszlányokhoz.
 
 import { NAP_TICK, INSTABIL_HATAR } from '../mag/config.js';
-import { HANGOK, AMBIENS, ZENE, ZENE_HANGNEMEK, KEVERES } from './hang_katalogus.js';
+import { HANGOK, AMBIENS, ZENE, ZENE_HANGNEMEK, KEVERES, TER, VALTOZAT_ALAP } from './hang_katalogus.js';
+import { zengetoPuffer, puhaGorbe, panoramazo, terbe } from './hang_ter.js';
 
 const TAU = Math.PI * 2;
 /** Exponenciális rámpa nem mehet nulláig — ez a gyakorlati csend. */
@@ -71,8 +72,28 @@ export class Hang {
     // Előre lefoglalt hangszálak: a `jelez()` sosem foglal tömböt.
     this._helyek = new Array(KEVERES.maxEgyloveses);
     for (let i = 0; i < this._helyek.length; i++) {
-      this._helyek[i] = { aktiv: false, prio: 0, kezdet: 0, veg: 0, csucs: null, forrasok: [] };
+      this._helyek[i] = { aktiv: false, prio: 0, kezdet: 0, veg: 0, csucs: null, kimenet: [], forrasok: [] };
     }
+
+    // ── TORLÓDÁS-NYILVÁNTARTÁS ────────────────────────────────────────────
+    // Kódonként az utolsó megszólalás ideje. A kulcsok ELŐRE bekerülnek, hogy
+    // a `jelez()` soha ne bővítsen objektumot — az rejtett osztályt váltana,
+    // és pont a legsűrűbb pillanatban kényszerítene újrafordításra.
+    this._utoljara = Object.create(null);
+    for (const k of Object.keys(HANGOK)) this._utoljara[k] = -1e9;
+    this._sorozatKezd = -1e9;
+    this._sorozatDb = 0;
+
+    // A duck (háttérhalkítás) legmélyebb aktív értéke és lejárata.
+    this._duckVeg = 0;
+    this._duckMelyseg = 0;
+
+    // ── KAMERA ────────────────────────────────────────────────────────────
+    // A térhatás ehhez viszonyít. A `fo.js` írja képkockánként; ha sosem
+    // írja, minden hang középen marad — működik, csak nincs iránya.
+    this._kam = { x: 0, z: 0, szog: 0, tav: 46 };
+    /** Újrahasznált kimenet a `terbe()`-nek: a `jelez()` nem allokál. */
+    this._ter = { pan: 0, tavolsag: 0 };
 
     // Elorzott kimenetek, amiket csak a rámpa lecsengése UTÁN kötünk le.
     this._temetoCsomopont = [];
@@ -80,7 +101,7 @@ export class Hang {
 
     // Újrahasznált beállítás-objektum a hangfoszlányokhoz: a `frissit()`
     // képkockánként fut, ott nem keletkezhet szemét.
-    this._foszlanyOpciok = { hangolas: 1, hangero: 1 };
+    this._foszlanyOpciok = { hangolas: 1, hangero: 1, pan: 0 };
 
     // Zene-ütemezés (a kontextus órájához igazítva, indításkor töltjük).
     this._kovAkkord = 0;
@@ -136,22 +157,41 @@ export class Hang {
   }
 
   // ── KEVERŐ ──────────────────────────────────────────────────────────────
-  // mester → limiter → hangszóró
-  //   fxBusz    (egylövetű) ─────────────┐
-  //   ambBusz   ──┐                      ├→ mester
-  //   zeneBusz  ──┴→ tompito (lowpass) ──┘
   //
-  // A tompító SZÁNDÉKOSAN csak a folyamatos ágon van. Áramszünetben a világ
-  // legyen fojtott — de a kattintás visszajelzése maradjon éles, különben a
-  // játékos azt hiszi, a FELÜLET romlott el, nem az állomás.
+  //   fxBusz  (egylövetű) ────────────────────────────────┐
+  //   ambBusz  ──┐                                        │
+  //   zeneBusz ──┴→ duck →┐                               ├→ mester
+  //   zengeto → zengSzint ┴→ tompito (lowpass) ───────────┘
+  //                                       mester → limiter → puhaVago → ki
+  //
+  // Négy döntés van ebben a rajzban, és mind a négy mérésből jött:
+  //
+  // A TOMPÍTÓ csak a folyamatos ágon van. Áramszünetben a világ legyen
+  // fojtott — de a kattintás visszajelzése maradjon éles, különben a játékos
+  // azt hiszi, a FELÜLET romlott el, nem az állomás.
+  //
+  // A DUCK az ambiens és a zene előtt van, az effekteken NINCS. Így egy
+  // összeomlás lehalkítja a nyüzsgést, de nem halkítja le önmagát.
+  //
+  // A ZENGETŐ a duck UTÁN csatlakozik, tehát az esemény saját zengése nem
+  // fullad bele a saját duckjába — a farok az, ami a teret elárulja.
+  //
+  // A PUHA VÁGÓ a limiter után van, utolsó védelemként. A limiternek
+  // időállandója van; egyetlen minta alatt felépülő csúcsot nem tud elkapni.
   _keveroGraf() {
     const c = this.ctx;
+
+    this.puhaVago = c.createWaveShaper();
+    this.puhaVago.curve = puhaGorbe(KEVERES.vagoMinta, KEVERES.vagoHajlat);
+    this.puhaVago.oversample = '2x';
+    this.puhaVago.connect(c.destination);
+
     this.limiter = c.createDynamicsCompressor();
     this.limiter.threshold.value = KEVERES.limitKuszob;
     this.limiter.ratio.value = KEVERES.limitArany;
-    this.limiter.attack.value = 0.004;
-    this.limiter.release.value = 0.25;
-    this.limiter.connect(c.destination);
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.22;
+    this.limiter.connect(this.puhaVago);
 
     this.mester = c.createGain();
     this.mester.gain.value = CSEND;
@@ -163,17 +203,38 @@ export class Hang {
     this.tompito.Q.value = 0.6;
     this.tompito.connect(this.mester);
 
+    // A közös tér. Az impulzusválasz futásidőben készül — nincs hangfájl.
+    this.zengeto = c.createConvolver();
+    this.zengeto.normalize = false;
+    this.zengeto.buffer = zengetoPuffer(c, TER);
+    this.zengSzint = c.createGain();
+    this.zengSzint.gain.value = TER.szint;
+    this.zengeto.connect(this.zengSzint);
+    this.zengSzint.connect(this.tompito);
+
+    this.duck = c.createGain();
+    this.duck.gain.value = 1;
+    this.duck.connect(this.tompito);
+
     this.fxBusz = c.createGain();
     this.fxBusz.gain.value = KEVERES.effekt;
     this.fxBusz.connect(this.mester);
 
     this.ambBusz = c.createGain();
     this.ambBusz.gain.value = KEVERES.ambiens;
-    this.ambBusz.connect(this.tompito);
+    this.ambBusz.connect(this.duck);
+
+    // Az ambiens küldése a térre a DUCK ELŐTT ágazik le: a tömeg zengése
+    // akkor is szól, amikor a tömeg maga le van halkítva. Ettől nem „kapcsol
+    // ki" az állomás egy riasztás alatt, csak hátrébb lép.
+    this.ambTer = c.createGain();
+    this.ambTer.gain.value = TER.ambiensKuldes;
+    this.ambBusz.connect(this.ambTer);
+    this.ambTer.connect(this.zengeto);
 
     this.zeneBusz = c.createGain();
     this.zeneBusz.gain.value = this._zeneHangero;
-    this.zeneBusz.connect(this.tompito);
+    this.zeneBusz.connect(this.duck);
   }
 
   /**
@@ -216,7 +277,16 @@ export class Hang {
     const sz = c.createGain(); sz.gain.value = CSEND;   // szint (kapuszám)
     const f = c.createBiquadFilter();
     f.type = 'lowpass'; f.frequency.value = A.portal.szuroMin; f.Q.value = A.portal.szuroQ;
-    f.connect(p); p.connect(sz); sz.connect(this.ambBusz);
+    // A zúgás lassan vándorol a sztereó képben: a kapuk nem egy pontban
+    // állnak, és egy percenként kétszer átsöprő mozgás pont annyi, hogy a
+    // fül „élőnek" hallja, de tudatosan ne vegye észre.
+    const ppan = panoramazo(c, 0);
+    f.connect(p); p.connect(sz); sz.connect(ppan); ppan.connect(this.ambBusz);
+    if (ppan.pan) {
+      const plfo = c.createOscillator(); plfo.type = 'sine'; plfo.frequency.value = A.portal.panLfoHz;
+      const plfoG = c.createGain(); plfoG.gain.value = A.portal.panMelyseg;
+      plfo.connect(plfoG); plfoG.connect(ppan.pan); plfo.start();
+    }
 
     const o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = A.portal.alapF;
     const o2 = c.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = A.portal.alapF * A.portal.lebegtetes;
@@ -236,13 +306,46 @@ export class Hang {
     this._portal = { szint: sz, szuro: f, dissz, disszG, lfo, lfoG };
 
     // ── TÖMEGZAJ ──────────────────────────────────────────────────────────
-    const tf = c.createBiquadFilter();
-    tf.type = 'bandpass'; tf.frequency.value = A.tomeg.szuroF; tf.Q.value = A.tomeg.szuroQ;
+    // KÉT forrásból, két oldalra panorámázva. Ugyanabból a zajpufferből
+    // indulnak, de MÁS pontról — így a két csatorna nem korrelál, és a tömeg
+    // körülvesz, ahelyett hogy egy hangfalból szólna. Egyetlen monó forrás
+    // pontosan 1,000-es sztereó-korrelációt ad; ez volt a mért kiindulás.
+    // A szint-szabályzó a panorámázók UTÁN van: így a két oldalnak külön
+    // szűrője és külön zajforrása lehet (ez adja a dekorrelációt), miközben
+    // a hangerőt továbbra is EGYETLEN csomópont mozgatja a `frissit()`-ben.
     const tg = c.createGain(); tg.gain.value = CSEND;
-    tf.connect(tg); tg.connect(this.ambBusz);
-    const tsrc = c.createBufferSource();
-    tsrc.buffer = this._zajFeher; tsrc.loop = true; tsrc.connect(tf); tsrc.start();
-    this._tomeg = { szint: tg, szuro: tf };
+    tg.connect(this.ambBusz);
+    const tszuro = [null, null];
+    for (let o = 0; o < 2; o++) {
+      const tf = c.createBiquadFilter();
+      tf.type = 'bandpass'; tf.frequency.value = A.tomeg.szuroF; tf.Q.value = A.tomeg.szuroQ;
+      const pan = panoramazo(c, o === 0 ? -A.tomeg.szelesseg : A.tomeg.szelesseg);
+      tf.connect(pan); pan.connect(tg);
+      const tsrc = c.createBufferSource();
+      tsrc.buffer = this._zajFeher; tsrc.loop = true; tsrc.connect(tf);
+      // Ugyanaz a puffer, de a MÁSIK feléről indítva: a két oldal így
+      // független zajt hall. Egyetlen monó forrás két panorámázóra kötve nem
+      // szélesít semmit — ugyanaz a jel érkezne mindkét oldalra.
+      tsrc.start(0, o * this._zajFeher.duration * 0.5);
+      tszuro[o] = tf;
+    }
+    this._tomeg = { szint: tg, szuro: tszuro };
+
+    // ── LEVEGŐ ────────────────────────────────────────────────────────────
+    // Alig hallható magas suhogás. Nem hangosít: KINYITJA a teret.
+    const L = A.levego;
+    const lg = c.createGain(); lg.gain.value = CSEND;
+    lg.connect(this.ambBusz);
+    for (let o = 0; o < 2; o++) {
+      const lf = c.createBiquadFilter();
+      lf.type = 'highpass'; lf.frequency.value = L.szuroF; lf.Q.value = L.szuroQ;
+      const pan = panoramazo(c, o === 0 ? -L.szelesseg : L.szelesseg);
+      lf.connect(pan); pan.connect(lg);
+      const src = c.createBufferSource();
+      src.buffer = this._zajFeher; src.loop = true; src.connect(lf);
+      src.start(0, o * this._zajFeher.duration * 0.37);
+    }
+    this._levego = { szint: lg };
 
     // ── ELÉGEDETLENSÉG ────────────────────────────────────────────────────
     const mf = c.createBiquadFilter();
@@ -285,7 +388,12 @@ export class Hang {
       o.detune.value = (i - (ZENE.padHangok - 1) / 2) * ZENE.padElhangolas;
       const og = c.createGain();
       og.gain.value = 1 / ZENE.padHangok;
-      o.connect(og); og.connect(f);
+      // A négy pad-hang szétterítve. Egy unisono monó pad „szintetizátornak"
+      // hallatszik; ugyanaz a négy hang a sztereó képben elosztva „térnek".
+      // A szélső értékek szándékosan mérsékeltek: a zene ne vonja el a
+      // figyelmet a hangoktól, amik a világ állapotát mondják.
+      const pan = panoramazo(c, ((i / (ZENE.padHangok - 1)) * 2 - 1) * 0.55);
+      o.connect(og); og.connect(pan); pan.connect(f);
       o.start();
       hangok[i] = o;
     }
@@ -343,52 +451,161 @@ export class Hang {
   /**
    * Egyszeri hang lejátszása a katalógusból.
    * @param {string} kod a `JELZES_KODOK` egyike
-   * @param {{hangero?:number, hangolas?:number, keses?:number}} opciok
+   * @param {{hangero?:number, hangolas?:number, keses?:number,
+   *          pan?:number, x?:number, y?:number}} opciok
    *        hangero  0..1 szorzó (pl. a bevétel nagyságával)
    *        hangolas frekvencia-szorzó — a szűrőkre IS hat, hogy a hangszín
    *                 együtt mozogjon a magassággal
    *        keses    másodperc
+   *        pan      −1..1 kézi panoráma (ha nincs világkoordináta)
+   *        x, y     RÁCSKOORDINÁTA. Ha megvan, a hang a kamerához képest
+   *                 szólal meg: a képernyő jobb oldalán történt esemény a
+   *                 jobb fülben, a távoli halkabban és zengősebben.
    */
   jelez(kod, opciok = {}) {
     if (!this._elindult || this._nemitva || this._hangero <= 0.001) return;
     const h = HANGOK[kod];
     if (!h) return;
     this._takarit();
-    const hely = this._helyet(h.elsobbseg);
-    if (!hely) return;                     // tele a keverő — ezt eldobjuk
 
     const c = this.ctx;
     const t0 = c.currentTime + (opciok.keses || 0);
-    const hangolas = opciok.hangolas || 1;
-    const szint = h.hangero * (opciok.hangero == null ? 1 : opciok.hangero);
+
+    // ── TORLÓDÁS: ugyanaz a hang nem szólhat kétszer egymás hegyén ────────
+    // Hat kassza egyetlen képkockában nem hatszor hangosabb kassza, hanem
+    // egy fésűszűrt reccsenés: azonos hullámformák néhány mintányi eltéréssel
+    // kioltják egymás sávjait. A második kérést tehát nem halkítjuk, hanem
+    // ELDOBJUK — a játékos úgysem tudná megkülönböztetni.
+    const koz = h.torlodas == null ? KEVERES.torlodasAlap : h.torlodas;
+    if (t0 - this._utoljara[kod] < koz) return;
+
+    const hely = this._helyet(h.elsobbseg);
+    if (!hely) return;                     // tele a keverő — ezt eldobjuk
+    // Csak a MEGSZÓLALT hang számít: egy eldobott kérés nem némíthatja el a
+    // következőt is.
+    this._utoljara[kod] = t0;
+
+    // ── VÁLTOZATOSSÁG ─────────────────────────────────────────────────────
+    const V = h.valtozat || VALTOZAT_ALAP;
+    const hangolas = (opciok.hangolas || 1) * (1 + (Math.random() * 2 - 1) * V.hangolas);
+    let szint = h.hangero * (opciok.hangero == null ? 1 : opciok.hangero)
+      * (1 + (Math.random() * 2 - 1) * V.hangero);
+
+    // ── SOROZAT-CSILLAPÍTÁS ───────────────────────────────────────────────
+    // n egyszerre induló, véletlen fázisú hang összege √n-szeres — nem
+    // n-szeres. Az 1/√n szorzó tehát pont azt tartja szinten, amit a fül
+    // hangosságnak hall, és közben megszünteti azt a csúcsot, ami a
+    // levágásig vitte a keverőt. A 3. elsőbbség kimarad: a katasztrófát nem
+    // halkíthatja le az, hogy közben tíz kattintás is elindult.
+    if (t0 - this._sorozatKezd > KEVERES.sorozatAblak) { this._sorozatKezd = t0; this._sorozatDb = 0; }
+    this._sorozatDb++;
+    if (h.elsobbseg < 3 && this._sorozatDb > 1) {
+      const cs = 1 / Math.sqrt(this._sorozatDb);
+      szint *= cs < KEVERES.sorozatMin ? KEVERES.sorozatMin : cs;
+    }
+
+    // ── TÉRHATÁS ──────────────────────────────────────────────────────────
+    let terKuld = h.ter == null ? 0.30 : h.ter;
+    let pan = opciok.pan == null ? 0 : opciok.pan;
+    if (opciok.x != null) {
+      terbe(this._kam, opciok.x, opciok.y == null ? 0 : opciok.y, this._ter);
+      pan = this._ter.pan;
+      // A távolság kétféleképp hat, és a kettő EGYÜTT adja a mélységet:
+      // halkul, ÉS arányaiban több zengést kap. Csak a halkítás „kicsi"
+      // hangot csinálna, nem távolit.
+      const kozel = KEVERES.tavFelezo / (KEVERES.tavFelezo + this._ter.tavolsag);
+      szint *= kozel;
+      terKuld *= 1 + TER.tavKuldes * (1 - kozel);
+    }
+    pan *= KEVERES.terSzelesseg;
+    if (pan < -1) pan = -1; else if (pan > 1) pan = 1;
 
     const csucs = c.createGain();
     csucs.gain.value = 1;
-    csucs.connect(this.fxBusz);
+    const pano = panoramazo(c, pan);
+    csucs.connect(pano);
+    pano.connect(this.fxBusz);
 
     hely.aktiv = true;
     hely.prio = h.elsobbseg;
     hely.kezdet = t0;
     hely.csucs = csucs;
     hely.forrasok.length = 0;
+    hely.kimenet.length = 0;
+    hely.kimenet.push(csucs, pano);
+
+    // A zengető-küldés a panoráma ELŐTT ágazik le: a tér a saját sztereó
+    // képét adja, azt nem kell még egyszer oldalra tolni.
+    if (terKuld > 0.001) {
+      const tg = c.createGain();
+      tg.gain.value = terKuld;
+      csucs.connect(tg);
+      tg.connect(this.zengeto);
+      hely.kimenet.push(tg);
+    }
 
     let veg = t0;
     for (let i = 0; i < h.retegek.length; i++) {
-      const v = this._reteget(h.retegek[i], csucs, t0, hangolas, szint, hely);
+      const v = this._reteget(h.retegek[i], csucs, t0, hangolas, szint, hely, V);
       if (v > veg) veg = v;
     }
     hely.veg = veg;
+    this._duckol(h.elsobbseg, t0, veg - t0);
+  }
+
+  /**
+   * A háttér lehalkítása egy fontos hang idejére.
+   *
+   * ── MIÉRT NEM HANGOSÍTUNK HELYETTE ────────────────────────────────────
+   * Mérve: egy nyüzsgő, instabil állomáson a kapu-összeomlás riasztása
+   * mindössze 0,8 dB-lel volt hangosabb a háttérnél — vagyis a játék
+   * legfontosabb figyelmeztetése gyakorlatilag nem hallatszott. A kézenfekvő
+   * válasz, hogy „legyen hangosabb az omlás", nem működik: a kimeneti
+   * limiter pontosan azt húzza vissza, amivel az egészet feljebb tolnánk, és
+   * közben a fanfárok is bántóvá válnának. Amit minden rádióadás csinál
+   * ehelyett: a fontos jel alatt a HÁTTÉR halkul. Ugyanaz a dB-különbség,
+   * fele akkora hangnyomással.
+   */
+  _duckol(prio, t0, hossz) {
+    const m = prio >= 3 ? KEVERES.duckMagas : prio === 2 ? KEVERES.duckKozep : 0;
+    if (m <= 0) return;
+    const veg = t0 + hossz + KEVERES.duckFarok;
+    // Egy halkabb duck nem szakíthatja félbe a mélyebbet: a fanfár alatt
+    // beeső esemény nem hozhatja vissza a nyüzsgést.
+    if (m < this._duckMelyseg && veg <= this._duckVeg) return;
+    if (m > this._duckMelyseg) this._duckMelyseg = m;
+    if (veg > this._duckVeg) this._duckVeg = veg;
+    const g = this.duck.gain;
+    g.cancelScheduledValues(t0);
+    g.setTargetAtTime(1 - this._duckMelyseg, t0, KEVERES.duckBe);
+    g.setTargetAtTime(1, this._duckVeg, KEVERES.duckKi);
+  }
+
+  /**
+   * A kamera vízszintes állása — a térhatás ehhez viszonyít.
+   * A `fo.js` hívja képkockánként a `szinter` adataiból. Ha sosem hívná,
+   * minden hang középen szól: működik, csak nincs iránya.
+   * @param {number} x a kamera célpontja rácskoordinátában
+   * @param {number} z ugyanaz a másik tengelyen
+   * @param {number} szog vízszintes forgás radiánban
+   * @param {number} tav kameratávolság — ez adja a „mennyire látunk rá" léptéket
+   */
+  kamera(x, z, szog, tav) {
+    this._kam.x = x; this._kam.z = z; this._kam.szog = szog; this._kam.tav = tav;
   }
 
   /** Egy réteg felépítése és ütemezése. @returns {number} mikor hallgat el */
-  _reteget(r, cel, t0, hangolas, szint, hely) {
+  _reteget(r, cel, t0, hangolas, szint, hely, V) {
     const c = this.ctx;
     const jegyek = r.jegyek || EGY_JEGY;
     const hossz = r.hossz;
     let veg = t0;
 
     for (let i = 0; i < jegyek.length; i++) {
-      const kezd = t0 + (r.keses || 0) + jegyek[i][0];
+      // Mikro-időzítési szórás jegyenként. Egy fanfár, aminek a négy hangja
+      // ezredmásodpercre pontosan egyforma távolságra van, GÉPNEK hangzik;
+      // pár ezredmásodpercnyi ingás elég ahhoz, hogy játszottnak.
+      const kezd = t0 + (r.keses || 0) + jegyek[i][0] + Math.random() * V.ido;
       const szorzo = jegyek[i][1] * hangolas;
 
       const g = c.createGain();
@@ -465,6 +682,9 @@ export class Hang {
   /** Lejárt hangszálak felszabadítása. Fix, 12 elemű kör — nem allokál. */
   _takarit() {
     const most = this.ctx.currentTime;
+    // A duck lejárt: a mélységet nullázni kell, különben egy régen elhalt
+    // fanfár mélysége örökre padlóként maradna az újabb, halkabb duckok alatt.
+    if (this._duckMelyseg > 0 && most > this._duckVeg) { this._duckMelyseg = 0; this._duckVeg = 0; }
     for (let i = 0; i < this._helyek.length; i++) {
       const h = this._helyek[i];
       if (h.aktiv && h.veg + 0.06 < most) this._elenged(h);
@@ -480,10 +700,13 @@ export class Hang {
   }
 
   _elenged(h) {
-    if (h.csucs) { try { h.csucs.disconnect(); } catch (e) { /* már bontva */ } }
+    for (let i = 0; i < h.kimenet.length; i++) {
+      try { h.kimenet[i].disconnect(); } catch (e) { /* már bontva */ }
+    }
     for (let i = 0; i < h.forrasok.length; i++) {
       try { h.forrasok[i].disconnect(); } catch (e) { /* már bontva */ }
     }
+    h.kimenet.length = 0;
     h.forrasok.length = 0;
     h.csucs = null;
     h.aktiv = false;
@@ -514,11 +737,12 @@ export class Hang {
       for (let i = 0; i < aldozat.forrasok.length; i++) {
         try { aldozat.forrasok[i].stop(most + 0.05); } catch (e) { /* már leállt */ }
       }
-      if (aldozat.csucs) {
-        this._temetoCsomopont.push(aldozat.csucs);
+      for (let i = 0; i < aldozat.kimenet.length; i++) {
+        this._temetoCsomopont.push(aldozat.kimenet[i]);
         this._temetoMikor.push(most + 0.25);
       }
       aldozat.forrasok.length = 0;
+      aldozat.kimenet.length = 0;
       aldozat.csucs = null;
       aldozat.aktiv = false;
       return aldozat;
@@ -602,9 +826,17 @@ export class Hang {
     const tomottseg = kozott(Math.log(1 + sim.utasSzam) / Math.log(1 + M.viszony), 0, 1);
     const ejjeliSzorzo = A.napszak.tomegEjjel + (1 - A.napszak.tomegEjjel) * nappal;
     t.szint.gain.setTargetAtTime(Math.max(CSEND, tomottseg * M.szintMax * ejjeliSzorzo), most, atmenet);
-    t.szuro.frequency.setTargetAtTime(
-      Math.max(120, M.szuroF + (M.szuroFTeli - M.szuroF) * tomottseg + A.napszak.szinEjjel * (1 - nappal)),
-      most, atmenet,
+    const tszuroF = Math.max(120, M.szuroF + (M.szuroFTeli - M.szuroF) * tomottseg + A.napszak.szinEjjel * (1 - nappal));
+    // A két oldal szűrője KICSIT elhangolva jár együtt: a tökéletesen azonos
+    // két oldal újra összeolvadna egy középső ponttá.
+    t.szuro[0].frequency.setTargetAtTime(tszuroF * 0.94, most, atmenet);
+    t.szuro[1].frequency.setTargetAtTime(tszuroF * 1.06, most, atmenet);
+
+    // ── LEVEGŐ ────────────────────────────────────────────────────────────
+    // A csarnok „nyitottsága" a tömeggel nő, de sosem sokkal: ez a réteg
+    // nem hangosít, csak teret ad.
+    this._levego.szint.gain.setTargetAtTime(
+      Math.max(CSEND, A.levego.szintMax * (0.35 + 0.65 * tomottseg) * ejjeliSzorzo), most, atmenet,
     );
 
     // Hangfoszlányok: annál sűrűbben, minél többen vannak. Ez az egyetlen
@@ -614,7 +846,12 @@ export class Hang {
       this._foszlanyOpciok.hangolas = M.foszlanyHangolasMin
         + Math.random() * (M.foszlanyHangolasMax - M.foszlanyHangolasMin);
       this._foszlanyOpciok.hangero = 0.5 + Math.random() * 0.7;
-      this.jelez('foszlany', this._foszlanyOpciok);
+      // A tömeg körülvesz: minden foszlány máshonnan jön. Ez a legolcsóbb
+      // mód arra, hogy ezer lény ne EGY hangfalból nyüzsögjön.
+      this._foszlanyOpciok.pan = (Math.random() * 2 - 1) * M.foszlanySzelesseg;
+      // Minden ötödik-hatodik foszlány valami egészen más: tíz FAJ jár itt,
+      // és ha mind ugyanúgy mormog, az nem tömeg, hanem szellőzőrendszer.
+      this.jelez(Math.random() < M.furcsaEsely ? 'foszlany_furcsa' : 'foszlany', this._foszlanyOpciok);
     }
 
     // ── ELÉGEDETLENSÉG ────────────────────────────────────────────────────

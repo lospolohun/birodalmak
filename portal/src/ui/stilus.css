@@ -10,15 +10,27 @@
  * ── SZÍNEK ───────────────────────────────────────────────────────────────
  * Sötét, hideg alap; a kiemelés lila (kapu) és türkiz (kristály). A három
  * állapotszín (jó / gond / baj) MINDIG ugyanaz, hogy meg lehessen tanulni.
+ *
+ * ── MIÉRT NŐTTEK A BETŰK ─────────────────────────────────────────────────
+ * A felület 10–11,5 px-es szövegekkel indult, mert „elfér". Elfér, de nem
+ * olvasható: a panelek fele halvány szürkével, tizedmásodpercekre megnézve.
+ * Egy tycoonban a panel SZÖVEG, nem díszlet — ha nem olvassák el, akkor az
+ * információ nem is létezik. A halvány szín is világosodott: a régi #93a0c8
+ * a panel hátterén 4,2:1 kontraszt volt, ami apró betűnél kevés.
+ *
+ * ── MIÉRT NINCS BETÖLTÖTT BETŰTÍPUS ──────────────────────────────────────
+ * A `dist/` bármelyik gépre bemásolható és hálózat nélkül elindul. Egy
+ * webfont ezt elrontaná (és a kiadás-ellenőrző el is bukna rajta): minden
+ * betű RENDSZERBETŰ.
  */
 
 :root {
   --hatter: #10142a;
-  --panel: rgba(20, 25, 52, 0.88);
-  --panel2: rgba(30, 37, 72, 0.94);
-  --keret: rgba(140, 160, 230, 0.22);
+  --panel: rgba(20, 25, 52, 0.9);
+  --panel2: rgba(30, 37, 72, 0.95);
+  --keret: rgba(140, 160, 230, 0.24);
   --szoveg: #e6ecff;
-  --halvany: #93a0c8;
+  --halvany: #aab6da;
   --lila: #9b6bff;
   --turkiz: #6fd8ff;
   --jo: #63d68a;
@@ -55,16 +67,27 @@ html, body {
 }
 
 .cimke {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 7px;
   background: var(--panel); border: 1px solid var(--keret);
-  border-radius: 10px; padding: 5px 10px;
+  border-radius: 10px; padding: 5px 11px;
   white-space: nowrap;
 }
-.cimke .ikon { font-size: 15px; }
-.cimke b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cimke .ikon { font-size: 16px; }
+.cimke b { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
 .cimke small { color: var(--halvany); font-size: 11px; }
 .cimke.baj { border-color: var(--baj); box-shadow: 0 0 12px rgba(255, 93, 115, 0.35); }
+.cimke.baj b { color: var(--baj); }
 .cimke.gond { border-color: var(--gond); }
+.cimke.gond b { color: var(--gond); }
+
+/* A HUD hat száma nem kijelző, hanem KAPU a válaszlépéshez: mindegyik abba a
+ * panelbe visz, ahol a válasz megszületik. Ezt látni is kell rajta. */
+.cimke.kattinthato { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.cimke.kattinthato:hover { border-color: var(--lila); background: rgba(45, 52, 96, 0.95); }
+
+/* Hírnév-irány: apró, de a hírnév a játék egyetlen igazi trendszáma. */
+.cimke.fel .ikon::after { content: '▲'; font-size: 9px; color: var(--jo); margin-left: 2px; vertical-align: 3px; }
+.cimke.le .ikon::after { content: '▼'; font-size: 9px; color: var(--baj); margin-left: 2px; vertical-align: 3px; }
 
 #jatek-nev { font-weight: 700; letter-spacing: 0.06em; color: var(--lila); }
 #jatek-nev small { color: var(--halvany); font-weight: 400; letter-spacing: 0; }
@@ -74,12 +97,17 @@ html, body {
 
 /* ── SZINTVÁLASZTÓ ─────────────────────────────────────────────────────── */
 
-#szintek { display: flex; gap: 3px; margin-left: auto; }
+#szintek { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+#szintek .sarok {
+  font-size: 10px; color: var(--halvany); text-transform: uppercase;
+  letter-spacing: 0.1em; margin-right: 3px;
+}
 #szintek button {
   width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
   background: var(--panel); border: 1px solid var(--keret); color: var(--halvany);
   font-size: 12px; font-weight: 700;
 }
+#szintek button:hover { border-color: var(--turkiz); color: var(--szoveg); }
 #szintek button.aktiv { background: var(--turkiz); border-color: var(--turkiz); color: #0d1428; }
 
 /* ── SEBESSÉG ──────────────────────────────────────────────────────────── */
@@ -90,19 +118,48 @@ html, body {
   background: var(--panel); border: 1px solid var(--keret); color: var(--szoveg);
   font-size: 13px; font-weight: 600;
 }
+#sebesseg button:hover { border-color: var(--lila); }
 #sebesseg button.aktiv { background: var(--lila); border-color: var(--lila); color: #fff; }
 #hangGomb { margin-left: 6px; }
 
-/* ── FEJEZET ───────────────────────────────────────────────────────────── */
+/* ── BAL OSZLOP: FEJEZET · RIASZTÁS · BEVEZETŐ ─────────────────────────────
+ * Egy oszlop, folyó elrendezéssel. Korábban három abszolút doboz ült
+ * egymás alatt fix képpontokon, és a hosszabb célszövegnél EGYMÁSRA
+ * CSÚSZTAK. Fix szám ezt sosem oldja meg — a következő doboz kerüljön
+ * magától lejjebb. */
+
+#bal {
+  position: absolute; top: 56px; left: 12px; width: 282px;
+  display: flex; flex-direction: column; gap: 7px;
+  pointer-events: none;
+  max-height: calc(100% - 220px);
+}
+#bal > * { pointer-events: auto; }
 
 #fejezet {
-  position: absolute; top: 56px; left: 12px; width: 268px;
   background: var(--panel); border: 1px solid var(--keret); border-left: 3px solid var(--lila);
   border-radius: 10px; padding: 9px 11px;
 }
-#fejezet h3 { margin: 0 0 3px; font-size: 13px; }
-#fejezet p { margin: 0 0 6px; font-size: 12px; color: var(--halvany); line-height: 1.35; }
+#fejezet h3 { margin: 0 0 3px; font-size: 13.5px; }
+#fejezet p { margin: 0 0 7px; font-size: 12.5px; color: var(--halvany); line-height: 1.4; }
 #fejezet .sav { width: 100%; }
+
+/* A riasztás CSAK `baj` szintű tanácsnál látszik, ezért szabad feltűnőnek
+ * lennie. Ha mindig kint lenne, két perc alatt megtanulná az ember átnézni
+ * rajta — és pont azt veszítenénk el, amiért készült. */
+#riasztas {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: rgba(255, 93, 115, 0.16); border: 1px solid var(--baj);
+  border-left: 3px solid var(--baj);
+  border-radius: 10px; padding: 8px 11px;
+  color: var(--szoveg); font-size: 12.5px; font-weight: 600;
+  animation: lüktet 1.9s ease-in-out infinite;
+}
+#riasztas:hover { background: rgba(255, 93, 115, 0.3); }
+@keyframes lüktet {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 93, 115, 0); }
+  50% { box-shadow: 0 0 16px rgba(255, 93, 115, 0.5); }
+}
 
 /* ── OLDALSÓ GOMBOK ────────────────────────────────────────────────────── */
 
@@ -118,34 +175,72 @@ html, body {
 #oldal button:hover { border-color: var(--lila); }
 #oldal button.aktiv { background: var(--lila); border-color: var(--lila); }
 #oldal button .pont {
-  position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
-  border-radius: 50%; background: var(--gond);
+  position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px;
+  border-radius: 9px; background: var(--gond); color: #221a00;
+  font-size: 11px; font-weight: 700; line-height: 17px; text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+#oldal button .pont.baj {
+  background: var(--baj); color: #fff;
+  animation: lüktet 1.9s ease-in-out infinite;
 }
 
 /* ── PANEL ─────────────────────────────────────────────────────────────── */
 
 #panel {
-  position: absolute; top: 56px; right: 66px; bottom: 132px; width: 372px;
+  position: absolute; top: 56px; right: 66px; bottom: 150px; width: 390px;
+  max-width: calc(100% - 90px);
   background: var(--panel2); border: 1px solid var(--keret); border-radius: 12px;
   padding: 12px; overflow-y: auto; display: none;
 }
 #panel.nyitva { display: block; }
-#panel h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: 0.04em; }
-#panel h4 { margin: 12px 0 6px; font-size: 12px; color: var(--halvany); text-transform: uppercase; letter-spacing: 0.08em; }
+#panel h2 { margin: 0 0 10px; font-size: 16px; letter-spacing: 0.03em; }
+#panel h4 {
+  margin: 14px 0 6px; font-size: 11.5px; color: var(--halvany);
+  text-transform: uppercase; letter-spacing: 0.09em;
+  border-bottom: 1px solid rgba(140, 160, 230, 0.16); padding-bottom: 3px;
+}
 
 .tetel {
-  background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 9px; padding: 8px 10px; margin-bottom: 6px;
 }
 .tetel .fej { display: flex; align-items: center; gap: 7px; }
-.tetel .fej b { flex: 1; font-size: 13px; }
-.tetel p { margin: 5px 0 0; font-size: 11.5px; color: var(--halvany); line-height: 1.4; }
-.tetel .sorok { display: flex; gap: 10px; margin-top: 5px; font-size: 11.5px; color: var(--halvany); flex-wrap: wrap; }
+.tetel .fej b { flex: 1; font-size: 13.5px; }
+.tetel .fej .halk { color: var(--halvany); font-size: 11.5px; }
+.tetel p { margin: 5px 0 0; font-size: 12.5px; color: #c6cfe9; line-height: 1.45; }
+.tetel .sorok { display: flex; gap: 10px; margin-top: 6px; font-size: 12.5px; color: var(--halvany); flex-wrap: wrap; }
 .tetel .sorok b { color: var(--szoveg); }
+.tetel .sorok.baj { color: #ffb3bd; }
+.tetel.kesz { opacity: 0.62; }
+
+/* Állapotcímke a tétel fejlécében („3 üres hely") — a szám, amire van
+ * válaszlépés, ne olvadjon bele a sorba. */
+.jelzo {
+  font-size: 11px; font-weight: 700; border-radius: 5px; padding: 1px 6px;
+  background: rgba(255, 194, 71, 0.18); color: var(--gond); border: 1px solid rgba(255, 194, 71, 0.4);
+}
+.jelzo.baj { background: rgba(255, 93, 115, 0.18); color: var(--baj); border-color: rgba(255, 93, 115, 0.45); }
+
+/* ── DOLGOZÓK ──────────────────────────────────────────────────────────── */
+
+.tetel.szakma .fej .nyil { color: var(--halvany); font-size: 12px; }
+.tetel.szakma:hover { border-color: rgba(155, 107, 255, 0.4); }
+.tetel.szakma.nyitva { border-color: rgba(155, 107, 255, 0.45); background: rgba(155, 107, 255, 0.08); }
+.tetel.dolgozo { margin-left: 12px; }
+.tetel.dolgozo.tetlen { border-left: 3px solid var(--gond); }
+
+select {
+  width: 100%; margin-top: 6px; padding: 5px;
+  background: #1a2144; color: var(--szoveg);
+  border: 1px solid rgba(140, 160, 230, 0.28); border-radius: 6px;
+  font-size: 12.5px; font-family: inherit;
+}
 
 button.mini {
-  background: rgba(155, 107, 255, 0.2); border: 1px solid var(--lila); color: var(--szoveg);
-  border-radius: 7px; padding: 4px 9px; font-size: 11.5px; cursor: pointer;
+  background: rgba(155, 107, 255, 0.22); border: 1px solid var(--lila); color: var(--szoveg);
+  border-radius: 7px; padding: 5px 10px; font-size: 12.5px; cursor: pointer;
+  font-family: inherit;
 }
 button.mini:hover { background: var(--lila); }
 button.mini:disabled { opacity: 0.35; cursor: not-allowed; border-color: var(--keret); background: transparent; }
@@ -153,6 +248,16 @@ button.mini.vesz { background: rgba(255, 93, 115, 0.16); border-color: var(--baj
 button.mini.vesz:hover { background: var(--baj); }
 
 input[type=range] { width: 100%; accent-color: var(--lila); }
+input[type=text] { font-family: inherit; font-size: 12.5px; }
+
+/* Billentyű-táblázat a súgóban. */
+.billentyuk { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.billentyuk > div { display: flex; align-items: baseline; gap: 9px; font-size: 12.5px; }
+.billentyuk kbd {
+  min-width: 104px; text-align: right; color: var(--turkiz);
+  font-family: inherit; font-size: 12px; font-weight: 600;
+}
+.billentyuk span { color: var(--halvany); }
 
 /* ── ÉPÍTÉS-SÁV ────────────────────────────────────────────────────────── */
 
@@ -164,49 +269,71 @@ input[type=range] { width: 100%; accent-color: var(--lila); }
 #kategoriak { display: flex; gap: 5px; margin-bottom: 7px; flex-wrap: wrap; }
 #kategoriak button {
   background: var(--panel); border: 1px solid var(--keret); color: var(--halvany);
-  border-radius: 8px; padding: 5px 11px; font-size: 12px; cursor: pointer;
+  border-radius: 8px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+  font-family: inherit;
 }
+#kategoriak button:hover { color: var(--szoveg); border-color: rgba(155, 107, 255, 0.5); }
 #kategoriak button.aktiv { color: var(--szoveg); border-color: var(--lila); background: rgba(155, 107, 255, 0.22); }
 
 #epuletek { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
 .epgomb {
-  min-width: 96px; background: var(--panel); border: 1px solid var(--keret);
+  min-width: 104px; background: var(--panel); border: 1px solid var(--keret);
   border-radius: 10px; padding: 7px 9px; cursor: pointer; text-align: left; color: var(--szoveg);
-  flex-shrink: 0;
+  flex-shrink: 0; font-family: inherit;
 }
 .epgomb:hover { border-color: var(--lila); }
 .epgomb.aktiv { background: rgba(155, 107, 255, 0.3); border-color: var(--lila); }
-.epgomb.tiltott { opacity: 0.4; cursor: not-allowed; }
-.epgomb .sor1 { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
-.epgomb .sor2 { font-size: 11px; color: var(--arany); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.epgomb .sor3 { font-size: 10px; color: var(--halvany); }
+/* A tiltott gomb NEM tűnik el és nem is olvashatatlan: aki most tanulja a
+ * játékot, annak látnia kell, mi LESZ elérhető — és hogy mi hiányzik hozzá. */
+.epgomb.tiltott { opacity: 0.55; cursor: not-allowed; border-style: dashed; }
+.epgomb.tiltott .sor2 { color: var(--halvany); }
+.epgomb .sor1 { display: flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; }
+.epgomb .sor2 { font-size: 11.5px; color: var(--arany); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.epgomb .sor3 { font-size: 11px; color: var(--halvany); }
+.epgomb .sorOk { font-size: 10.5px; color: var(--gond); margin-top: 1px; }
+.epgomb .sorOk:empty { display: none; }
 
 /* ── SÚGÓBUBORÉK ───────────────────────────────────────────────────────── */
 
 #buborek {
-  position: absolute; max-width: 280px; padding: 8px 10px;
-  background: rgba(10, 14, 32, 0.96); border: 1px solid var(--keret);
-  border-radius: 9px; font-size: 12px; line-height: 1.4; display: none;
+  position: absolute; max-width: 300px; padding: 9px 11px;
+  background: rgba(10, 14, 32, 0.97); border: 1px solid var(--keret);
+  border-radius: 9px; font-size: 12.5px; line-height: 1.45; display: none;
   pointer-events: none; z-index: 20;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
 }
 #buborek b { color: var(--turkiz); }
 
 /* ── ÜZENET ────────────────────────────────────────────────────────────── */
+/* A `gond` és a `baj` üzenet nem ugyanolyan, mint az örömhír: ezekben van
+ * az ELUTASÍTÁS OKA („nincs itt hely (padló kell, épület nélkül)"). Ha ez
+ * ugyanúgy néz ki, mint a „Kutatás kész", akkor a játékos annyit lát, hogy
+ * kattintott és nem történt semmi. Ezért kap saját hátteret és ikont. */
 
 #uzenetek {
-  position: absolute; left: 50%; bottom: 148px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 166px; transform: translateX(-50%);
   display: flex; flex-direction: column-reverse; gap: 5px; align-items: center;
-  pointer-events: none;
+  pointer-events: none; max-width: 62vw;
 }
 .uzenet {
-  background: rgba(10, 14, 32, 0.94); border: 1px solid var(--keret);
+  background: rgba(10, 14, 32, 0.95); border: 1px solid var(--keret);
   border-left: 3px solid var(--turkiz);
-  border-radius: 8px; padding: 6px 13px; font-size: 12.5px;
+  border-radius: 8px; padding: 7px 14px; font-size: 13px; line-height: 1.35;
+  text-align: center;
   animation: bejon 0.25s ease-out;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 .uzenet.jo { border-left-color: var(--jo); }
-.uzenet.gond { border-left-color: var(--gond); }
-.uzenet.baj { border-left-color: var(--baj); }
+.uzenet.gond {
+  border-color: rgba(255, 194, 71, 0.55); border-left-color: var(--gond);
+  background: rgba(48, 37, 12, 0.95); color: #ffe6b0; font-weight: 600;
+}
+.uzenet.gond::before { content: '⚠ '; }
+.uzenet.baj {
+  border-color: rgba(255, 93, 115, 0.6); border-left-color: var(--baj);
+  background: rgba(56, 15, 24, 0.95); color: #ffd0d7; font-weight: 600;
+}
+.uzenet.baj::before { content: '✖ '; }
 @keyframes bejon { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ── MODÁLIS ───────────────────────────────────────────────────────────── */
@@ -217,25 +344,31 @@ input[type=range] { width: 100%; accent-color: var(--lila); }
   backdrop-filter: blur(3px);
 }
 #fatyol.nyitva { display: flex; }
+/* Az esemény-ablak mellett FUT AZ IDŐ (lásd `modalok.js`), tehát látni is
+ * kell, mi történik közben: ott halványabb a fátyol és nincs életlenítés. */
+#fatyol.esemeny { background: rgba(6, 8, 20, 0.45); backdrop-filter: none; }
 #modal {
   width: min(560px, 92vw); background: var(--panel2);
   border: 1px solid var(--keret); border-radius: 16px; padding: 22px 24px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  max-height: 88vh; overflow-y: auto;
 }
 #modal .fejlec { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 #modal .fejlec .ikon { font-size: 30px; }
 #modal h1 { margin: 0; font-size: 19px; letter-spacing: 0.03em; }
 #modal .alcim { color: var(--lila); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
-#modal p.torzs { font-size: 13.5px; line-height: 1.6; color: #cfd8f5; margin: 0 0 14px; }
+#modal p.torzs { font-size: 14px; line-height: 1.6; color: #d6ddf7; margin: 0 0 14px; }
 #modal .valaszok { display: flex; flex-direction: column; gap: 8px; }
 #modal .valasz {
   text-align: left; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--keret);
-  border-radius: 10px; padding: 10px 13px; cursor: pointer; color: var(--szoveg);
+  border-radius: 10px; padding: 11px 14px; cursor: pointer; color: var(--szoveg);
+  font-family: inherit;
 }
 #modal .valasz:hover { border-color: var(--lila); background: rgba(155, 107, 255, 0.18); }
-#modal .valasz b { display: block; font-size: 13.5px; margin-bottom: 3px; }
-#modal .valasz span { font-size: 11.5px; color: var(--halvany); line-height: 1.4; }
+#modal .valasz b { display: block; font-size: 14px; margin-bottom: 3px; }
+#modal .valasz span { font-size: 12.5px; color: var(--halvany); line-height: 1.45; }
 #modal .valasz:disabled { opacity: 0.4; cursor: not-allowed; }
+#modal .valasz .miert { display: block; margin-top: 3px; color: var(--gond); font-size: 12px; }
 
 /* ── VÉGE-KÉPERNYŐ ─────────────────────────────────────────────────────── */
 
@@ -260,10 +393,10 @@ input[type=range] { width: 100%; accent-color: var(--lila); }
 }
 #betoltes .doboz { width: min(460px, 88vw); text-align: center; }
 #betoltes h1 { margin: 0 0 6px; font-size: 20px; letter-spacing: 0.08em; color: var(--lila); }
-#betoltes p { margin: 0 0 16px; font-size: 12.5px; color: var(--halvany); line-height: 1.5; }
+#betoltes p { margin: 0 0 16px; font-size: 13px; color: var(--halvany); line-height: 1.5; }
 #betoltes .sav { width: 100%; height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
 #betoltes .sav > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--lila), var(--turkiz)); }
-#betoltes .szam { margin-top: 8px; font-size: 12px; color: var(--szoveg); font-variant-numeric: tabular-nums; }
+#betoltes .szam { margin-top: 8px; font-size: 12.5px; color: var(--szoveg); font-variant-numeric: tabular-nums; }
 
 
 /* ── BEVEZETŐ ──────────────────────────────────────────────────────────────
@@ -272,20 +405,31 @@ input[type=range] { width: 100%; accent-color: var(--lila); }
  * fejezet a történetét, a bevezető a következő öt percét. */
 
 #bevezeto {
-  position: absolute; top: 152px; left: 12px; width: 268px;
   background: var(--panel); border: 1px solid var(--keret);
   border-left: 3px solid var(--turkiz);
   border-radius: 10px; padding: 9px 11px;
 }
 #bevezeto .fej { display: flex; align-items: center; gap: 7px; }
-#bevezeto .fej b { flex: 1; font-size: 12.5px; }
+#bevezeto .fej b { flex: 1; font-size: 13px; }
 #bevezeto .lepes {
-  font-size: 10px; color: #0d1428; background: var(--turkiz);
-  border-radius: 5px; padding: 1px 5px; font-weight: 700;
+  font-size: 10.5px; color: #0d1428; background: var(--turkiz);
+  border-radius: 5px; padding: 1px 6px; font-weight: 700;
 }
 #bevezeto .zar {
   background: none; border: none; color: var(--halvany);
-  cursor: pointer; font-size: 13px; padding: 0 2px;
+  cursor: pointer; font-size: 14px; padding: 0 2px; font-family: inherit;
 }
 #bevezeto .zar:hover { color: var(--szoveg); }
-#bevezeto p { margin: 6px 0 0; font-size: 11.5px; color: var(--halvany); line-height: 1.45; }
+#bevezeto p { margin: 6px 0 0; font-size: 12.5px; color: var(--halvany); line-height: 1.5; }
+
+/* ── KESKENY ABLAK ─────────────────────────────────────────────────────────
+ * Nem „mobil-támogatás" (a vezérlés egérre készült), hanem annyi, hogy egy
+ * kisebb laptop-ablakban se fedjék egymást a dobozok. */
+
+@media (max-width: 1180px) {
+  #bal { width: 244px; }
+  #panel { width: 340px; }
+}
+@media (max-height: 780px) {
+  #bal { max-height: calc(100% - 200px); overflow-y: auto; }
+}

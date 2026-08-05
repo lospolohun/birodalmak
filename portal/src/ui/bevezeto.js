@@ -90,7 +90,10 @@ export class Bevezeto {
 
     const d = el('div');
     d.id = 'bevezeto';
-    gyoker.appendChild(d);
+    // A fejezet-kártyával EGY oszlopba kerül (`#bal`, lásd `hud.js`), nem a
+    // gyökérbe fix képpontra: a fejezet célszövege egy sortól négyig terjed,
+    // és a régi, abszolút `top: 152px` a hosszabbaknál rácsúszott.
+    (document.getElementById('bal') || gyoker).appendChild(d);
     this.doboz = d;
     this._epit();
   }

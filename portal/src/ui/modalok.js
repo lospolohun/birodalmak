@@ -69,6 +69,11 @@ export class Modalok {
     ures(this.modal);
     this.modal.className = kulcs.startsWith('vege') ? 'vege' : '';
     epito();
+    // Az esemény-ablak mellett FUT AZ IDŐ. Ha ilyenkor is teljes erővel
+    // életlenítjük a hátteret, a játékos nem látja, mi történik közben az
+    // állomással — pedig épp arról kell döntenie. A halványabb fátyol ezt
+    // mondja ki vizuálisan: „ez most nem állítja meg a világot".
+    this.fatyol.classList.toggle('esemeny', kulcs.startsWith('esemeny'));
     this.fatyol.classList.add('nyitva');
     if (megallit && !this._megallitva) {
       this.elozoSebesseg = this.vezerlo.sebessegIdx();
@@ -130,13 +135,19 @@ export class Modalok {
   _esemeny(e) {
     const def = ESEMENYEK[e.idx];
     be(this.modal,
-      this._fejlec(def.ikon, 'Esemény', e.cim || def.nev),
+      this._fejlec(def.ikon, 'Esemény — közben fut az idő', e.cim || def.nev),
       el('p', 'torzs', def.leiras));
     const v = el('div', 'valaszok');
     (def.valaszok || []).forEach((val, i) => {
       const g = el('button', 'valasz');
       be(g, el('b', null, val.cim), el('span', null, val.leiras));
-      if (val.ar > this.sim.penz) g.disabled = true;
+      // Egy letiltott válasz OKÁT ki kell írni. A szürke gombról a játékos
+      // nem tudja eldönteni, hogy nincs rá pénze, vagy hogy elromlott
+      // valami — és egy eseményablakban ez az egyetlen esélye megtudni.
+      if (val.ar > 0 && val.ar > this.sim.penz) {
+        be(g, el('span', 'miert', `Nem választható: ${szam(Math.ceil(val.ar - this.sim.penz))} 💎 hiányzik hozzá.`));
+        g.disabled = true;
+      }
       g.onclick = () => { this.sim.parancs({ fajta: 'esemeny_valasz', azon: e.azon, valasz: i }); this._rejt(); };
       be(v, g);
     });

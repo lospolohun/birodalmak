@@ -79,7 +79,8 @@ if (!existsSync(KAT_UT)) {
   KAT = await import(pathToFileURL(KAT_UT).href);
 }
 
-const HANG_MEZOK = ['nev', 'hangero', 'elsobbseg', 'retegek'];
+const HANG_MEZOK = ['nev', 'hangero', 'elsobbseg', 'retegek', 'valtozat', 'ter', 'torlodas'];
+const VALTOZAT_MEZOK = ['hangolas', 'hangero', 'ido'];
 const RETEG_MEZOK = ['fajta', 'hullam', 'barna', 'f', 'fVeg', 'csuszas', 'elhangolas',
   'keses', 'hossz', 'hangero', 'burok', 'szuro', 'jegyek'];
 const BUROK_MEZOK = ['tamad', 'lecseng', 'tart', 'elenged'];

@@ -621,6 +621,15 @@ function borTextura(THREE) {
 // ══════════════════════════════════════════════════════════════════════════
 
 const GYORSTAR = new WeakMap();
+/**
+ * A legutóbb legyártott készlet — CSAK a `texturaLista()` mérési fogantyújának.
+ *
+ * MIÉRT KELL: a gyorstár `THREE`-re van kulcsolva, a szonda viszont a lapon
+ * belülről nem tud `import 'three'`-t írni (csupasz modulnév, a böngésző nem
+ * oldja fel). Enélkül a leltár csak a játékon keresztül volna elérhető, és egy
+ * mérőeszköz ne függjön attól, hogy a `fo.js` épp mit tesz a `window`-ra.
+ */
+let utolsoKeszlet = null;
 
 /**
  * Minden textúra, egyszer. A hívó nyugodtan hívhatja többször — ugyanazt az
@@ -650,6 +659,7 @@ export function texturak(THREE) {
   // különben egy elmosott folt lesz belőle.
   k.szikla.repeat.set(9, 3);
   GYORSTAR.set(THREE, k);
+  utolsoKeszlet = k;
   return k;
 }
 
@@ -658,14 +668,23 @@ export function texturak(THREE) {
  * csendben tud elhízni („még egy 2048×2048, az se sok"), és a memóriát nem
  * jelzi semmi — ez a lista teszi mérhetővé.
  *
- * @returns {{nev:string, sz:number, m:number, keppont:number}[]}
+ * @returns {{nev:string, sz:number, m:number, keppont:number, vaszon:boolean}[]}
  */
-export function texturaLista(THREE) {
-  const k = texturak(THREE);
+export function texturaLista() {
+  const k = utolsoKeszlet;
+  if (!k) return [];
   const ki = [];
   for (const nev of Object.keys(k)) {
     const kep = k[nev].image;
-    ki.push({ nev, sz: kep.width, m: kep.height, keppont: kep.width * kep.height });
+    ki.push({
+      nev,
+      sz: kep.width,
+      m: kep.height,
+      keppont: kep.width * kep.height,
+      // A procedurális ígéret ellenőrzési pontja: ami nem vászonból jött, az
+      // fájlból jött — és onnantól a `dist/` nem másolható bárhová.
+      vaszon: typeof HTMLCanvasElement !== 'undefined' && kep instanceof HTMLCanvasElement,
+    });
   }
   return ki;
 }

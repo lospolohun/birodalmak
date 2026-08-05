@@ -72,6 +72,23 @@ export const JELZES_KODOK = [
 //   szuro       null | { fajta, f, fVeg, q } — a színt ez adja
 //   jegyek      null | [[keses, frekvencia-szorzó], …] — a réteg ennyiszer
 //               szólal meg. Ettől lesz egy fanfár EGY sor, nem négy réteg.
+//
+// A hang SZINTJÉN (nem rétegenként) még három mező van, és mind a három
+// olyan bajra válasz, ami csak HOSSZÚ játék alatt jön elő:
+//
+//   valtozat    { hangolas, hangero, ido } — megszólalásonkénti véletlen
+//               eltérés (arányban, ill. másodpercben). MIÉRT: egy hang, ami
+//               ezerszer BITRE ugyanaz, húsz perc alatt idegesítő lesz — a
+//               fül a gépies ISMÉTLŐDÉST veszi észre, nem a hangot magát. A
+//               dallamos hangoknál a `hangolas` szándékosan pici (±1 %,
+//               vagyis ±17 cent): ott a variáció hamis hangnak hallatszana.
+//               A szonda 6. vizsgálata méri, hogy tényleg szór.
+//   ter         0..1 — mennyit küld a hang a közös zengetőre. A közös tér az,
+//               amitől a tizenkét külön effekt EGY helyen szól.
+//   torlodas    másodperc — ugyanaz a hang ennyin belül nem szólal meg
+//               kétszer. MIÉRT: ha egy képkockában hat kassza fizet ki, hat
+//               azonos hang indul azonos időben — az nem hatszor hangosabb
+//               kassza, hanem egy fésűszűrt reccsenés.
 
 /** Egyetlen közös hangolási alap, hogy a fanfárok ne veszekedjenek. */
 const T = {
@@ -87,13 +104,21 @@ export const HANGOK = {
   // ── UI ──────────────────────────────────────────────────────────────────
   // Halk és RÖVID. Egy kattanás, amit ezerszer hallasz egy játszás alatt,
   // csak akkor marad elviselhető, ha 40 ms alatt véget ér.
+  // A `valtozat` itt a legnagyobb az egész katalógusban: ezt a hangot egy
+  // játszás alatt ezerszer hallod, tehát ennek KELL a legjobban változnia.
+  // Nem dallamos, tehát a ±4,5 %-os hangolás nem hallatszik hamisnak, csak
+  // annyit, hogy „nem gép kattog".
   gomb: {
     nev: 'Kattintás', hangero: 0.30, elsobbseg: 0,
+    valtozat: { hangolas: 0.045, hangero: 0.18, ido: 0.002 }, ter: 0.07, torlodas: 0.035,
     retegek: [
       { fajta: 'osc', hullam: 'triangle', f: 900, fVeg: 620, csuszas: 'exp',
         hossz: 0.03, hangero: 0.50, burok: { tamad: 0.002, lecseng: 0.03, tart: 0, elenged: 0.03 } },
-      { fajta: 'zaj', hossz: 0.02, hangero: 0.22,
-        szuro: { fajta: 'highpass', f: 2600, q: 0.7 },
+      // A sziszegő él 2600-ról 2100-ra: a 2,5–6 kHz-es sáv az, ami ezerszer
+      // hallgatva a leghamarabb fáraszt, és ebből pont a kattintás adja a
+      // legtöbbet — mert ebből van a legtöbb.
+      { fajta: 'zaj', hossz: 0.02, hangero: 0.17,
+        szuro: { fajta: 'highpass', f: 2100, q: 0.7 },
         burok: { tamad: 0.001, lecseng: 0.02, tart: 0, elenged: 0.02 } },
     ],
   },
@@ -103,6 +128,7 @@ export const HANGOK = {
   // „leraktam", a blipp azt, hogy „és el is fogadta".
   epit: {
     nev: 'Épület lerakva', hangero: 0.55, elsobbseg: 1,
+    valtozat: { hangolas: 0.050, hangero: 0.16, ido: 0.006 }, ter: 0.30, torlodas: 0.05,
     retegek: [
       { fajta: 'osc', hullam: 'sine', f: 190, fVeg: 70, csuszas: 'exp',
         hossz: 0.10, hangero: 0.90, burok: { tamad: 0.004, lecseng: 0.10, tart: 0, elenged: 0.10 } },
@@ -119,6 +145,7 @@ export const HANGOK = {
   // kellemetlen: pénzbe kerül.
   bont: {
     nev: 'Bontás', hangero: 0.52, elsobbseg: 1,
+    valtozat: { hangolas: 0.055, hangero: 0.16, ido: 0.011 }, ter: 0.34, torlodas: 0.06,
     retegek: [
       { fajta: 'zaj', barna: true, hossz: 0.26, hangero: 0.75,
         szuro: { fajta: 'lowpass', f: 2400, fVeg: 220, q: 1 },
@@ -139,6 +166,7 @@ export const HANGOK = {
   // ahogy megtanulja a szabályt.
   hiba: {
     nev: 'Elutasított parancs', hangero: 0.40, elsobbseg: 2,
+    valtozat: { hangolas: 0.030, hangero: 0.10, ido: 0.007 }, ter: 0.16, torlodas: 0.14,
     retegek: [
       { fajta: 'osc', hullam: 'square', f: 300, hossz: 0.07, hangero: 0.34,
         szuro: { fajta: 'lowpass', f: 1200, q: 0.8 },
@@ -155,16 +183,21 @@ export const HANGOK = {
   // jutalomhangja: ezt kell megkívánni.
   kassza: {
     nev: 'Bevétel', hangero: 0.50, elsobbseg: 1,
+    valtozat: { hangolas: 0.015, hangero: 0.15, ido: 0.008 }, ter: 0.36, torlodas: 0.09,
     retegek: [
       { fajta: 'osc', hullam: 'triangle', f: T.c6, hossz: 0.09, hangero: 0.32,
         burok: { tamad: 0.002, lecseng: 0.20, tart: 0.05, elenged: 0.35 },
         jegyek: [[0, 1], [0.07, KVINT], [0.15, OKTAV]] },
-      { fajta: 'osc', hullam: 'sine', f: T.c7, hossz: 0.05, hangero: 0.12,
+      { fajta: 'osc', hullam: 'sine', f: T.c7, hossz: 0.05, hangero: 0.17,
         burok: { tamad: 0.002, lecseng: 0.12, tart: 0, elenged: 0.25 },
         jegyek: [[0.01, 1], [0.08, KVINT]] },
-      { fajta: 'zaj', hossz: 0.04, hangero: 0.16,
-        szuro: { fajta: 'highpass', f: 4200, q: 0.7 },
-        burok: { tamad: 0.001, lecseng: 0.05, tart: 0, elenged: 0.06 } },
+      // A „csing" a 2,5–6 kHz-es sávba viszi a kasszát. Ez az EGYETLEN hang,
+      // ami tudatosan oda kerül: ritka, jutalom, és így a nyüzsgés fölött is
+      // azonnal felismerhető — a fül a hirtelen megjelenő csillogásra kapja
+      // fel a fejét, nem a hangerőre.
+      { fajta: 'zaj', hossz: 0.05, hangero: 0.26,
+        szuro: { fajta: 'highpass', f: 5200, q: 0.7 },
+        burok: { tamad: 0.001, lecseng: 0.06, tart: 0, elenged: 0.09 } },
     ],
   },
 
@@ -173,6 +206,7 @@ export const HANGOK = {
   // játék legnagyobb pillanata (új világ), tehát legyen ideje kibontakozni.
   kapu_nyit: {
     nev: 'Dimenziókapu nyílik', hangero: 0.60, elsobbseg: 2,
+    valtozat: { hangolas: 0.018, hangero: 0.10, ido: 0.012 }, ter: 0.58, torlodas: 0.50,
     retegek: [
       { fajta: 'osc', hullam: 'sine', f: 70, fVeg: 620, csuszas: 'exp',
         hossz: 1.10, hangero: 0.50,
@@ -196,7 +230,8 @@ export const HANGOK = {
   // csipogás. Ez az egyetlen effekt, ami átvágja az összes többit
   // (`elsobbseg: 3`), mert ha ez szól, minden mást el kell felejteni.
   omlas: {
-    nev: 'Kapu-összeomlás', hangero: 0.85, elsobbseg: 3,
+    nev: 'Kapu-összeomlás', hangero: 1.05, elsobbseg: 3,
+    valtozat: { hangolas: 0.022, hangero: 0.07, ido: 0.008 }, ter: 0.62, torlodas: 0.45,
     retegek: [
       { fajta: 'osc', hullam: 'sawtooth', f: 420, fVeg: 62, csuszas: 'exp',
         hossz: 1.40, hangero: 0.50,
@@ -214,14 +249,27 @@ export const HANGOK = {
 
   // ── ESEMÉNY ─────────────────────────────────────────────────────────────
   // Két hangos „figyelj ide" harang. Nem riasztó, csak felkapod rá a fejed.
+  //
+  // A hangolás a d5-ről (587 Hz) az a5-re (880 Hz) került, és kapott egy
+  // 2,76-szoros felhangot. MIÉRT: a paletta mérve a 400–1000 Hz-es sávba
+  // zsúfolódott — a fanfár, a kapunyitás, a győzelem és az esemény MIND oda
+  // esett, tehát nyüzsgés közben nem lehetett őket megkülönböztetni. A 2,76
+  // nem véletlen szám: a csöves harang jellegzetes, NEM egész számú
+  // felhangja. Ettől lesz „harang" és nem „síp", és ez viszi a hangot a
+  // magasabb sávba anélkül, hogy élessé válna.
   esemeny: {
-    nev: 'Esemény', hangero: 0.45, elsobbseg: 2,
+    nev: 'Esemény', hangero: 0.52, elsobbseg: 2,
+    valtozat: { hangolas: 0.015, hangero: 0.12, ido: 0.009 }, ter: 0.42, torlodas: 0.25,
     retegek: [
-      { fajta: 'osc', hullam: 'triangle', f: T.d5, hossz: 0.20, hangero: 0.34,
+      { fajta: 'osc', hullam: 'triangle', f: T.a4 * 2, hossz: 0.20, hangero: 0.30,
         burok: { tamad: 0.006, lecseng: 0.30, tart: 0.12, elenged: 0.50 },
         jegyek: [[0, 1], [0.13, KVINT]] },
-      { fajta: 'osc', hullam: 'sine', f: T.d5 * 2, hossz: 0.12, hangero: 0.11,
-        burok: { tamad: 0.006, lecseng: 0.25, tart: 0, elenged: 0.40 },
+      { fajta: 'osc', hullam: 'sine', f: T.a4 * 2 * 2.76, hossz: 0.10, hangero: 0.14,
+        burok: { tamad: 0.006, lecseng: 0.22, tart: 0, elenged: 0.35 },
+        jegyek: [[0, 1], [0.13, KVINT]] },
+      // Egy oktávval lentebbi test: enélkül a harang vékony, „olcsó csengő".
+      { fajta: 'osc', hullam: 'sine', f: T.a4, hossz: 0.26, hangero: 0.15,
+        burok: { tamad: 0.010, lecseng: 0.40, tart: 0.10, elenged: 0.55 },
         jegyek: [[0, 1], [0.13, KVINT]] },
     ],
   },
@@ -231,6 +279,7 @@ export const HANGOK = {
   // A `jegyek` mező pontosan ezért van: ez itt két sor, nem nyolc réteg.
   fejezet: {
     nev: 'Fejezetváltás', hangero: 0.58, elsobbseg: 3,
+    valtozat: { hangolas: 0.008, hangero: 0.08, ido: 0.011 }, ter: 0.46, torlodas: 0.60,
     retegek: [
       { fajta: 'osc', hullam: 'triangle', f: T.g4, hossz: 0.13, hangero: 0.38,
         burok: { tamad: 0.008, lecseng: 0.12, tart: 0.60, elenged: 0.28 },
@@ -247,6 +296,7 @@ export const HANGOK = {
   // ── GYŐZELEM ────────────────────────────────────────────────────────────
   gyozelem: {
     nev: 'Győzelem', hangero: 0.78, elsobbseg: 3,
+    valtozat: { hangolas: 0.006, hangero: 0.07, ido: 0.012 }, ter: 0.52, torlodas: 1.00,
     retegek: [
       { fajta: 'osc', hullam: 'triangle', f: T.c5, hossz: 0.16, hangero: 0.38,
         burok: { tamad: 0.008, lecseng: 0.16, tart: 0.60, elenged: 0.40 },
@@ -268,6 +318,7 @@ export const HANGOK = {
   // tükörképe: ugyanaz a szerkezet, fordított irányban.
   csod: {
     nev: 'Csőd', hangero: 0.72, elsobbseg: 3,
+    valtozat: { hangolas: 0.008, hangero: 0.07, ido: 0.012 }, ter: 0.56, torlodas: 1.00,
     retegek: [
       { fajta: 'osc', hullam: 'sawtooth', f: T.f4, hossz: 0.34, hangero: 0.30,
         szuro: { fajta: 'lowpass', f: 1100, fVeg: 380, q: 0.9 },
@@ -285,6 +336,7 @@ export const HANGOK = {
   // Öt hangos, gyors csillogó felfutás. Rövid: kutatás sok lesz.
   kutatas_kesz: {
     nev: 'Kutatás kész', hangero: 0.44, elsobbseg: 2,
+    valtozat: { hangolas: 0.020, hangero: 0.14, ido: 0.008 }, ter: 0.38, torlodas: 0.20,
     retegek: [
       { fajta: 'osc', hullam: 'sine', f: T.a4 * 2, hossz: 0.05, hangero: 0.26,
         burok: { tamad: 0.004, lecseng: 0.10, tart: 0.10, elenged: 0.18 },
@@ -299,15 +351,50 @@ export const HANGOK = {
   // hangmagasságon. Egy sávszűrt zajlöket annyira hasonlít egy távoli
   // kiáltásra, hogy az agy embernek hallja — ez az a trükk, amitől a szűrt
   // zajból „tömeg" lesz, és nem szellőzőrendszer.
+  //
+  // ── MIÉRT LETT SZÉLESEBB ÉS MÉLYEBB ─────────────────────────────────────
+  // Ez a leggyakoribb hang az egész játékban: teli állomáson másodpercenként
+  // többször szól. Az eredeti két sávszűrője 700 és 1900 Hz-en ült, Q 6 és 8
+  // jósággal — vagyis két KESKENY, rezonáns csúcs pontosan abban a sávban,
+  // ahol a fül a legérzékenyebb. Mérve a teljes keverék A-súlyozott
+  // energiájának 37 %-a esett az 1–2,5 kHz-es sávba, és ez az a szám, ami
+  // tíz perc után „fáradtságnak" érződik. A szűrők lejjebb és szélesebbre
+  // (kisebb Q) kerültek: ugyanaz a „távoli beszéd" érzet, feleannyi
+  // rezonáns éllel.
   foszlany: {
     nev: 'Hangfoszlány a tömegből', hangero: 0.16, elsobbseg: 0,
+    valtozat: { hangolas: 0.10, hangero: 0.30, ido: 0.010 }, ter: 0.42, torlodas: 0.03,
     retegek: [
-      { fajta: 'zaj', hossz: 0.09, hangero: 0.55,
-        szuro: { fajta: 'bandpass', f: 700, fVeg: 1150, q: 6 },
+      { fajta: 'zaj', hossz: 0.09, hangero: 0.58,
+        szuro: { fajta: 'bandpass', f: 560, fVeg: 1000, q: 3.5 },
         burok: { tamad: 0.025, lecseng: 0.05, tart: 0.40, elenged: 0.10 } },
-      { fajta: 'zaj', hossz: 0.06, hangero: 0.25,
-        szuro: { fajta: 'bandpass', f: 1900, q: 8 },
+      { fajta: 'zaj', hossz: 0.06, hangero: 0.18,
+        szuro: { fajta: 'bandpass', f: 1450, q: 4.5 },
         burok: { tamad: 0.02, lecseng: 0.04, tart: 0.30, elenged: 0.08 } },
+    ],
+  },
+
+  // ── FURCSA FOSZLÁNY ─────────────────────────────────────────────────────
+  // Szintén nem `jelez()`-kód: a tömegzaj lövi ki, minden ötödik-hatodik
+  // foszlány helyett.
+  //
+  // MIÉRT KELL: tíz FAJ jár az állomáson — szellem, troll, lebegő medúza —,
+  // és ha mind ugyanazt a szűrt zajmormogást adja, akkor a tömeg egy fajta
+  // tömeg. Ez a bejegyzés egy rövid, csúszkáló füttyentés: nem beszéd, hanem
+  // „valami MÁS is van itt". Ettől lesz a nyüzsgés abszurd és szerethető, és
+  // nem szellőzőrendszer. Ritka, halk, és a hangolása széles — kétszer
+  // ugyanúgy sosem szólal meg.
+  foszlany_furcsa: {
+    nev: 'Furcsa hang a tömegből', hangero: 0.085, elsobbseg: 0,
+    valtozat: { hangolas: 0.26, hangero: 0.35, ido: 0.012 }, ter: 0.55, torlodas: 0.05,
+    retegek: [
+      { fajta: 'osc', hullam: 'triangle', f: 620, fVeg: 940, csuszas: 'exp',
+        hossz: 0.11, hangero: 0.30,
+        szuro: { fajta: 'bandpass', f: 900, fVeg: 1500, q: 2.4 },
+        burok: { tamad: 0.030, lecseng: 0.07, tart: 0.45, elenged: 0.14 },
+        jegyek: [[0, 1], [0.15, 0.79]] },
+      { fajta: 'osc', hullam: 'sine', f: 248, hossz: 0.16, hangero: 0.16,
+        burok: { tamad: 0.035, lecseng: 0.10, tart: 0.35, elenged: 0.18 } },
     ],
   },
 };
@@ -325,9 +412,16 @@ export const AMBIENS = {
   portal: {
     alapF: 46,
     lebegtetes: 1.008,      // a második fűrész ennyivel el van hangolva → lüktet
-    szuroQ: 0.9,
+    // A jóság 0,9-ről 0,72-re: a rezonáns csúcs a szűrő nyitásánál ült, és
+    // 100 % instabilitásnál pont az 1,5–1,8 kHz-es sávot emelte ki — azt,
+    // amelyik a leghamarabb fáraszt. Az instabilitás így is HALLATSZIK, csak
+    // nem szúr.
+    szuroQ: 0.72,
     szuroMin: 175,          // stabil kapu: tompa, mély dörej
-    szuroMax: 1750,         // 100 % instabilitás: éles, kellemetlen
+    szuroMax: 1500,         // 100 % instabilitás: éles, kellemetlen
+    /** A zúgás lassan vándorol a sztereó képben — a kapuk nem egy pontban vannak. */
+    panLfoHz: 0.037,
+    panMelyseg: 0.55,
     lfoMin: 0.45,           // lüktetés Hz-ben — nyugodt szívverés
     lfoMax: 3.10,           // …és pánik
     lfoMelysegMin: 0.10,
@@ -358,10 +452,38 @@ export const AMBIENS = {
     szuroFTeli: 960,
     szuroQ: 0.55,
     szintMax: 0.20,
+    /**
+     * A tömeg SZÉLESSÉGE. Két külön zajforrás megy két külön panorámázóra —
+     * ezer lény nem egy pontban áll. Mérve: enélkül a keverék sztereó-
+     * korrelációja pontosan 1,000 volt, azaz a játék monóban szólt.
+     */
+    szelesseg: 0.80,
     /** Hangfoszlány-esély EGY frissítési lépésben, teli állomásnál. */
     foszlanyEsely: 0.20,
-    foszlanyHangolasMin: 0.72,
-    foszlanyHangolasMax: 1.55,
+    foszlanyHangolasMin: 0.62,
+    foszlanyHangolasMax: 1.62,
+    /** Ennyi eséllyel nem foszlány jön, hanem valami furcsa. */
+    furcsaEsely: 0.20,
+    /** A foszlányok ilyen szélesen szóródnak szét a sztereó képben. */
+    foszlanySzelesseg: 0.85,
+  },
+
+  /**
+   * „Levegő": nagyon halk, magas suhogás a csarnokban.
+   *
+   * MIÉRT: a hangkép mérve a 400 Hz – 2,5 kHz-es sávban tömörült, fölötte
+   * gyakorlatilag semmi. A fül ezt ZÁRT, kicsi térként hallja — mint egy
+   * dobozt. Egy alig hallható magas réteg nem hangosít semmit (a szintje két
+   * nagyságrenddel a tömegzaj alatt van), de kinyitja a teret: ettől lesz
+   * „nagy csarnok" a „kis szoba" helyett. A 2,5 kHz-es felüláteresztő
+   * szándékos: ez a sáv NEM fáraszt ilyen halkan, a 4 kHz körüli viszont
+   * igen — ezért nincs benne rezonancia.
+   */
+  levego: {
+    szuroF: 4200,
+    szuroQ: 0.5,
+    szintMax: 0.017,
+    szelesseg: 0.95,
   },
 
   /** Elégedetlenség: mély, sávtalan moraj. Sosem dallam, csak nyomás. */
@@ -393,6 +515,36 @@ export const AMBIENS = {
     tomegEjjel: 0.72,       // éjjel ennyiszeres a tömegzaj
     szinEjjel: -260,        // …és ennyivel lejjebb a szűrők nyitása Hz-ben
   },
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+//  TÉR — a közös zengető
+// ══════════════════════════════════════════════════════════════════════════
+//
+// A gráfot a `hang_ter.js` építi, a SZÁMOK viszont ide tartoznak: a terem
+// méretét hangolni kell, nem újraprogramozni.
+//
+// MIÉRT VAN EGYÁLTALÁN: tizenkét külön effekt, mindegyik saját burkolóval,
+// zengés nélkül tizenkét külön szintetizátornak hallatszik, amiket valaki
+// egymás mellé rakott. Egy közös tér az, amitől EGY HELYEN szólnak — ez a
+// legolcsóbb trükk, ami „gazdagabbá" tesz egy procedurális hangképet, és
+// egyben az egyetlen, ami nem tesz hozzá se hangerőt, se élességet.
+
+export const TER = {
+  /** Az impulzusválasz hossza. 1,5 s = nagy csarnok, de még nem templom. */
+  hossz: 1.5,
+  /** Nagyobb szám = szárazabb, tömöttebb terem. */
+  csillapodas: 5.4,
+  /** 0 = nagyon sötét farok, 1 = sziszegő. A magasak hamarabb halnak el. */
+  sotetseg: 0.34,
+  /** A korai visszaverődések ereje — ez mondja meg, mekkora a terem. */
+  koraiDb: 0.30,
+  /** A zengető busz szintje a keverőben. */
+  szint: 0.9,
+  /** A folyamatos rétegek (tömeg, portál) ennyit küldenek bele. */
+  ambiensKuldes: 0.20,
+  /** A kamerától távoli hang ennyivel többet küld — ettől lesz „messze". */
+  tavKuldes: 0.55,
 };
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -481,6 +633,56 @@ export const KEVERES = {
   /** Belépéskor ennyi idő alatt úszik be az ambiens. */
   beuszas: 2.5,
   /** Kimenő limiter — a fanfár + omlás + kassza együtt sem torzíthat. */
-  limitKuszob: -10,
-  limitArany: 8,
+  limitKuszob: -14,
+  limitArany: 12,
+
+  // ── PUHA VÁGÁS ──────────────────────────────────────────────────────────
+  // A limiter 3 ms alatt reagál; egy képkockányi eseményáradat egyetlen
+  // MINTA alatt épül fel. Mérve: 24 esemény egy képkockában 1,469-es
+  // csúcsot adott, azaz 40 mintányi KEMÉNY levágást a limiter után is. A
+  // tanh-görbe ezt matematikailag lehetetlenné teszi. Kis jelnél
+  // gyakorlatilag egyenes, tehát a normál hangképet nem színezi.
+  vagoHajlat: 1.45,
+  vagoMinta: 4097,
+
+  // ── TORLÓDÁS ELLEN ──────────────────────────────────────────────────────
+  /** Ugyanaz a hang ennyi másodpercen belül nem szólal meg kétszer. */
+  torlodasAlap: 0.06,
+  /**
+   * Sorozat-csillapítás. Ebben az ablakban számoljuk, hány hang indult, és
+   * az újakat 1/√n-nel halkítjuk. MIÉRT: n egyforma hang összege nem n-szer
+   * hangosabb, hanem — véletlen fázisnál — √n-szer; ez a szorzó tehát pont
+   * azt tartja szinten, amit a fül hangosságnak hall. A `sorozatMin` a
+   * padló: ennél halkabbra sosem húzzuk, különben a huszadik esemény már
+   * hallhatatlan lenne.
+   */
+  sorozatAblak: 0.13,
+  sorozatMin: 0.34,
+
+  // ── DUCK — a fontos hang kap helyet ─────────────────────────────────────
+  // Mérve: a kapu-összeomlás mindössze 0,8 dB-lel volt hangosabb egy nyüzsgő,
+  // instabil állomás háttérzajánál. Vagyis a játék legfontosabb riasztása
+  // GYAKORLATILAG NEM HALLATSZOTT. Hangosítani rossz válasz lett volna (a
+  // limiter úgyis visszahúzza); a helyes az, amit minden rádióadás csinál:
+  // a fontos jel alatt a háttér HALKUL. Az effekt-busz nem duckol, csak az
+  // ambiens és a zene — a visszajelzések élesek maradnak.
+  duckMagas: 0.66,        // 3. elsőbbség (omlás, csőd, fanfár): −9,4 dB
+  duckKozep: 0.36,        // 2. elsőbbség (esemény, kapunyitás): −3,9 dB
+  duckBe: 0.030,
+  duckKi: 0.32,
+  /** A hang vége után még ennyi ideig tartjuk lent a hátteret. */
+  duckFarok: 0.30,
+
+  // ── TÉRHATÁS ────────────────────────────────────────────────────────────
+  /** A panoráma-kitérés maximuma. 1,0 fülhallgatóban már fárasztó. */
+  terSzelesseg: 0.82,
+  /** Ennyi cellányi távolságnál feleződik a hang. */
+  tavFelezo: 34,
 };
+
+/**
+ * Alapértelmezett változatosság azoknak a hangoknak, amelyeknél a katalógus
+ * nem mond mást. Nem nulla: a néma alapérték pont azt a hibát engedné vissza,
+ * ami ellen az egész mező van.
+ */
+export const VALTOZAT_ALAP = { hangolas: 0.020, hangero: 0.10, ido: 0.006 };
