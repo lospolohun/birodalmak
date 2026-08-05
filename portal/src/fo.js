@@ -20,7 +20,7 @@
 
 import './ui/stilus.css';
 import { Sim } from './sim/sim.js';
-import { TICK_MS, SEBESSEGEK, RACS_SZINT, SZINT_MAGASSAG } from './mag/config.js';
+import { TICK_MS, SEBESSEGEK, RACS_SZINT, SZINT_MAGASSAG, KEZDO_CSARNOK_SZ, KEZDO_CSARNOK_M } from './mag/config.js';
 import { EPULETEK, epuletTipus } from './sim/epuletek.js';
 import { Visszajatszo } from './sim/mentes.js';
 import { Szinter } from './render/szinter.js';
@@ -78,9 +78,16 @@ async function indit() {
   const allomas = new Allomas3d(szinter, sim);
   const lenyek = new Lenyek3d(szinter, sim);
   const hatasok = new Hatasok3d(szinter, sim);
-  // A kamera a kezdő kapura néz — az üres rács közepe semmit nem mondana.
-  szinter.cel.set(sim.kezdoX + 9, 0, sim.kezdoY + 8);
-  szinter.tav = 32;
+  // A kamera a kezdő CSARNOK közepére néz — az üres rács közepe semmit nem
+  // mondana.
+  //
+  // ⚠️ ITT KORÁBBAN `+9, +8` ÁLLT, KÉZZEL BEÍRVA. Az a 22×16-os csarnok
+  // közepe volt; amikor a csarnok 30×22-re nőtt, a kamera csendben a bal
+  // felső negyedre nézett, és a terület nagyobbik fele a képen kívül kezdődött.
+  // A QA-kör fogta meg. A méretből SZÁMOLVA ez nem tud újra elcsúszni — ezért
+  // nem a helyes új számot írtuk be, hanem a képletet.
+  szinter.cel.set(sim.kezdoX + KEZDO_CSARNOK_SZ / 2, 0, sim.kezdoY + KEZDO_CSARNOK_M / 2);
+  szinter.tav = 42;
   szinter._kamerat();
 
   // ── A FELÜLET ──────────────────────────────────────────────────────────
@@ -341,7 +348,10 @@ function hurok({ sim, szinter, allomas, lenyek, hatasok, hud, epitesSav, panelek
       elozoValasz = sim.utolsoValasz;
     }
     if (sim.epuletek.length !== elozoEpuletSzam) {
-      hang.jelez(sim.epuletek.length > elozoEpuletSzam ? 'epit' : 'bont');
+      // A hely azért kell, hogy az építés onnan szóljon, AHOVA kattintottak —
+      // egy nagy állomáson a középről jövő koppanás elszakad a tettől.
+      const c = szinter.egerCella();
+      hang.jelez(sim.epuletek.length > elozoEpuletSzam ? 'epit' : 'bont', c ? { x: c.x, y: c.y } : undefined);
       elozoEpuletSzam = sim.epuletek.length;
     }
 
@@ -419,6 +429,9 @@ function hurok({ sim, szinter, allomas, lenyek, hatasok, hud, epitesSav, panelek
       elozoVege = sim.jatekVege;
       if (elozoVege) hang.jelez(elozoVege === 'gyozelem' ? 'gyozelem' : 'csod');
     }
+    // A hangtér a kamerához igazodik: ami a képen balra van, az balról szól.
+    // A kamera állapota RENDER-adat, tehát a hang kéri el, nem a sim adja.
+    hang.kamera(szinter.cel.x, szinter.cel.z, szinter.szog, szinter.tav);
     if (beallitas.hangAuto) hang.frissit(sim, dt);
 
     // ── RAJZOLÁS ────────────────────────────────────────────────────────
