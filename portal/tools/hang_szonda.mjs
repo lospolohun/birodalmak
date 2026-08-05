@@ -151,6 +151,24 @@ if (KAT) {
     if (typeof h.nev !== 'string' || h.nev.length === 0) rossz(`HANGOK.${kod}.nev: üres`);
     szamot(`HANGOK.${kod}.hangero`, h.hangero, 0, 2, true);
     szamot(`HANGOK.${kod}.elsobbseg`, h.elsobbseg, 0, 3, true);
+    szamot(`HANGOK.${kod}.ter`, h.ter, 0, 1, false);
+    szamot(`HANGOK.${kod}.torlodas`, h.torlodas, 0, 2, false);
+
+    // ── A VÁLTOZATOSSÁG KÖTELEZŐ ───────────────────────────────────────
+    // Nem elég, hogy a `jelez()` TUD változatot adni: minden hangnak KAPNIA
+    // is kell. A hiányzó mező csöndben visszahozná a gépies ismétlődést,
+    // méghozzá pont annál a hangnál, amelyikhez legutóbb hozzányúltak. A
+    // 6. vizsgálat csak két kódot mér ténylegesen — ez a statikus párja
+    // fedi le a többit.
+    if (!h.valtozat || typeof h.valtozat !== 'object') {
+      rossz(`HANGOK.${kod}.valtozat: hiányzik — így minden megszólalása bitre ugyanaz lenne`);
+    } else {
+      mezoket(`HANGOK.${kod}.valtozat`, h.valtozat, VALTOZAT_MEZOK);
+      szamot(`HANGOK.${kod}.valtozat.hangolas`, h.valtozat.hangolas, 0.002, 0.4, true);
+      szamot(`HANGOK.${kod}.valtozat.hangero`, h.valtozat.hangero, 0.02, 0.6, true);
+      szamot(`HANGOK.${kod}.valtozat.ido`, h.valtozat.ido, 0, 0.05, true);
+    }
+
     if (!Array.isArray(h.retegek) || h.retegek.length === 0) { rossz(`HANGOK.${kod}.retegek: üres`); continue; }
 
     let hangVege = 0;
@@ -247,6 +265,21 @@ if (KAT) {
       rendben = false;
     }
     if (rendben) ok(`${ZENE_HANGNEMEK.length} hangnem, a hírnév-küszöbök növekvők, a sötét tényleg sötétebb`);
+  }
+
+  // ── TÉR ────────────────────────────────────────────────────────────────
+  const TER = KAT.TER;
+  if (!TER) rossz('nincs TER blokk — a közös zengető nélkül minden effekt külön szintetizátornak hallatszik');
+  else {
+    szamot('TER.hossz', TER.hossz, 0.2, 6, true);
+    szamot('TER.csillapodas', TER.csillapodas, 1, 20, true);
+    szamot('TER.sotetseg', TER.sotetseg, 0.02, 1, true);
+    szamot('TER.szint', TER.szint, 0, 3, true);
+    szamot('TER.ambiensKuldes', TER.ambiensKuldes, 0, 1, true);
+    ok(`közös tér: ${TER.hossz} s-os, procedurális impulzusválasz`);
+  }
+  if (!KAT.VALTOZAT_ALAP || !(KAT.VALTOZAT_ALAP.hangolas > 0)) {
+    rossz('VALTOZAT_ALAP: a nulla alapérték visszahozná a gépies ismétlődést');
   }
 
   szamot('ZENE.akkordHossz', ZENE.akkordHossz, 2, 60, true);
@@ -808,9 +841,14 @@ async function hangkepet(lap, kodok) {
       }
       return { kod, f: szoras(fk), szint: szoras(sz), centroid: szoras(ce) };
     }
+    // A két mért kód szándékosan DALLAMOS: ott van a legkisebb mozgástér
+    // (a hamis hang azonnal feltűnik), tehát ha ezek is szórnak, a többi
+    // biztosan. A koppanós hangokat az 1. vizsgálat statikus `valtozat`-
+    // ellenőrzése fedi — azoknál FFT-vel nem is lehetne pontosan mérni,
+    // mert csúszó hangmagasságúak.
     ki.ismetlodes = [
-      await ismetlodes('esemeny', 1.2, 0.68, 300, 1500),
-      await ismetlodes('gomb', 0.5, 0.086, 300, 2500),
+      await ismetlodes('esemeny', 1.2, 0.35, 760, 1010),
+      await ismetlodes('kassza', 1.0, 0.35, 920, 1180),
     ];
 
     // ── E. PALETTA — hova esik a hangok súlypontja ──────────────────────
